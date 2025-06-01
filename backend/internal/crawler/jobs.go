@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"strings"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/utils"
@@ -35,10 +36,11 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 		posts = posts[:MaxPostsPerSubreddit]
 	}
 
-	if err := crawlAndStorePosts(ctx, q, job.Subreddit, posts); err != nil {
+	insertedPosts, err := crawlAndStorePosts(ctx, q, job.Subreddit, posts); 
+	if err != nil {
 		log.Printf("⚠️ failed to crawl posts: %v", err)
 	}
-	if err := crawlAndStoreComments(ctx, q, job.Subreddit, posts, utils.GetEnvAsInt("MAX_COMMENT_DEPTH", 5)); err != nil {
+	if err := crawlAndStoreComments(ctx, q, job.Subreddit, posts, utils.GetEnvAsInt("MAX_COMMENT_DEPTH", 5), insertedPosts); err != nil {
 		log.Printf("⚠️ failed to crawl comments: %v", err)
 	}
 
@@ -46,7 +48,9 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 	return nil
 }
 
-func crawlAndStorePosts(ctx context.Context, q *db.Queries, sub string, posts []Post) error {
+func crawlAndStorePosts(ctx context.Context, q *db.Queries, sub string, posts []Post) (map[string]bool, error) {
+	insertedPosts := make(map[string]bool)
+
 	for _, post := range posts {
 		if post.Author == "" || post.Author == "[deleted]" {
 			continue
@@ -60,18 +64,36 @@ func crawlAndStorePosts(ctx context.Context, q *db.Queries, sub string, posts []
 		params := ToUpsertPostParams(post, sub)
 		if err := q.UpsertPost(ctx, params); err != nil {
 			log.Printf("⚠️ failed to upsert post (ID=%s, Author=%s): %v", post.ID, post.Author, err)
+		} else {
+			insertedPosts[post.ID] = true
 		}
 	}
-	return nil
+
+	return insertedPosts, nil
 }
 
-func crawlAndStoreComments(ctx context.Context, q *db.Queries, sub string, posts []Post, maxDepth int) error {
-	totalInserted := 0
-	totalSkipped := 0
+func crawlAndStoreComments(
+	ctx context.Context,
+	q *db.Queries,
+	sub string,
+	posts []Post,
+	maxDepth int,
+	insertedPosts map[string]bool,
+) error {
 	authorSet := make(map[string]bool)
 
 	for _, post := range posts {
+		insertedThisPost := 0
+		skippedThisPost := 0
+
 		postID := utils.ExtractPostID(post.Permalink)
+
+		// Skip if post wasn't inserted
+		if !insertedPosts[postID] {
+			log.Printf("⚠️ Skipping comments for post %s — post not found", postID)
+			continue
+		}
+
 		comments, err := CrawlComments(postID)
 		if err != nil {
 			log.Printf("⚠️ Failed to fetch comments for %s: %v", post.Permalink, err)
@@ -85,14 +107,14 @@ func crawlAndStoreComments(ctx context.Context, q *db.Queries, sub string, posts
 
 		// First pass
 		for _, c := range comments {
-			if c.Author == "" || c.Author == "[deleted]" || c.Depth > maxDepth {
-				totalSkipped++
+			if !utils.IsValidAuthor(c.Author) || c.Depth > maxDepth {
+				skippedThisPost++
 				continue
 			}
 
 			if err := q.UpsertUser(ctx, c.Author); err != nil {
 				log.Printf("⚠️ failed to upsert user %s: %v", c.Author, err)
-				totalSkipped++
+				skippedThisPost++
 				continue
 			}
 
@@ -109,13 +131,14 @@ func crawlAndStoreComments(ctx context.Context, q *db.Queries, sub string, posts
 				Depth:     sql.NullInt32{Int32: int32(c.Depth), Valid: true},
 			}
 
-			if parentID == "" || inserted[parentID] {
+			if parentID == "" || strings.HasPrefix(c.ParentID, "t3_") || inserted[parentID] {
 				if err := q.UpsertComment(ctx, params); err == nil {
+					log.Printf("✅ inserted comment %s (author=%s)", c.ID, c.Author) // optional
 					inserted[c.ID] = true
-					totalInserted++
+					insertedThisPost++
 				} else {
 					log.Printf("⚠️ failed to insert comment %s: %v", c.ID, err)
-					totalSkipped++
+					skippedThisPost++
 				}
 			} else {
 				pending[c.ID] = params
@@ -127,13 +150,15 @@ func crawlAndStoreComments(ctx context.Context, q *db.Queries, sub string, posts
 			if inserted[utils.StripPrefix(params.ParentID.String)] {
 				if err := q.UpsertComment(ctx, params); err == nil {
 					inserted[id] = true
-					totalInserted++
+					insertedThisPost++
 				} else {
 					log.Printf("⚠️ second pass failed for comment %s: %v", id, err)
-					totalSkipped++
+					skippedThisPost++
 				}
 			}
 		}
+
+		log.Printf("💬 Post %s: Comments inserted: %d, Skipped: %d", postID, insertedThisPost, skippedThisPost)
 	}
 
 	// Trigger discovery from authors
@@ -142,12 +167,11 @@ func crawlAndStoreComments(ctx context.Context, q *db.Queries, sub string, posts
 		authors = append(authors, author)
 	}
 	FetchAndQueueUserSubredditsForAuthors(ctx, q, authors, FetchUserSubredditsConfig{
-		Limit:      utils.GetEnvAsInt("USER_SUB_LIMIT", 30),
-		MaxEnqueue: utils.GetEnvAsInt("USER_SUB_MAX_ENQUEUE", 5),
-		Enabled:    utils.GetEnvAsBool("USER_SUB_ENABLED", true),
+		Limit:      utils.GetEnvAsInt("USER_SUB_FETCH_LIMIT", 30),
+		MaxEnqueue: utils.GetEnvAsInt("USER_SUB_ENQUEUE_MAX", 10),
+		Enabled:    utils.GetEnvAsBool("FETCH_USER_SUBREDDITS", true),
 	})
 
-	log.Printf("✅ Comments inserted: %d, Skipped: %d", totalInserted, totalSkipped)
 	return nil
 }
 

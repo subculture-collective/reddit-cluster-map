@@ -100,7 +100,8 @@ func CrawlSubreddit(subreddit string) (*SubredditInfo, []Post, error) {
 		return nil, nil, err
 	}
 
-	postsURL := fmt.Sprintf("https://oauth.reddit.com/r/%s/new?limit=25", subreddit)
+	limit := utils.GetEnvAsInt("MAX_POSTS_PER_SUB", 25)
+	postsURL := fmt.Sprintf("https://oauth.reddit.com/r/%s/new?limit=%d", subreddit, limit)
 	resp, err = authenticatedGet(postsURL)
 	if err != nil {
 		log.Printf("⚠️ Failed to fetch posts for subreddit %s: %v", subreddit, err)
@@ -147,7 +148,9 @@ func extractMentionedSubreddits(posts []Post) []string {
 }
 
 func CrawlComments(postID string) ([]Comment, error) {
-	url := fmt.Sprintf("https://oauth.reddit.com/comments/%s?limit=100", postID)
+	limit := utils.GetEnvAsInt("MAX_COMMENTS_PER_POST", 100)
+	url := fmt.Sprintf("https://oauth.reddit.com/comments/%s?limit=%d", postID, limit)
+
 
 	resp, err := authenticatedGet(url)
 	if err != nil {
@@ -156,7 +159,7 @@ func CrawlComments(postID string) ([]Comment, error) {
 	}
 	defer resp.Body.Close()
 
-	var data []any
+	var data []interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		log.Printf("⚠️ Failed to decode comments for post %s: %v", postID, err)
 		return nil, err
@@ -169,20 +172,8 @@ func CrawlComments(postID string) ([]Comment, error) {
 	commentData := data[1].(map[string]interface{})["data"].(map[string]interface{})
 	children := commentData["children"].([]interface{})
 
-	var comments []Comment
-	for _, c := range children {
-		child := c.(map[string]interface{})["data"].(map[string]interface{})
-		author, _ := child["author"].(string)
-		body, _ := child["body"].(string)
-
-		if author != "" && author != "[deleted]" && body != "" {
-			comments = append(comments, Comment{
-				Author: author,
-				Body:   body,
-			})
-		}
-	}
-
+	comments := parseComments(children, 0)
+	log.Printf("🧮 Total parsed comments for post %s: %d", postID, len(comments))
 	return comments, nil
 }
 
@@ -233,17 +224,67 @@ func FetchAndQueueUserSubreddits(ctx context.Context, q *db.Queries, username st
 	log.Printf("📬 Enqueued %d new subs from u/%s", count, username)
 }
 
-func LoadUserSubConfig() FetchUserSubredditsConfig {
-	return FetchUserSubredditsConfig{
-		Enabled:    utils.GetEnvAsBool("FETCH_USER_SUBREDDITS", true),
-		Limit:      utils.GetEnvAsInt("USER_SUB_FETCH_LIMIT", 20),
-		MaxEnqueue: utils.GetEnvAsInt("USER_SUB_ENQUEUE_MAX", 5),
-	}
-}
-
 // FetchAndQueueUserSubredditsForAuthors processes a list of authors and queues subs for each.
 func FetchAndQueueUserSubredditsForAuthors(ctx context.Context, q *db.Queries, authors []string, config FetchUserSubredditsConfig) {
 	for _, author := range authors {
 		FetchAndQueueUserSubreddits(ctx, q, author, config)
 	}
 }
+
+// parseComments recursively extracts comments from Reddit's JSON structure.
+func parseComments(children []interface{}, depth int) []Comment {
+	var comments []Comment
+
+	for _, c := range children {
+		// Skip placeholder "more" nodes
+		kind, ok := c.(map[string]interface{})["kind"].(string)
+		if !ok || kind != "t1" {
+			continue
+		}
+
+		data, ok := c.(map[string]interface{})["data"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		author, _ := data["author"].(string)
+		body, _ := data["body"].(string)
+		id, _ := data["id"].(string)
+		parentID, _ := data["parent_id"].(string)
+
+		log.Printf("🧩 Processing comment ID=%s, author=%s", id, author)
+
+		if utils.IsValidAuthor(author) && body != "" {
+			var created time.Time
+			if createdUTC, ok := data["created_utc"].(float64); ok {
+				created = time.Unix(int64(createdUTC), 0)
+			} else {
+				created = time.Now()
+			}
+
+			comments = append(comments, Comment{
+				ID:        id,
+				Author:    author,
+				Body:      body,
+				Depth:     depth,
+				ParentID:  parentID,
+				CreatedAt: created,
+			})
+		}
+
+		// Recursively parse replies
+		if repliesRaw, ok := data["replies"]; ok {
+			if repliesMap, ok := repliesRaw.(map[string]interface{}); ok {
+				if repliesData, ok := repliesMap["data"].(map[string]interface{}); ok {
+					if nestedChildren, ok := repliesData["children"].([]interface{}); ok {
+						nested := parseComments(nestedChildren, depth+1)
+						comments = append(comments, nested...)
+					}
+				}
+			}
+		}
+	}
+
+	return comments
+}
+
