@@ -3,29 +3,24 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
+	"context"
 
 	"github.com/joho/godotenv"
-
-	"github.com/onnwee/subnet/internal/api"
-	"github.com/onnwee/subnet/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/api"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/server"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/crawler"
 )
 
 func main() {
-	err := godotenv.Load()
+	_ = godotenv.Load()
+	ctx := context.Background()
+
+	queries, err := server.InitDB()
 	if err != nil {
-		log.Println("⚠️  No .env file found (falling back to system env)")
+		log.Fatalf("❌ DB init failed: %v", err)
 	}
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		log.Fatal("DATABASE_URL not set")
-	}
-
-	queries, err := db.Init(dbURL)
-	if err != nil {
-		log.Fatalf("DB init failed: %v", err)
-	}
+	go crawler.StartCrawlWorker(ctx, queries)
 
 	router := api.NewRouter(queries)
 

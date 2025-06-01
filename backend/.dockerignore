@@ -1,0 +1,63 @@
+# Ignore Git data
+.git
+.gitignore
+
+# Node & JS build junk
+**/node_modules
+**/dist
+**/.vite
+**/.next
+**/.cache
+**/.parcel-cache
+**/.docusaurus
+**/.nuxt
+**/.temp
+**/.serverless
+**/bower_components
+**/.eslintcache
+**/.stylelintcache
+**/yarn.lock
+**/pnpm-lock.yaml
+**/package-lock.json
+
+# Build output (client + backend)
+**/build
+**/bin
+**/coverage
+**/out
+**/.turbo
+**/tmp
+**/temp
+*.out
+*.test
+
+# SQLC generated code (if you build it locally)
+**/sqlc.gen.go
+**/sqlc.json
+
+# Ignore env files
+.env
+.env.*
+**/.env
+**/.env.*
+
+# OS and Editor files
+.DS_Store
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Optional logs and reports
+*.log
+*.pid
+*.seed
+*.prof
+*.pprof
+*.coverprofile
+*.testprofile
+*.cpuprofile
+*.memprofile
+*.trace
+report.*.json
