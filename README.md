@@ -1,8 +1,3 @@
-Here’s a clean and informative `README.md` you can drop into the root of your project. It’s designed to grow with your architecture, including placeholders for upcoming modules and notes on future extensibility.
-
----
-
-```markdown
 # Reddit Network Cluster Map
 
 A full-stack application for collecting, analyzing, and visualizing Reddit communities and their user interactions as network graphs.
@@ -21,11 +16,13 @@ A full-stack application for collecting, analyzing, and visualizing Reddit commu
 ## 🧱 Stack Overview
 
 ### 🖥 Frontend
+
 - **React** — Component-based UI
 - **Tailwind CSS** — Utility-first styling
 - **D3.js** or **Cytoscape.js** — For interactive graph rendering and data-driven layouts (TBD)
 
 ### 🗃 Backend
+
 - **Go** — REST API and data processing
 - **PostgreSQL** — Persistent storage
 - **sqlc** — Compile-time query generation
@@ -33,10 +30,12 @@ A full-stack application for collecting, analyzing, and visualizing Reddit commu
 - **Docker** — Containerized deployment
 
 ### 📡 Data Collection
+
 - **Reddit API** — Real-time and recent posts/comments
 - **Pushshift.io** — Historical Reddit archives
 
 ### 📊 Graph Analysis
+
 - **NetworkX** or **igraph** (Python)
 - **gonum/graph** (Go-native alternative for scalable analysis)
 
@@ -81,18 +80,19 @@ prometheus/          # Configs
 ## 🧪 Local Dev
 
 **Requirements**:
+
 - Docker
 - Go 1.21+
 - Node.js 18+
 
-### Start Services:
+### Start Services
 
 ```bash
 make dev        # Launches API, DB, Prometheus, Grafana
 make frontend   # Starts Vite dev server
 ````
 
-### Env Variables:
+### Env Variables
 
 ```bash
 cp .env.example .env
@@ -111,20 +111,14 @@ DATABASE_URL=postgres://...
 
 ## 📈 Metrics
 
-* Prometheus scrapes metrics at `/metrics`
-* Grafana dashboards visualize crawl jobs, DB health, and data volumes
+- Prometheus scrapes metrics at `/metrics`
+- Grafana dashboards visualize crawl jobs, DB health, and data volumes
 
 ---
 
 ## 🧠 Coming Soon
 
-* [ ] User-submitted subreddit targeting
-* [ ] In-browser cluster exploration with filters and tooltips
-* [ ] GraphQL API layer for more flexible queries
-* [ ] Community similarity scoring (Jaccard / Cosine / Graph embeddings)
-
----
-
-## 🤝 Contributing
-
-Pull requests and issues welcome! This project is being actively developed, so feedback and collaboration are appreciated.
+- [ ] User-submitted subreddit targeting
+- [ ] In-browser cluster exploration with filters and tooltips
+- [ ] GraphQL API layer for more flexible queries
+- [ ] Community similarity scoring (Jaccard / Cosine / Graph embeddings)
