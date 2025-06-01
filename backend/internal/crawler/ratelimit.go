@@ -7,7 +7,7 @@ import (
 var limiter <-chan time.Time
 
 func init() {
-	limiter = time.Tick(1001 * time.Millisecond) // 1.001s between calls
+	limiter = time.Tick(601 * time.Millisecond) // 601ms between calls
 }
 
 func waitForRateLimit() {

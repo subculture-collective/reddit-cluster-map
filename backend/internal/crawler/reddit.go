@@ -252,7 +252,7 @@ func parseComments(children []interface{}, depth int) []Comment {
 		id, _ := data["id"].(string)
 		parentID, _ := data["parent_id"].(string)
 
-		log.Printf("🧩 Processing comment ID=%s, author=%s", id, author)
+		// log.Printf("🧩 Processing comment ID=%s, author=%s", id, author)
 
 		if utils.IsValidAuthor(author) && body != "" {
 			var created time.Time

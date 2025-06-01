@@ -133,7 +133,7 @@ func crawlAndStoreComments(
 
 			if parentID == "" || strings.HasPrefix(c.ParentID, "t3_") || inserted[parentID] {
 				if err := q.UpsertComment(ctx, params); err == nil {
-					log.Printf("✅ inserted comment %s (author=%s)", c.ID, c.Author) // optional
+					// log.Printf("✅ inserted comment %s (author=%s)", c.ID, c.Author) // optional
 					inserted[c.ID] = true
 					insertedThisPost++
 				} else {
