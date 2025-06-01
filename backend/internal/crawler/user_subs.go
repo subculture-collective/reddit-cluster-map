@@ -6,16 +6,7 @@ import (
 	"log"
 )
 
-type redditListing struct {
-	Data struct {
-		Children []struct {
-			Data struct {
-				Subreddit string `json:"subreddit"`
-			} `json:"data"`
-		} `json:"children"`
-	} `json:"data"`
-}
-
+// FetchUserSubreddits fetches the list of subreddits a user has posted or commented in.
 func FetchUserSubreddits(username string, limit int) ([]string, error) {
 	endpoints := []string{
 		fmt.Sprintf("https://oauth.reddit.com/user/%s/submitted.json?limit=%d", username, limit),
@@ -69,13 +60,17 @@ func FetchUserSubreddits(username string, limit int) ([]string, error) {
 
 // FetchRecentUserSubreddits fetches the list of subreddits a user has recently posted or commented in.
 func FetchRecentUserSubreddits(username string, limit int) ([]string, error) {
-	url := fmt.Sprintf("https://www.reddit.com/user/%s/.json?limit=%d", username, limit)
+	url := fmt.Sprintf("https://oauth.reddit.com/user/%s/.json?limit=%d", username, limit)
+
 	resp, err := authenticatedGet(url)
 	if err != nil {
-		log.Printf("⚠️ Failed to fetch user subs for %s: %v", username, err)
-		return nil, err
+		return nil, fmt.Errorf("failed authenticated GET: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("non-200 status code: %d", resp.StatusCode)
+	}
 
 	var parsed struct {
 		Data struct {
@@ -87,7 +82,7 @@ func FetchRecentUserSubreddits(username string, limit int) ([]string, error) {
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode: %w", err)
 	}
 
 	seen := map[string]bool{}
@@ -99,6 +94,5 @@ func FetchRecentUserSubreddits(username string, limit int) ([]string, error) {
 			seen[sub] = true
 		}
 	}
-
 	return subs, nil
 }

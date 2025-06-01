@@ -14,17 +14,31 @@ import (
 func StartCrawlWorker(ctx context.Context, q *db.Queries) {
 	log.Printf("🔁 Starting crawl worker...")
 
-	// Load fallback subreddits from env
 	defaultSubs := utils.GetEnvAsSlice("DEFAULT_SUBREDDITS", []string{
 		"AskReddit", "politics", "technology", "worldnews", "gaming",
 	}, ",")
 
 	for {
-		job, err := q.GetNextCrawlJob(ctx)
+		// Check if parent context is done
+		select {
+		case <-ctx.Done():
+			log.Println("🛑 Crawl worker exiting: context canceled")
+			return
+		default:
+		}
+
+		// Use a short timeout on each job fetch to allow periodic context cancellation checks
+		jobCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		job, err := q.GetNextCrawlJob(jobCtx)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				log.Println("🟡 No crawl jobs available.")
 				time.Sleep(time.Second * 5)
+				continue
+			}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				continue
 			}
 			log.Printf("❌ Failed to get next crawl job: %v", err)
@@ -33,7 +47,6 @@ func StartCrawlWorker(ctx context.Context, q *db.Queries) {
 		}
 
 		if job.ID == 0 {
-			// Use fallback subreddits
 			sub := utils.PickRandomString(defaultSubs)
 			log.Printf("🟡 No job found, using fallback: r/%s", sub)
 			_ = q.EnqueueCrawlJob(ctx, sub)

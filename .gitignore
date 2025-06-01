@@ -1,0 +1,92 @@
+# ========================
+# GLOBAL IGNORES (ALL PROJECTS)
+# ========================
+*.log
+*.pid
+*.seed
+*.pid.lock
+*.tgz
+*.tsbuildinfo
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor & OS
+.vscode/
+.idea/
+node_modules/
+.env*
+*.env
+
+# ========================
+# CLIENT (React / Vite / JS)
+# ========================
+client/node_modules/
+client/.env
+client/.env.*
+client/dist/
+client/.vite/
+client/.next/
+client/.parcel-cache/
+client/.docusaurus/
+client/.cache/
+client/.nuxt/
+client/.temp
+client/.serverless/
+client/bower_components/
+client/.eslintcache
+client/.stylelintcache
+client/.rpt2_cache/
+client/.rts2_cache_*/
+client/report.*.json
+client/.pnp.*
+client/yarn.lock
+
+# ========================
+# BACKEND (Go)
+# ========================
+backend/bin/
+backend/build/
+backend/coverage/
+backend/.env
+backend/.env.*
+backend/sqlc.json
+backend/sqlc.gen.go
+backend/**/sqlc.json
+backend/**/sqlc.gen.go
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+*.pprof
+
+# Go coverage & profiling
+coverage.*
+*.coverprofile
+*.testprofile
+*.cpuprofile
+*.memprofile
+*.trace
+
+# Go module & dependency files (keep go.mod/sum but ignore vendor if not using vendoring)
+vendor/
+
+# Go temporary files
+**/tmp/
+**/temp/
+*.tmp
+
+*.zip
