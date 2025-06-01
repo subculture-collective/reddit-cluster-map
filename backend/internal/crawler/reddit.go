@@ -1,13 +1,18 @@
 package crawler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/utils"
 )
 
 // SubredditInfo holds metadata about a subreddit
@@ -15,6 +20,13 @@ type SubredditInfo struct {
 	Title       string `json:"title"`
 	Description string `json:"public_description"`
 	Subscribers int    `json:"subscribers"`
+}
+
+// FetchUserSubredditsConfig holds configurable options for subreddit discovery.
+type FetchUserSubredditsConfig struct {
+	Limit      int
+	MaxEnqueue int
+	Enabled    bool
 }
 
 // Post holds relevant post data from the Reddit API
@@ -39,6 +51,12 @@ type Comment struct {
 	ParentID  string    `json:"parent_id"`
 	Depth     int       `json:"depth"`
 }
+
+
+var seenUsers = struct {
+	m map[string]bool
+	sync.Mutex
+}{m: make(map[string]bool)}
 
 var subredditMentionRegex = regexp.MustCompile(`(?i)/r/([a-zA-Z0-9_]+)`)
 
@@ -166,4 +184,66 @@ func CrawlComments(postID string) ([]Comment, error) {
 	}
 
 	return comments, nil
+}
+
+// ShouldFetchForUser checks if a user has already been processed.
+func ShouldFetchForUser(username string) bool {
+	seenUsers.Lock()
+	defer seenUsers.Unlock()
+	if seenUsers.m[username] {
+		return false
+	}
+	seenUsers.m[username] = true
+	return true
+}
+
+func FetchAndQueueUserSubreddits(ctx context.Context, q *db.Queries, username string, config FetchUserSubredditsConfig) {
+	if !config.Enabled || !ShouldFetchForUser(username) {
+		return
+	}
+
+	subs, err := FetchRecentUserSubreddits(username, config.Limit)
+	if err != nil {
+		log.Printf("⚠️ Failed to fetch subs for u/%s: %v", username, err)
+		return
+	}
+
+	shuffled := utils.ShuffleStrings(subs)
+	count := 0
+
+	for _, sub := range shuffled {
+		exists, err := q.CrawlJobExists(ctx, sub)
+		if err != nil {
+			log.Printf("⚠️ Failed to check if job exists for r/%s: %v", sub, err)
+			continue
+		}
+		if exists {
+			continue
+		}
+
+		if err := q.EnqueueCrawlJob(ctx, sub); err == nil {
+			
+			count++
+			if count >= config.MaxEnqueue {
+				break
+			}
+		}
+	}
+
+	log.Printf("📬 Enqueued %d new subs from u/%s", count, username)
+}
+
+func LoadUserSubConfig() FetchUserSubredditsConfig {
+	return FetchUserSubredditsConfig{
+		Enabled:    utils.GetEnvAsBool("FETCH_USER_SUBREDDITS", true),
+		Limit:      utils.GetEnvAsInt("USER_SUB_FETCH_LIMIT", 20),
+		MaxEnqueue: utils.GetEnvAsInt("USER_SUB_ENQUEUE_MAX", 5),
+	}
+}
+
+// FetchAndQueueUserSubredditsForAuthors processes a list of authors and queues subs for each.
+func FetchAndQueueUserSubredditsForAuthors(ctx context.Context, q *db.Queries, authors []string, config FetchUserSubredditsConfig) {
+	for _, author := range authors {
+		FetchAndQueueUserSubreddits(ctx, q, author, config)
+	}
 }

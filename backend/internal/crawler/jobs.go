@@ -6,13 +6,14 @@ import (
 	"log"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/utils"
 )
 
 var (
-	MaxPostsPerSubreddit = GetEnvAsInt("MAX_POSTS_PER_SUB", 50)
-	MaxCommentsPerPost  = GetEnvAsInt("MAX_COMMENTS_PER_POST", 100)
-	MaxCommentDepth     = GetEnvAsInt("MAX_COMMENT_DEPTH", 3)
-	DefaultSubs         = GetEnvAsSlice("DEFAULT_SUBREDDITS", []string{"AskReddit", "worldnews", "technology", "funny", "gaming"}, ",")
+	MaxPostsPerSubreddit = utils.GetEnvAsInt("MAX_POSTS_PER_SUB", 50)
+	MaxCommentsPerPost   = utils.GetEnvAsInt("MAX_COMMENTS_PER_POST", 100)
+	MaxCommentDepth      = utils.GetEnvAsInt("MAX_COMMENT_DEPTH", 3)
+	DefaultSubs          = utils.GetEnvAsSlice("DEFAULT_SUBREDDITS", []string{"AskReddit", "worldnews", "technology", "funny", "gaming"}, ",")
 )
 
 func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
@@ -37,7 +38,7 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 	if err := crawlAndStorePosts(ctx, q, job.Subreddit, posts); err != nil {
 		log.Printf("⚠️ failed to crawl posts: %v", err)
 	}
-	if err := crawlAndStoreComments(ctx, q, job.Subreddit, posts, GetEnvAsInt("MAX_COMMENT_DEPTH", 5)); err != nil {
+	if err := crawlAndStoreComments(ctx, q, job.Subreddit, posts, utils.GetEnvAsInt("MAX_COMMENT_DEPTH", 5)); err != nil {
 		log.Printf("⚠️ failed to crawl comments: %v", err)
 	}
 
@@ -70,7 +71,7 @@ func crawlAndStoreComments(ctx context.Context, q *db.Queries, sub string, posts
 	authorSet := make(map[string]bool)
 
 	for _, post := range posts {
-		postID := extractPostID(post.Permalink)
+		postID := utils.ExtractPostID(post.Permalink)
 		comments, err := CrawlComments(postID)
 		if err != nil {
 			log.Printf("⚠️ Failed to fetch comments for %s: %v", post.Permalink, err)
@@ -97,7 +98,7 @@ func crawlAndStoreComments(ctx context.Context, q *db.Queries, sub string, posts
 
 			authorSet[c.Author] = true
 
-			parentID := StripPrefix(c.ParentID)
+			parentID := utils.StripPrefix(c.ParentID)
 			params := db.UpsertCommentParams{
 				ID:        c.ID,
 				PostID:    postID,
@@ -123,7 +124,7 @@ func crawlAndStoreComments(ctx context.Context, q *db.Queries, sub string, posts
 
 		// Second pass for orphans
 		for id, params := range pending {
-			if inserted[StripPrefix(params.ParentID.String)] {
+			if inserted[utils.StripPrefix(params.ParentID.String)] {
 				if err := q.UpsertComment(ctx, params); err == nil {
 					inserted[id] = true
 					totalInserted++
@@ -141,9 +142,9 @@ func crawlAndStoreComments(ctx context.Context, q *db.Queries, sub string, posts
 		authors = append(authors, author)
 	}
 	FetchAndQueueUserSubredditsForAuthors(ctx, q, authors, FetchUserSubredditsConfig{
-		Limit:      GetEnvAsInt("USER_SUB_LIMIT", 30),
-		MaxEnqueue: GetEnvAsInt("USER_SUB_MAX_ENQUEUE", 5),
-		Enabled:    ParseBoolEnv("USER_SUB_ENABLED", true),
+		Limit:      utils.GetEnvAsInt("USER_SUB_LIMIT", 30),
+		MaxEnqueue: utils.GetEnvAsInt("USER_SUB_MAX_ENQUEUE", 5),
+		Enabled:    utils.GetEnvAsBool("USER_SUB_ENABLED", true),
 	})
 
 	log.Printf("✅ Comments inserted: %d, Skipped: %d", totalInserted, totalSkipped)

@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/utils"
 )
 
 func StartCrawlWorker(ctx context.Context, q *db.Queries) {
 	log.Printf("🔁 Starting crawl worker...")
 
 	// Load fallback subreddits from env
-	defaultSubs := GetEnvAsSlice("DEFAULT_SUBREDDITS", []string{
+	defaultSubs := utils.GetEnvAsSlice("DEFAULT_SUBREDDITS", []string{
 		"AskReddit", "politics", "technology", "worldnews", "gaming",
 	}, ",")
 
@@ -33,7 +34,7 @@ func StartCrawlWorker(ctx context.Context, q *db.Queries) {
 
 		if job.ID == 0 {
 			// Use fallback subreddits
-			sub := PickRandomString(defaultSubs)
+			sub := utils.PickRandomString(defaultSubs)
 			log.Printf("🟡 No job found, using fallback: r/%s", sub)
 			_ = q.EnqueueCrawlJob(ctx, sub)
 			time.Sleep(5 * time.Second)
