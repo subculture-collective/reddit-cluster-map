@@ -23,6 +23,8 @@ services:
             context: .
             dockerfile: Dockerfile
         container_name: reddit_app
+        volumes:
+            - ./migrations:/app/migrations
         networks:
             - web
         expose:
