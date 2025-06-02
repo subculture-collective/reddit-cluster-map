@@ -1,21 +1,10 @@
 #!/bin/bash
+set -e
 
-set -euo pipefail
+echo "🚀 Pulling latest changes..."
+git -C /home/onnwee/projects/reddit-cluster-map pull origin main
 
-# Optional: Log output
-LOGFILE="/home/onnwee/projects/reddit-cluster-map/deploy.log"
-exec >> "$LOGFILE" 2>&1
-echo "---- Deploy started at $(date) ----"
+echo "📦 Building and restarting containers..."
+docker compose -f /home/onnwee/projects/reddit-cluster-map/backend/docker-compose.yml up -d --build
 
-cd /home/onnwee/projects/reddit-cluster-map
-
-# Pull latest changes
-echo "Pulling latest changes..."
-git pull origin main
-
-# Rebuild and restart the container
-echo "Rebuilding Docker container..."
-docker compose -f /home/onnwee/projects/caddy/docker-compose.yml build reddit-cluster-map
-docker compose -f /home/onnwee/projects/caddy/docker-compose.yml up -d reddit-cluster-map
-
-echo "---- Deploy finished at $(date) ----"
+echo "✅ Deployment complete."
