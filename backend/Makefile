@@ -1,14 +1,25 @@
-DB_URL ?= postgres://postgres:postgres@localhost:5432/reddit_cluster?sslmode=disable
+include .env
+export
 
-.PHONY: reset migrate drop
+.PHONY: reset migrate drop logs kickstart
+
+DB_CONTAINER = reddit_db
+DB_NAME = reddit_cluster
+DB_USER = postgres
 
 reset: drop migrate
 
 drop:
-	psql $(DB_URL) -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+	docker exec -i $(DB_CONTAINER) psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
 migrate:
-	psql $(DB_URL) -f migrations/schema.sql
+	cat ./migrations/schema.sql | docker exec -i $(DB_CONTAINER) psql -U $(DB_USER) -d $(DB_NAME)
 
 logs:
 	docker compose logs -f app
+
+SUB ?= LeftoversH3
+kickstart:
+	curl -v -X POST https://reddit-cluster-map.onnwee.me/crawl \
+	  -H "Content-Type: application/json" \
+	  -d '{"subreddit": "$(SUB)"}'

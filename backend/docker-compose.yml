@@ -1,16 +1,15 @@
 services:
-
   db:
     image: postgres:16
     container_name: reddit_db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: reddit_cluster
+    env_file:
+      - .env
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    expose:
+      - "5432"
+    networks:
+      - web
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -18,19 +17,25 @@ services:
       retries: 5
 
   app:
-    env_file:
-      - .env
     build:
       context: .
       dockerfile: Dockerfile
     container_name: reddit_app
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/reddit_cluster?sslmode=disable
-    ports:
-      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./migrations:/app/migrations
+    expose:
+      - "8000"
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - web
 
 volumes:
   pgdata:
+
+networks:
+  web:
+    external: true
