@@ -21,33 +21,55 @@ Thumbs.db
 # Editor & OS
 .vscode/
 .idea/
-node_modules/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment and lockfiles
 .env*
 *.env
+*.local
+*.zip
 
 # ========================
-# CLIENT (React / Vite / JS)
+# SCRIPTING / TOOLS
 # ========================
-client/node_modules/
-client/.env
-client/.env.*
-client/dist/
-client/.vite/
-client/.next/
-client/.parcel-cache/
-client/.docusaurus/
-client/.cache/
-client/.nuxt/
-client/.temp
-client/.serverless/
-client/bower_components/
-client/.eslintcache
-client/.stylelintcache
-client/.rpt2_cache/
-client/.rts2_cache_*/
-client/report.*.json
-client/.pnp.*
-client/yarn.lock
+scripts/*.log
+
+# ========================
+# FRONTEND (React / Vite)
+# ========================
+frontend/node_modules/
+frontend/.env
+frontend/.env.*
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+frontend/.next/
+frontend/.parcel-cache/
+frontend/.docusaurus/
+frontend/.cache/
+frontend/.nuxt/
+frontend/.temp/
+frontend/.serverless/
+frontend/bower_components/
+frontend/.eslintcache
+frontend/.stylelintcache
+frontend/.rpt2_cache/
+frontend/.rts2_cache_*/
+frontend/report.*.json
+frontend/.pnp.*
+frontend/yarn.lock
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/lerna-debug.log*
+
+# Allow this vscode setting to be committed if needed
+!frontend/.vscode/extensions.json
 
 # ========================
 # BACKEND (Go)
@@ -81,12 +103,10 @@ coverage.*
 *.memprofile
 *.trace
 
-# Go module & dependency files (keep go.mod/sum but ignore vendor if not using vendoring)
+# Go modules and vendor
 vendor/
 
-# Go temporary files
+# Temp files
 **/tmp/
 **/temp/
 *.tmp
-
-*.zip
