@@ -29,6 +29,9 @@ func NewRouter(q *db.Queries) *mux.Router {
 
 	// Crawl Jobs
 	r.HandleFunc("/jobs", handlers.GetCrawlJobs(q)).Methods("GET")
+
+	// Graph
+	r.HandleFunc("/graph", handlers.GetGraphData(q)).Methods("GET")
 	
 	return r
 }
