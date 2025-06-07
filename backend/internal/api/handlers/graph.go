@@ -26,6 +26,7 @@ type GraphResponse struct {
 
 func GetGraphData(q *db.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		graphData, err := q.GetGraphData(r.Context())
 		if err != nil {
 			http.Error(w, "Failed to fetch graph data", http.StatusInternalServerError)
