@@ -25,7 +25,7 @@ export default function Graph3D() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await fetch('http://localhost:8080/graph');
+        const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8080'}/graph`);
         const data = await response.json();
         setGraphData(data);
       } catch (error) {
