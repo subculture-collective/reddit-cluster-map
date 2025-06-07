@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
@@ -41,14 +42,14 @@ func GetGraphData(q *db.Queries) http.HandlerFunc {
 		for _, data := range graphData {
 			if data.DataType == "node" {
 				response.Nodes = append(response.Nodes, GraphNode{
-					ID:   data.ID,
+					ID:   strconv.FormatInt(data.ID, 10),
 					Name: data.Name.String,
 					Val:  int(data.Val.Int32),
 					Type: data.Type,
 				})
 			} else if data.DataType == "link" {
 				response.Links = append(response.Links, GraphLink{
-					Source: data.ID,
+					Source: strconv.FormatInt(data.ID, 10),
 					Target: data.Name.String,
 				})
 			}
