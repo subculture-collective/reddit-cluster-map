@@ -84,7 +84,7 @@ FROM user_links
 
 type GetGraphDataRow struct {
 	DataType string
-	ID       string
+	ID       int64
 	Name     sql.NullString
 	Val      sql.NullInt32
 	Type     string
