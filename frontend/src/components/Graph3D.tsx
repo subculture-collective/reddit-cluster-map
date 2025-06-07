@@ -23,17 +23,28 @@ export default function Graph3D() {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     const fetchData = async () => {
       try {
-        const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8080'}/graph`);
+        const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8080'}/graph`, {
+          signal: controller.signal,
+        });
         const data = await response.json();
         setGraphData(data);
       } catch (error) {
-        console.error('Error fetching graph data:', error);
+        if (error.name === 'AbortError') {
+          console.log('Fetch aborted');
+        } else {
+          console.error('Error fetching graph data:', error);
+        }
       }
     };
 
     fetchData();
+
+    return () => {
+      controller.abort();
+    };
   }, []);
 
   if (!graphData) {
