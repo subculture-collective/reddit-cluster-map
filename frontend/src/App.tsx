@@ -1,14 +1,11 @@
-
+import Graph3D from './components/Graph3D';
 
 function App() {
-
-  return (
-    <>
-      <h1>Welcome to the React App</h1>
-      <p>This is a simple React application.</p>
-      <p>Feel free to modify it as you like!</p>
-    </>
-  )
+    return (
+        <div className='w-full h-screen'>
+            <Graph3D />
+        </div>
+    );
 }
 
-export default App
+export default App;
