@@ -188,7 +188,8 @@ SET
   score = EXCLUDED.score,
   flair = EXCLUDED.flair,
   url = EXCLUDED.url,
-  is_self = EXCLUDED.is_self
+  is_self = EXCLUDED.is_self,
+  last_seen = now()
 `
 
 type UpsertPostParams struct {

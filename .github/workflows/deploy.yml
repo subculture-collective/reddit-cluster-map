@@ -1,20 +1,24 @@
 name: Deploy Backend
 
 on:
-  push:
-    branches:
-      - deploy
+    push:
+        branches:
+            - main
+            - feature/precalculate-graph-data
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+    deploy:
+        runs-on: ubuntu-latest
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/precalculate-graph-data'
 
-    steps:
-      - name: Set up SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+        steps:
+            - name: Set up SSH agent
+              uses: webfactory/ssh-agent@v0.9.0
+              with:
+                  ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Run deploy script on server
-        run: |
-          ssh -o StrictHostKeyChecking=no onnwee@157.180.79.165 'bash ~/projects/reddit-cluster-map/scripts/deploy.sh'
+            - name: Run deploy script on server
+              env:
+                  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+              run: |
+                  ssh -o StrictHostKeyChecking=no onnwee@157.180.79.165 'bash ~/projects/reddit-cluster-map/scripts/deploy.sh'

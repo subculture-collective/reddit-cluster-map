@@ -43,9 +43,13 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 		if post.Score.Valid {
 			score = post.Score
 		}
+		var title string
+		if post.Title.Valid {
+			title = post.Title.String
+		}
 		err := s.queries.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{
 			ID:   post.ID,
-			Name: post.Title,
+			Name: title,
 			Val:  score,
 			Type: sql.NullString{String: "post", Valid: true},
 		})
@@ -60,9 +64,13 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 		if comment.Score.Valid {
 			score = comment.Score
 		}
+		var body string
+		if comment.Body.Valid {
+			body = comment.Body.String
+		}
 		err := s.queries.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{
 			ID:   comment.ID,
-			Name: comment.Body,
+			Name: body,
 			Val:  score,
 			Type: sql.NullString{String: "comment", Valid: true},
 		})

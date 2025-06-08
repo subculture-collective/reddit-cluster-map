@@ -4,8 +4,8 @@ CREATE TABLE IF NOT EXISTS graph_links (
     target TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (source) REFERENCES graph_nodes(subreddit),
-    FOREIGN KEY (target) REFERENCES graph_nodes(subreddit)
+    FOREIGN KEY (source) REFERENCES graph_nodes(id),
+    FOREIGN KEY (target) REFERENCES graph_nodes(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_graph_links_source ON graph_links(source);
