@@ -7,6 +7,7 @@ RUN go mod download
 
 COPY . .
 COPY migrations /app/migrations
+COPY migrations/schema.sql /docker-entrypoint-initdb.d/migrations/schema.sql
 
 RUN go build -o main ./cmd/server
 
