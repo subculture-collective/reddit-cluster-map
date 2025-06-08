@@ -1,41 +1,42 @@
-services:
-  db:
-    image: postgres:16
-    container_name: reddit_db
-    env_file:
-      - .env
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    expose:
-      - "5432"
-    networks:
-      - web
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+version: '3'
 
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: reddit_app
-    env_file:
-      - .env
-    volumes:
-      - ./migrations:/app/migrations
-    expose:
-      - "8000"
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - web
+services:
+    api:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        command: go run ./cmd/server
+        ports:
+            - '8080:8080'
+        environment:
+            - DATABASE_URL=postgres://postgres:7onr1MC%2FO2DLEjIr7lqCNE125o6Wd5Phmh6z3mioipE%3D@db:5432/reddit_cluster?sslmode=disable
+        depends_on:
+            - db
+
+    crawler:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        command: go run ./cmd/crawler
+        environment:
+            - DATABASE_URL=postgres://postgres:7onr1MC%2FO2DLEjIr7lqCNE125o6Wd5Phmh6z3mioipE%3D@db:5432/reddit_cluster?sslmode=disable
+        depends_on:
+            - db
+
+    db:
+        image: postgres:latest
+        environment:
+            - POSTGRES_USER=postgres
+            - POSTGRES_PASSWORD=7onr1MC/O2DLEjIr7lqCNE125o6Wd5Phmh6z3mioipE=
+            - POSTGRES_DB=reddit_cluster
+        ports:
+            - '5432:5432'
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
 
 volumes:
-  pgdata:
+    postgres_data:
 
 networks:
-  web:
-    external: true
+    web:
+        external: true
