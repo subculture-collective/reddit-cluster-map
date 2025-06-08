@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"database/sql"
 
@@ -39,9 +40,9 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 
 	// Insert post nodes
 	for _, post := range posts {
-		var score sql.NullInt32
+		var score sql.NullString
 		if post.Score.Valid {
-			score = post.Score
+			score = sql.NullString{String: strconv.Itoa(int(post.Score.Int32)), Valid: true}
 		}
 		var title string
 		if post.Title.Valid {
@@ -60,9 +61,9 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 
 	// Insert comment nodes
 	for _, comment := range comments {
-		var score sql.NullInt32
+		var score sql.NullString
 		if comment.Score.Valid {
-			score = comment.Score
+			score = sql.NullString{String: strconv.Itoa(int(comment.Score.Int32)), Valid: true}
 		}
 		var body string
 		if comment.Body.Valid {

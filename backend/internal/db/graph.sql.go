@@ -33,7 +33,7 @@ VALUES ($1, $2, $3, $4)
 type BulkInsertGraphNodeParams struct {
 	ID   string
 	Name string
-	Val  sql.NullInt32
+	Val  sql.NullString
 	Type sql.NullString
 }
 
@@ -97,7 +97,7 @@ INSERT INTO graph_nodes (
 type CreateGraphNodeParams struct {
 	ID   string
 	Name string
-	Val  sql.NullInt32
+	Val  sql.NullString
 	Type sql.NullString
 }
 
@@ -276,7 +276,7 @@ type GetPrecalculatedGraphDataRow struct {
 	DataType string
 	ID       string
 	Name     string
-	Val      sql.NullInt32
+	Val      sql.NullString
 	Type     sql.NullString
 	Source   interface{}
 	Target   interface{}

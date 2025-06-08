@@ -36,12 +36,12 @@ type CrawlJob struct {
 type GraphDatum struct {
 	ID        int32
 	DataType  string
-	NodeID    sql.NullInt64
+	NodeID    sql.NullString
 	NodeName  sql.NullString
-	NodeValue sql.NullInt32
+	NodeValue sql.NullString
 	NodeType  sql.NullString
-	Source    sql.NullInt64
-	Target    sql.NullInt64
+	Source    sql.NullString
+	Target    sql.NullString
 	UpdatedAt sql.NullTime
 }
 
@@ -56,7 +56,7 @@ type GraphLink struct {
 type GraphNode struct {
 	ID        string
 	Name      string
-	Val       sql.NullInt32
+	Val       sql.NullString
 	Type      sql.NullString
 	CreatedAt sql.NullTime
 	UpdatedAt sql.NullTime

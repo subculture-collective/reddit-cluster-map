@@ -100,33 +100,60 @@ func CrawlSubreddit(subreddit string) (*SubredditInfo, []Post, error) {
 		return nil, nil, err
 	}
 
-	limit := utils.GetEnvAsInt("MAX_POSTS_PER_SUB", 25)
-	postsURL := fmt.Sprintf("https://oauth.reddit.com/r/%s/new?limit=%d", subreddit, limit)
-	resp, err = authenticatedGet(postsURL)
-	if err != nil {
-		log.Printf("⚠️ Failed to fetch posts for subreddit %s: %v", subreddit, err)
-		return &aboutWrapper.Data, nil, err
-	}
-	defer resp.Body.Close()
+	// Get the target number of posts from environment
+	targetPosts := utils.GetEnvAsInt("MAX_POSTS_PER_SUB", 25)
+	var allPosts []Post
+	var after string
 
-	var postsWrapper struct {
-		Data struct {
-			Children []struct {
-				Data Post `json:"data"`
-			} `json:"children"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&postsWrapper); err != nil {
-		log.Printf("⚠️ Failed to decode posts for subreddit %s: %v", subreddit, err)
-		return &aboutWrapper.Data, nil, err
+	// Keep fetching posts until we reach the target or run out of posts
+	for len(allPosts) < targetPosts {
+		// Reddit API has a maximum limit of 100 per request
+		limit := 100
+		postsURL := fmt.Sprintf("https://oauth.reddit.com/r/%s/new?limit=%d", subreddit, limit)
+		if after != "" {
+			postsURL += "&after=" + after
+		}
+
+		resp, err = authenticatedGet(postsURL)
+		if err != nil {
+			log.Printf("⚠️ Failed to fetch posts for subreddit %s: %v", subreddit, err)
+			return &aboutWrapper.Data, allPosts, err
+		}
+
+		var postsWrapper struct {
+			Data struct {
+				Children []struct {
+					Data Post `json:"data"`
+				} `json:"children"`
+				After string `json:"after"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&postsWrapper); err != nil {
+			log.Printf("⚠️ Failed to decode posts for subreddit %s: %v", subreddit, err)
+			return &aboutWrapper.Data, allPosts, err
+		}
+		resp.Body.Close()
+
+		// Add new posts to our collection
+		for _, child := range postsWrapper.Data.Children {
+			allPosts = append(allPosts, child.Data)
+			if len(allPosts) >= targetPosts {
+				break
+			}
+		}
+
+		// If no more posts or no after token, we're done
+		if postsWrapper.Data.After == "" || len(postsWrapper.Data.Children) == 0 {
+			break
+		}
+		after = postsWrapper.Data.After
+
+		// Be nice to Reddit's API
+		time.Sleep(1 * time.Second)
 	}
 
-	posts := make([]Post, len(postsWrapper.Data.Children))
-	for i, child := range postsWrapper.Data.Children {
-		posts[i] = child.Data
-	}
-
-	return &aboutWrapper.Data, posts, nil
+	log.Printf("📥 Fetched %d posts from r/%s", len(allPosts), subreddit)
+	return &aboutWrapper.Data, allPosts, nil
 }
 
 
