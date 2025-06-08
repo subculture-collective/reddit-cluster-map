@@ -56,6 +56,24 @@ func (q *Queries) ClearGraphTables(ctx context.Context) error {
 	return err
 }
 
+const clearSubredditRelationships = `-- name: ClearSubredditRelationships :exec
+TRUNCATE TABLE subreddit_relationships
+`
+
+func (q *Queries) ClearSubredditRelationships(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearSubredditRelationships)
+	return err
+}
+
+const clearUserSubredditActivity = `-- name: ClearUserSubredditActivity :exec
+TRUNCATE TABLE user_subreddit_activity
+`
+
+func (q *Queries) ClearUserSubredditActivity(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearUserSubredditActivity)
+	return err
+}
+
 const createGraphLink = `-- name: CreateGraphLink :one
 INSERT INTO graph_links (
     source,
@@ -114,6 +132,66 @@ func (q *Queries) CreateGraphNode(ctx context.Context, arg CreateGraphNodeParams
 		&i.Name,
 		&i.Val,
 		&i.Type,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createSubredditRelationship = `-- name: CreateSubredditRelationship :one
+INSERT INTO subreddit_relationships (
+    source_subreddit_id,
+    target_subreddit_id,
+    overlap_count
+) VALUES (
+    $1, $2, $3
+) RETURNING id, source_subreddit_id, target_subreddit_id, overlap_count, created_at, updated_at
+`
+
+type CreateSubredditRelationshipParams struct {
+	SourceSubredditID int32
+	TargetSubredditID int32
+	OverlapCount      int32
+}
+
+func (q *Queries) CreateSubredditRelationship(ctx context.Context, arg CreateSubredditRelationshipParams) (SubredditRelationship, error) {
+	row := q.db.QueryRowContext(ctx, createSubredditRelationship, arg.SourceSubredditID, arg.TargetSubredditID, arg.OverlapCount)
+	var i SubredditRelationship
+	err := row.Scan(
+		&i.ID,
+		&i.SourceSubredditID,
+		&i.TargetSubredditID,
+		&i.OverlapCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createUserSubredditActivity = `-- name: CreateUserSubredditActivity :one
+INSERT INTO user_subreddit_activity (
+    user_id,
+    subreddit_id,
+    activity_count
+) VALUES (
+    $1, $2, $3
+) RETURNING id, user_id, subreddit_id, activity_count, created_at, updated_at
+`
+
+type CreateUserSubredditActivityParams struct {
+	UserID        int32
+	SubredditID   int32
+	ActivityCount int32
+}
+
+func (q *Queries) CreateUserSubredditActivity(ctx context.Context, arg CreateUserSubredditActivityParams) (UserSubredditActivity, error) {
+	row := q.db.QueryRowContext(ctx, createUserSubredditActivity, arg.UserID, arg.SubredditID, arg.ActivityCount)
+	var i UserSubredditActivity
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.SubredditID,
+		&i.ActivityCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -194,48 +272,128 @@ func (q *Queries) GetAllPosts(ctx context.Context) ([]GetAllPostsRow, error) {
 	return items, nil
 }
 
-const getGraphData = `-- name: GetGraphData :many
-SELECT 
-    'node'::TEXT as data_type,
-    id::TEXT as id,
-    name,
-    val::TEXT as val,
-    type
-FROM graph_nodes
-UNION ALL
-SELECT 
-    'link'::TEXT as data_type,
-    source::TEXT as id,
-    target::TEXT as name,
-    '1'::TEXT as val,
-    'connection'::TEXT as type
-FROM graph_links
+const getAllSubredditRelationships = `-- name: GetAllSubredditRelationships :many
+SELECT source_subreddit_id, target_subreddit_id, overlap_count
+FROM subreddit_relationships
 `
 
-type GetGraphDataRow struct {
-	DataType string
-	ID       string
-	Name     string
-	Val      string
-	Type     sql.NullString
+type GetAllSubredditRelationshipsRow struct {
+	SourceSubredditID int32
+	TargetSubredditID int32
+	OverlapCount      int32
 }
 
-func (q *Queries) GetGraphData(ctx context.Context) ([]GetGraphDataRow, error) {
-	rows, err := q.db.QueryContext(ctx, getGraphData)
+func (q *Queries) GetAllSubredditRelationships(ctx context.Context) ([]GetAllSubredditRelationshipsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAllSubredditRelationships)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetGraphDataRow
+	var items []GetAllSubredditRelationshipsRow
 	for rows.Next() {
-		var i GetGraphDataRow
-		if err := rows.Scan(
-			&i.DataType,
-			&i.ID,
-			&i.Name,
-			&i.Val,
-			&i.Type,
-		); err != nil {
+		var i GetAllSubredditRelationshipsRow
+		if err := rows.Scan(&i.SourceSubredditID, &i.TargetSubredditID, &i.OverlapCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllSubreddits = `-- name: GetAllSubreddits :many
+SELECT id, name, subscribers
+FROM subreddits
+`
+
+type GetAllSubredditsRow struct {
+	ID          int32
+	Name        string
+	Subscribers sql.NullInt32
+}
+
+func (q *Queries) GetAllSubreddits(ctx context.Context) ([]GetAllSubredditsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAllSubreddits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAllSubredditsRow
+	for rows.Next() {
+		var i GetAllSubredditsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Subscribers); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllUserSubredditActivity = `-- name: GetAllUserSubredditActivity :many
+SELECT user_id, subreddit_id, activity_count
+FROM user_subreddit_activity
+`
+
+type GetAllUserSubredditActivityRow struct {
+	UserID        int32
+	SubredditID   int32
+	ActivityCount int32
+}
+
+func (q *Queries) GetAllUserSubredditActivity(ctx context.Context) ([]GetAllUserSubredditActivityRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAllUserSubredditActivity)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAllUserSubredditActivityRow
+	for rows.Next() {
+		var i GetAllUserSubredditActivityRow
+		if err := rows.Scan(&i.UserID, &i.SubredditID, &i.ActivityCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllUsers = `-- name: GetAllUsers :many
+SELECT id, username
+FROM users
+`
+
+type GetAllUsersRow struct {
+	ID       int32
+	Username string
+}
+
+func (q *Queries) GetAllUsers(ctx context.Context) ([]GetAllUsersRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAllUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAllUsersRow
+	for rows.Next() {
+		var i GetAllUsersRow
+		if err := rows.Scan(&i.ID, &i.Username); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -254,7 +412,7 @@ SELECT
     'node' as data_type,
     id,
     name,
-    val,
+    val::TEXT as val,
     type,
     NULL as source,
     NULL as target
@@ -264,7 +422,7 @@ SELECT
     'link' as data_type,
     id::text,
     NULL as name,
-    NULL as val,
+    NULL::TEXT as val,
     NULL as type,
     source,
     target
@@ -276,7 +434,7 @@ type GetPrecalculatedGraphDataRow struct {
 	DataType string
 	ID       string
 	Name     string
-	Val      sql.NullString
+	Val      string
 	Type     sql.NullString
 	Source   interface{}
 	Target   interface{}
@@ -311,4 +469,113 @@ func (q *Queries) GetPrecalculatedGraphData(ctx context.Context) ([]GetPrecalcul
 		return nil, err
 	}
 	return items, nil
+}
+
+const getSubredditOverlap = `-- name: GetSubredditOverlap :one
+WITH user_activity AS (
+    SELECT DISTINCT p.author_id
+    FROM posts p
+    WHERE p.subreddit_id = $1
+    UNION
+    SELECT DISTINCT c.author_id
+    FROM comments c
+    WHERE c.subreddit_id = $1
+),
+other_activity AS (
+    SELECT DISTINCT p.author_id
+    FROM posts p
+    WHERE p.subreddit_id = $2
+    UNION
+    SELECT DISTINCT c.author_id
+    FROM comments c
+    WHERE c.subreddit_id = $2
+)
+SELECT COUNT(*)
+FROM user_activity ua
+JOIN other_activity oa ON ua.author_id = oa.author_id
+`
+
+type GetSubredditOverlapParams struct {
+	SubredditID   int32
+	SubredditID_2 int32
+}
+
+func (q *Queries) GetSubredditOverlap(ctx context.Context, arg GetSubredditOverlapParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getSubredditOverlap, arg.SubredditID, arg.SubredditID_2)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getUserSubredditActivityCount = `-- name: GetUserSubredditActivityCount :one
+SELECT (
+    (SELECT COUNT(*) FROM posts p WHERE p.author_id = $1 AND p.subreddit_id = $2) +
+    (SELECT COUNT(*) FROM comments c WHERE c.author_id = $1 AND c.subreddit_id = $2)
+) as activity_count
+`
+
+type GetUserSubredditActivityCountParams struct {
+	AuthorID    int32
+	SubredditID int32
+}
+
+func (q *Queries) GetUserSubredditActivityCount(ctx context.Context, arg GetUserSubredditActivityCountParams) (int32, error) {
+	row := q.db.QueryRowContext(ctx, getUserSubredditActivityCount, arg.AuthorID, arg.SubredditID)
+	var activity_count int32
+	err := row.Scan(&activity_count)
+	return activity_count, err
+}
+
+const getUserSubreddits = `-- name: GetUserSubreddits :many
+SELECT DISTINCT s.id, s.name
+FROM subreddits s
+JOIN posts p ON p.subreddit_id = s.id
+WHERE p.author_id = $1
+UNION
+SELECT DISTINCT s.id, s.name
+FROM subreddits s
+JOIN comments c ON c.subreddit_id = s.id
+WHERE c.author_id = $1
+`
+
+type GetUserSubredditsRow struct {
+	ID   int32
+	Name string
+}
+
+func (q *Queries) GetUserSubreddits(ctx context.Context, authorID int32) ([]GetUserSubredditsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUserSubreddits, authorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserSubredditsRow
+	for rows.Next() {
+		var i GetUserSubredditsRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUserTotalActivity = `-- name: GetUserTotalActivity :one
+SELECT (
+    (SELECT COUNT(*) FROM posts p WHERE p.author_id = $1) +
+    (SELECT COUNT(*) FROM comments c WHERE c.author_id = $1)
+) as total_activity
+`
+
+func (q *Queries) GetUserTotalActivity(ctx context.Context, authorID int32) (int32, error) {
+	row := q.db.QueryRowContext(ctx, getUserTotalActivity, authorID)
+	var total_activity int32
+	err := row.Scan(&total_activity)
+	return total_activity, err
 }

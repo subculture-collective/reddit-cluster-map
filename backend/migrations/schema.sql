@@ -1,5 +1,6 @@
 CREATE TABLE subreddits (
-    name TEXT PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
     title TEXT,
     description TEXT,
     subscribers INT,
@@ -8,7 +9,8 @@ CREATE TABLE subreddits (
 );
 
 CREATE TABLE users (
-    username TEXT PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now(),
     last_seen TIMESTAMPTZ DEFAULT now(),
     first_seen TIMESTAMPTZ DEFAULT now()
@@ -16,8 +18,8 @@ CREATE TABLE users (
 
 CREATE TABLE posts (
     id TEXT PRIMARY KEY,
-    subreddit TEXT NOT NULL REFERENCES subreddits(name),
-    author TEXT NOT NULL REFERENCES users(username),
+    subreddit_id INTEGER NOT NULL REFERENCES subreddits(id),
+    author_id INTEGER NOT NULL REFERENCES users(id),
     title TEXT,
     selftext TEXT,
     permalink TEXT,
@@ -29,14 +31,14 @@ CREATE TABLE posts (
     last_seen TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_posts_subreddit ON posts(subreddit);
-CREATE INDEX idx_posts_author ON posts(author);
+CREATE INDEX idx_posts_subreddit_id ON posts(subreddit_id);
+CREATE INDEX idx_posts_author_id ON posts(author_id);
 
 CREATE TABLE comments (
     id TEXT PRIMARY KEY,
     post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-    author TEXT NOT NULL REFERENCES users(username),
-    subreddit TEXT NOT NULL REFERENCES subreddits(name),
+    author_id INTEGER NOT NULL REFERENCES users(id),
+    subreddit_id INTEGER NOT NULL REFERENCES subreddits(id),
     parent_id TEXT,
     body TEXT,
     created_at TIMESTAMPTZ,
@@ -47,12 +49,12 @@ CREATE TABLE comments (
 
 CREATE INDEX idx_comments_parent_id ON comments(parent_id);
 CREATE INDEX idx_comments_post_id ON comments(post_id);
-CREATE INDEX idx_comments_author ON comments(author);
-CREATE INDEX idx_comments_subreddit ON comments(subreddit);
+CREATE INDEX idx_comments_author_id ON comments(author_id);
+CREATE INDEX idx_comments_subreddit_id ON comments(subreddit_id);
 
 CREATE TABLE crawl_jobs (
   id SERIAL PRIMARY KEY,
-  subreddit TEXT NOT NULL UNIQUE,
+  subreddit_id INTEGER NOT NULL REFERENCES subreddits(id) UNIQUE,
   status TEXT NOT NULL DEFAULT 'queued', -- queued, crawling, success, failed
   retries INT DEFAULT 0,
   last_attempt TIMESTAMPTZ DEFAULT now(),
@@ -63,7 +65,7 @@ CREATE TABLE crawl_jobs (
 );
 
 CREATE INDEX idx_crawl_jobs_status ON crawl_jobs(status);
-CREATE INDEX idx_crawl_jobs_subreddit ON crawl_jobs(subreddit);
+CREATE INDEX idx_crawl_jobs_subreddit_id ON crawl_jobs(subreddit_id);
 
 CREATE TABLE graph_nodes (
     id TEXT PRIMARY KEY,
@@ -90,11 +92,10 @@ CREATE TABLE graph_links (
 CREATE INDEX idx_graph_links_source ON graph_links(source);
 CREATE INDEX idx_graph_links_target ON graph_links(target);
 
--- New tables from migrations
 CREATE TABLE subreddit_relationships (
     id SERIAL PRIMARY KEY,
-    source_subreddit_id INTEGER,
-    target_subreddit_id INTEGER,
+    source_subreddit_id INTEGER NOT NULL REFERENCES subreddits(id),
+    target_subreddit_id INTEGER NOT NULL REFERENCES subreddits(id),
     overlap_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -107,8 +108,8 @@ CREATE INDEX idx_subreddit_relationships_composite ON subreddit_relationships(so
 
 CREATE TABLE user_subreddit_activity (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER,
-    subreddit_id INTEGER,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    subreddit_id INTEGER NOT NULL REFERENCES subreddits(id),
     activity_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

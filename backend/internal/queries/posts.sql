@@ -1,23 +1,11 @@
--- name: InsertPost :exec
-INSERT INTO posts (id, author, subreddit, title, permalink, created_at, score, flair, url, is_self)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT DO NOTHING;
-
--- name: GetPostsBySubreddit :many
-SELECT * FROM posts WHERE subreddit = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3;
-
--- name: GetPostsByUser :many
-SELECT * FROM posts WHERE author = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3;
-
--- name: ListPosts :many
-SELECT * FROM posts ORDER BY created_at DESC LIMIT 100;
-
 -- name: UpsertPost :exec
-INSERT INTO posts (id, author, subreddit, title, permalink, created_at, score, flair, url, is_self)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT (id) DO UPDATE
-SET
+INSERT INTO posts (id, subreddit_id, author_id, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
+ON CONFLICT (id) DO UPDATE SET
+  subreddit_id = EXCLUDED.subreddit_id,
+  author_id = EXCLUDED.author_id,
   title = EXCLUDED.title,
+  selftext = EXCLUDED.selftext,
   permalink = EXCLUDED.permalink,
   created_at = EXCLUDED.created_at,
   score = EXCLUDED.score,
@@ -25,3 +13,9 @@ SET
   url = EXCLUDED.url,
   is_self = EXCLUDED.is_self,
   last_seen = now();
+
+-- name: GetPost :one
+SELECT * FROM posts WHERE id = $1;
+
+-- name: ListPostsBySubreddit :many
+SELECT * FROM posts WHERE subreddit_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3;

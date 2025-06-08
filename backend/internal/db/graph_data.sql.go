@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 )
 
-const getGraphData2 = `-- name: GetGraphData2 :many
+const getGraphData = `-- name: GetGraphData :many
 WITH subreddit_nodes AS (
     SELECT 
         'subreddit_' || id as id,
@@ -23,7 +23,8 @@ user_nodes AS (
     SELECT 
         'user_' || id as id,
         username as name,
-        comment_count + post_count as val,
+        (SELECT COUNT(*) FROM comments WHERE author_id = users.id) + 
+        (SELECT COUNT(*) FROM posts WHERE author_id = users.id) as val,
         'user' as type
     FROM users
 ),
@@ -66,8 +67,8 @@ SELECT
     ) as graph_data
 `
 
-func (q *Queries) GetGraphData2(ctx context.Context) ([]json.RawMessage, error) {
-	rows, err := q.db.QueryContext(ctx, getGraphData2)
+func (q *Queries) GetGraphData(ctx context.Context) ([]json.RawMessage, error) {
+	rows, err := q.db.QueryContext(ctx, getGraphData)
 	if err != nil {
 		return nil, err
 	}

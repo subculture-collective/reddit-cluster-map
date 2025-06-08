@@ -3,15 +3,14 @@ package crawler
 import (
 	"context"
 	"database/sql"
-	"errors"
+
 	"fmt"
 	"log"
-	"os"
+
 	"time"
 
 	_ "github.com/lib/pq" // Import the postgres driver
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
-	"github.com/onnwee/reddit-cluster-map/backend/internal/utils"
 )
 
 // checkAndRequeueStaleSubreddits checks for subreddits that haven't been crawled in 7 days
@@ -24,7 +23,17 @@ func checkAndRequeueStaleSubreddits(ctx context.Context, q *db.Queries) error {
 
 	for _, sub := range staleSubs {
 		log.Printf("🔄 Requeueing stale subreddit: r/%s", sub)
-		if err := q.EnqueueCrawlJob(ctx, sub); err != nil {
+		// Get subreddit ID
+		subreddit, err := q.GetSubreddit(ctx, sub)
+		if err != nil {
+			log.Printf("⚠️ Failed to get subreddit r/%s: %v", sub, err)
+			continue
+		}
+
+		if err := q.EnqueueCrawlJob(ctx, db.EnqueueCrawlJobParams{
+			SubredditID: subreddit.ID,
+			EnqueuedBy:  sql.NullString{String: "system", Valid: true},
+		}); err != nil {
 			log.Printf("⚠️ Failed to requeue stale subreddit r/%s: %v", sub, err)
 		}
 	}
@@ -32,108 +41,56 @@ func checkAndRequeueStaleSubreddits(ctx context.Context, q *db.Queries) error {
 	return nil
 }
 
-func StartCrawlWorker(ctx context.Context, q *db.Queries) {
-	log.Printf("🔁 Starting crawl worker...")
+// Crawler represents a Reddit crawler instance
+type Crawler struct {
+	queries *db.Queries
+	stop    chan struct{}
+}
 
-	defaultSubs := utils.GetEnvAsSlice("DEFAULT_SUBREDDITS", []string{
-		"AskReddit", "politics", "technology", "worldnews", "gaming",
-	}, ",")
+// NewCrawler creates a new crawler instance
+func NewCrawler(q *db.Queries) *Crawler {
+	return &Crawler{
+		queries: q,
+		stop:    make(chan struct{}),
+	}
+}
 
-	// Check for stale subreddits every hour
-	ticker := time.NewTicker(1 * time.Hour)
+// Start begins the crawler process
+func (c *Crawler) Start(ctx context.Context) {
+	log.Println("🚀 Starting crawler...")
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
-		// Check if parent context is done
 		select {
 		case <-ctx.Done():
-			log.Println("🛑 Crawl worker exiting: context canceled")
+			log.Println("🛑 Crawler stopped by context")
+			return
+		case <-c.stop:
+			log.Println("🛑 Crawler stopped by signal")
 			return
 		case <-ticker.C:
-			if err := checkAndRequeueStaleSubreddits(ctx, q); err != nil {
-				log.Printf("⚠️ Failed to check stale subreddits: %v", err)
+			if err := c.processNextJob(ctx); err != nil {
+				log.Printf("⚠️ Error processing job: %v", err)
 			}
-		default:
-		}
-
-		// Use a short timeout on each job fetch to allow periodic context cancellation checks
-		jobCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-
-		job, err := q.GetNextCrawlJob(jobCtx)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				log.Println("🟡 No crawl jobs available.")
-				time.Sleep(time.Second * 5)
-				continue
-			}
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				continue
-			}
-			log.Printf("❌ Failed to get next crawl job: %v", err)
-			time.Sleep(time.Second * 5)
-			continue
-		}
-
-		if job.ID == 0 {
-			sub := utils.PickRandomString(defaultSubs)
-			log.Printf("🟡 No job found, using fallback: r/%s", sub)
-			_ = q.EnqueueCrawlJob(ctx, sub)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		log.Printf("🕷️ Crawling: %s (job #%d)", job.Subreddit, job.ID)
-		if err := q.MarkCrawlJobStarted(ctx, job.ID); err != nil {
-			log.Printf("⚠️ Failed to mark job as started: %v", err)
-			continue
-		}
-
-		if err := handleJob(ctx, q, job); err != nil {
-			log.Printf("❌ Job %d (r/%s) failed: %v", job.ID, job.Subreddit, err)
-			_ = q.MarkCrawlJobFailed(ctx, job.ID)
-		} else {
-			_ = q.MarkCrawlJobSuccess(ctx, job.ID)
 		}
 	}
 }
 
-// NewCrawler initializes and returns a new crawler instance.
-func NewCrawler() (*Crawler, error) {
-	// Initialize database connection
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		return nil, fmt.Errorf("DATABASE_URL environment variable is not set")
-	}
+// Stop gracefully stops the crawler
+func (c *Crawler) Stop() {
+	close(c.stop)
+}
 
-	conn, err := sql.Open("postgres", dbURL)
+// processNextJob handles a single crawl job
+func (c *Crawler) processNextJob(ctx context.Context) error {
+	job, err := c.queries.GetNextCrawlJob(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return fmt.Errorf("failed to get next job: %w", err)
 	}
 
-	// Create a Queries instance
-	queries := db.New(conn)
-
-	return &Crawler{
-		queries: queries,
-	}, nil
-}
-
-// Crawler represents a crawler instance.
-type Crawler struct {
-	queries *db.Queries
-}
-
-// Start starts the crawler.
-func (c *Crawler) Start() error {
-	// Use the existing StartCrawlWorker function to start the crawler
-	ctx := context.Background()
-	StartCrawlWorker(ctx, c.queries)
-	return nil
-}
-
-// Stop stops the crawler.
-func (c *Crawler) Stop() error {
-	// Implement the stop logic here
-	return nil
+	return handleJob(ctx, c.queries, job)
 }

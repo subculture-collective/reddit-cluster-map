@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -40,6 +41,7 @@ type Post struct {
 	Flair      string    `json:"link_flair_text"`
 	CreatedAt  time.Time `json:"created_at"`
 	IsSelf     bool      `json:"is_self"`
+	Selftext   string    `json:"selftext"`
 }
 
 // Comment holds comment data from a Reddit thread
@@ -50,8 +52,8 @@ type Comment struct {
 	CreatedAt time.Time `json:"created_at"`
 	ParentID  string    `json:"parent_id"`
 	Depth     int       `json:"depth"`
+	Score     int       `json:"score"`
 }
-
 
 var seenUsers = struct {
 	m map[string]bool
@@ -109,29 +111,29 @@ func CrawlSubreddit(subreddit string) (*SubredditInfo, []Post, error) {
 	for len(allPosts) < targetPosts {
 		// Reddit API has a maximum limit of 100 per request
 		limit := 100
-		postsURL := fmt.Sprintf("https://oauth.reddit.com/r/%s/new?limit=%d", subreddit, limit)
+	postsURL := fmt.Sprintf("https://oauth.reddit.com/r/%s/new?limit=%d", subreddit, limit)
 		if after != "" {
 			postsURL += "&after=" + after
 		}
 
-		resp, err = authenticatedGet(postsURL)
-		if err != nil {
-			log.Printf("⚠️ Failed to fetch posts for subreddit %s: %v", subreddit, err)
+	resp, err = authenticatedGet(postsURL)
+	if err != nil {
+		log.Printf("⚠️ Failed to fetch posts for subreddit %s: %v", subreddit, err)
 			return &aboutWrapper.Data, allPosts, err
-		}
+	}
 
-		var postsWrapper struct {
-			Data struct {
-				Children []struct {
-					Data Post `json:"data"`
-				} `json:"children"`
+	var postsWrapper struct {
+		Data struct {
+			Children []struct {
+				Data Post `json:"data"`
+			} `json:"children"`
 				After string `json:"after"`
-			} `json:"data"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&postsWrapper); err != nil {
-			log.Printf("⚠️ Failed to decode posts for subreddit %s: %v", subreddit, err)
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&postsWrapper); err != nil {
+		log.Printf("⚠️ Failed to decode posts for subreddit %s: %v", subreddit, err)
 			return &aboutWrapper.Data, allPosts, err
-		}
+	}
 		resp.Body.Close()
 
 		// Add new posts to our collection
@@ -228,9 +230,22 @@ func FetchAndQueueUserSubreddits(ctx context.Context, q *db.Queries, username st
 
 	shuffled := utils.ShuffleStrings(subs)
 	count := 0
+	total := len(shuffled)
 
 	for _, sub := range shuffled {
-		exists, err := q.CrawlJobExists(ctx, sub)
+		// Get or create subreddit
+		subredditID, err := q.UpsertSubreddit(ctx, db.UpsertSubredditParams{
+			Name:        sub,
+			Title:       sql.NullString{String: sub, Valid: true},
+			Description: sql.NullString{String: "", Valid: true},
+			Subscribers: sql.NullInt32{Int32: 0, Valid: true},
+		})
+		if err != nil {
+			log.Printf("⚠️ Failed to upsert subreddit r/%s: %v", sub, err)
+			continue
+		}
+
+		exists, err := q.CrawlJobExists(ctx, subredditID)
 		if err != nil {
 			log.Printf("⚠️ Failed to check if job exists for r/%s: %v", sub, err)
 			continue
@@ -239,8 +254,10 @@ func FetchAndQueueUserSubreddits(ctx context.Context, q *db.Queries, username st
 			continue
 		}
 
-		if err := q.EnqueueCrawlJob(ctx, sub); err == nil {
-			
+		if err := q.EnqueueCrawlJob(ctx, db.EnqueueCrawlJobParams{
+			SubredditID: subredditID,
+			EnqueuedBy:  sql.NullString{String: "system", Valid: true},
+		}); err == nil {
 			count++
 			if count >= config.MaxEnqueue {
 				break
@@ -248,13 +265,18 @@ func FetchAndQueueUserSubreddits(ctx context.Context, q *db.Queries, username st
 		}
 	}
 
-	log.Printf("📬 Enqueued %d new subs from u/%s", count, username)
+	log.Printf("📬 Enqueued %d/%d new subs from u/%s", count, total, username)
 }
 
 // FetchAndQueueUserSubredditsForAuthors processes a list of authors and queues subs for each.
 func FetchAndQueueUserSubredditsForAuthors(ctx context.Context, q *db.Queries, authors []string, config FetchUserSubredditsConfig) {
+	total := len(authors)
+	processed := 0
+
 	for _, author := range authors {
 		FetchAndQueueUserSubreddits(ctx, q, author, config)
+		processed++
+		log.Printf("👥 Processed %d/%d users", processed, total)
 	}
 }
 

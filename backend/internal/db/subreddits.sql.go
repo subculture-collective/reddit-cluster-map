@@ -40,13 +40,33 @@ func (q *Queries) GetStaleSubreddits(ctx context.Context) ([]string, error) {
 }
 
 const getSubreddit = `-- name: GetSubreddit :one
-SELECT name, title, description, subscribers, created_at, last_seen FROM subreddits WHERE name = $1
+SELECT id, name, title, description, subscribers, created_at, last_seen FROM subreddits WHERE name = $1
 `
 
 func (q *Queries) GetSubreddit(ctx context.Context, name string) (Subreddit, error) {
 	row := q.db.QueryRowContext(ctx, getSubreddit, name)
 	var i Subreddit
 	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Title,
+		&i.Description,
+		&i.Subscribers,
+		&i.CreatedAt,
+		&i.LastSeen,
+	)
+	return i, err
+}
+
+const getSubredditByID = `-- name: GetSubredditByID :one
+SELECT id, name, title, description, subscribers, created_at, last_seen FROM subreddits WHERE id = $1
+`
+
+func (q *Queries) GetSubredditByID(ctx context.Context, id int32) (Subreddit, error) {
+	row := q.db.QueryRowContext(ctx, getSubredditByID, id)
+	var i Subreddit
+	err := row.Scan(
+		&i.ID,
 		&i.Name,
 		&i.Title,
 		&i.Description,
@@ -58,7 +78,7 @@ func (q *Queries) GetSubreddit(ctx context.Context, name string) (Subreddit, err
 }
 
 const listSubreddits = `-- name: ListSubreddits :many
-SELECT name, title, description, subscribers, created_at, last_seen FROM subreddits ORDER BY last_seen DESC LIMIT $1 OFFSET $2
+SELECT id, name, title, description, subscribers, created_at, last_seen FROM subreddits ORDER BY last_seen DESC LIMIT $1 OFFSET $2
 `
 
 type ListSubredditsParams struct {
@@ -76,6 +96,7 @@ func (q *Queries) ListSubreddits(ctx context.Context, arg ListSubredditsParams) 
 	for rows.Next() {
 		var i Subreddit
 		if err := rows.Scan(
+			&i.ID,
 			&i.Name,
 			&i.Title,
 			&i.Description,
@@ -105,14 +126,15 @@ func (q *Queries) TouchSubreddit(ctx context.Context, name string) error {
 	return err
 }
 
-const upsertSubreddit = `-- name: UpsertSubreddit :exec
-INSERT INTO subreddits (name, title, description, subscribers, last_seen)
-VALUES ($1, $2, $3, $4, now())
+const upsertSubreddit = `-- name: UpsertSubreddit :one
+INSERT INTO subreddits (name, title, description, subscribers, created_at, last_seen)
+VALUES ($1, $2, $3, $4, now(), now())
 ON CONFLICT (name) DO UPDATE SET
   title = EXCLUDED.title,
   description = EXCLUDED.description,
   subscribers = EXCLUDED.subscribers,
   last_seen = now()
+RETURNING id
 `
 
 type UpsertSubredditParams struct {
@@ -122,12 +144,14 @@ type UpsertSubredditParams struct {
 	Subscribers sql.NullInt32
 }
 
-func (q *Queries) UpsertSubreddit(ctx context.Context, arg UpsertSubredditParams) error {
-	_, err := q.db.ExecContext(ctx, upsertSubreddit,
+func (q *Queries) UpsertSubreddit(ctx context.Context, arg UpsertSubredditParams) (int32, error) {
+	row := q.db.QueryRowContext(ctx, upsertSubreddit,
 		arg.Name,
 		arg.Title,
 		arg.Description,
 		arg.Subscribers,
 	)
-	return err
+	var id int32
+	err := row.Scan(&id)
+	return id, err
 }

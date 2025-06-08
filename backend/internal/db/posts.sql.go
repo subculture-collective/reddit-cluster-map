@@ -10,139 +10,42 @@ import (
 	"database/sql"
 )
 
-const getPostsBySubreddit = `-- name: GetPostsBySubreddit :many
-SELECT id, subreddit, author, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen FROM posts WHERE subreddit = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
+const getPost = `-- name: GetPost :one
+SELECT id, subreddit_id, author_id, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen FROM posts WHERE id = $1
 `
 
-type GetPostsBySubredditParams struct {
-	Subreddit string
-	Limit     int32
-	Offset    int32
-}
-
-func (q *Queries) GetPostsBySubreddit(ctx context.Context, arg GetPostsBySubredditParams) ([]Post, error) {
-	rows, err := q.db.QueryContext(ctx, getPostsBySubreddit, arg.Subreddit, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Post
-	for rows.Next() {
-		var i Post
-		if err := rows.Scan(
-			&i.ID,
-			&i.Subreddit,
-			&i.Author,
-			&i.Title,
-			&i.Selftext,
-			&i.Permalink,
-			&i.CreatedAt,
-			&i.Score,
-			&i.Flair,
-			&i.Url,
-			&i.IsSelf,
-			&i.LastSeen,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getPostsByUser = `-- name: GetPostsByUser :many
-SELECT id, subreddit, author, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen FROM posts WHERE author = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
-`
-
-type GetPostsByUserParams struct {
-	Author string
-	Limit  int32
-	Offset int32
-}
-
-func (q *Queries) GetPostsByUser(ctx context.Context, arg GetPostsByUserParams) ([]Post, error) {
-	rows, err := q.db.QueryContext(ctx, getPostsByUser, arg.Author, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Post
-	for rows.Next() {
-		var i Post
-		if err := rows.Scan(
-			&i.ID,
-			&i.Subreddit,
-			&i.Author,
-			&i.Title,
-			&i.Selftext,
-			&i.Permalink,
-			&i.CreatedAt,
-			&i.Score,
-			&i.Flair,
-			&i.Url,
-			&i.IsSelf,
-			&i.LastSeen,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const insertPost = `-- name: InsertPost :exec
-INSERT INTO posts (id, author, subreddit, title, permalink, created_at, score, flair, url, is_self)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT DO NOTHING
-`
-
-type InsertPostParams struct {
-	ID        string
-	Author    string
-	Subreddit string
-	Title     sql.NullString
-	Permalink sql.NullString
-	CreatedAt sql.NullTime
-	Score     sql.NullInt32
-	Flair     sql.NullString
-	Url       sql.NullString
-	IsSelf    sql.NullBool
-}
-
-func (q *Queries) InsertPost(ctx context.Context, arg InsertPostParams) error {
-	_, err := q.db.ExecContext(ctx, insertPost,
-		arg.ID,
-		arg.Author,
-		arg.Subreddit,
-		arg.Title,
-		arg.Permalink,
-		arg.CreatedAt,
-		arg.Score,
-		arg.Flair,
-		arg.Url,
-		arg.IsSelf,
+func (q *Queries) GetPost(ctx context.Context, id string) (Post, error) {
+	row := q.db.QueryRowContext(ctx, getPost, id)
+	var i Post
+	err := row.Scan(
+		&i.ID,
+		&i.SubredditID,
+		&i.AuthorID,
+		&i.Title,
+		&i.Selftext,
+		&i.Permalink,
+		&i.CreatedAt,
+		&i.Score,
+		&i.Flair,
+		&i.Url,
+		&i.IsSelf,
+		&i.LastSeen,
 	)
-	return err
+	return i, err
 }
 
-const listPosts = `-- name: ListPosts :many
-SELECT id, subreddit, author, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen FROM posts ORDER BY created_at DESC LIMIT 100
+const listPostsBySubreddit = `-- name: ListPostsBySubreddit :many
+SELECT id, subreddit_id, author_id, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen FROM posts WHERE subreddit_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
-func (q *Queries) ListPosts(ctx context.Context) ([]Post, error) {
-	rows, err := q.db.QueryContext(ctx, listPosts)
+type ListPostsBySubredditParams struct {
+	SubredditID int32
+	Limit       int32
+	Offset      int32
+}
+
+func (q *Queries) ListPostsBySubreddit(ctx context.Context, arg ListPostsBySubredditParams) ([]Post, error) {
+	rows, err := q.db.QueryContext(ctx, listPostsBySubreddit, arg.SubredditID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -152,8 +55,8 @@ func (q *Queries) ListPosts(ctx context.Context) ([]Post, error) {
 		var i Post
 		if err := rows.Scan(
 			&i.ID,
-			&i.Subreddit,
-			&i.Author,
+			&i.SubredditID,
+			&i.AuthorID,
 			&i.Title,
 			&i.Selftext,
 			&i.Permalink,
@@ -178,11 +81,13 @@ func (q *Queries) ListPosts(ctx context.Context) ([]Post, error) {
 }
 
 const upsertPost = `-- name: UpsertPost :exec
-INSERT INTO posts (id, author, subreddit, title, permalink, created_at, score, flair, url, is_self)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT (id) DO UPDATE
-SET
+INSERT INTO posts (id, subreddit_id, author_id, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
+ON CONFLICT (id) DO UPDATE SET
+  subreddit_id = EXCLUDED.subreddit_id,
+  author_id = EXCLUDED.author_id,
   title = EXCLUDED.title,
+  selftext = EXCLUDED.selftext,
   permalink = EXCLUDED.permalink,
   created_at = EXCLUDED.created_at,
   score = EXCLUDED.score,
@@ -193,24 +98,26 @@ SET
 `
 
 type UpsertPostParams struct {
-	ID        string
-	Author    string
-	Subreddit string
-	Title     sql.NullString
-	Permalink sql.NullString
-	CreatedAt sql.NullTime
-	Score     sql.NullInt32
-	Flair     sql.NullString
-	Url       sql.NullString
-	IsSelf    sql.NullBool
+	ID          string
+	SubredditID int32
+	AuthorID    int32
+	Title       sql.NullString
+	Selftext    sql.NullString
+	Permalink   sql.NullString
+	CreatedAt   sql.NullTime
+	Score       sql.NullInt32
+	Flair       sql.NullString
+	Url         sql.NullString
+	IsSelf      sql.NullBool
 }
 
 func (q *Queries) UpsertPost(ctx context.Context, arg UpsertPostParams) error {
 	_, err := q.db.ExecContext(ctx, upsertPost,
 		arg.ID,
-		arg.Author,
-		arg.Subreddit,
+		arg.SubredditID,
+		arg.AuthorID,
 		arg.Title,
+		arg.Selftext,
 		arg.Permalink,
 		arg.CreatedAt,
 		arg.Score,
