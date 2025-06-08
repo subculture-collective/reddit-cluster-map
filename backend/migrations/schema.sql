@@ -68,7 +68,7 @@ CREATE INDEX idx_crawl_jobs_subreddit ON crawl_jobs(subreddit);
 CREATE TABLE graph_nodes (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    val INTEGER,
+    val TEXT,
     type TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -122,12 +122,12 @@ CREATE INDEX idx_user_subreddit_activity_composite ON user_subreddit_activity(us
 CREATE TABLE graph_data (
     id SERIAL PRIMARY KEY,
     data_type TEXT NOT NULL,
-    node_id BIGINT,
+    node_id TEXT,
     node_name TEXT,
-    node_value INTEGER,
+    node_value TEXT,
     node_type TEXT,
-    source BIGINT,
-    target BIGINT,
+    source TEXT,
+    target TEXT,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

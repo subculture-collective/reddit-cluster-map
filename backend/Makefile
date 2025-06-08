@@ -13,7 +13,7 @@ DB_NAME = reddit_cluster
 
 # Reset and migrate database
 reset:
-	docker compose down -v
+	docker compose down
 	docker compose up -d
 
 migrate:
@@ -41,11 +41,6 @@ logs-crawler:
 logs-all:
 	docker compose logs -f
 
-# Drop all containers and volumes
-drop:
-	docker compose down -v
-
-# Kickstart: reset and migrate
 test-crawl:
 	curl -v -X POST https://reddit-cluster-map.onnwee.me/api/crawl \
 	  -H "Content-Type: application/json" \
@@ -58,4 +53,4 @@ stop-crawler:
 	docker compose stop crawler
 
 precalculate:
-	go run ./cmd/precalculate
+	docker compose run --rm precalculate go run ./cmd/precalculate

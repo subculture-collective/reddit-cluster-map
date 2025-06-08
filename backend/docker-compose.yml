@@ -7,11 +7,13 @@ services:
         ports:
             - '8000:8000'
         environment:
-            - DATABASE_URL=postgres://postgres:7onr1MC%2FO2DLEjIr7lqCNE125o6Wd5Phmh6z3mioipE%3D@db:5432/reddit_cluster?sslmode=disable
+            - DATABASE_URL=${DATABASE_URL}
         depends_on:
             - db
         networks:
             - web
+        env_file:
+            - .env
 
     crawler:
         build:
@@ -19,7 +21,7 @@ services:
             dockerfile: Dockerfile
         command: go run ./cmd/crawler
         environment:
-            - DATABASE_URL=postgres://postgres:7onr1MC%2FO2DLEjIr7lqCNE125o6Wd5Phmh6z3mioipE%3D@db:5432/reddit_cluster?sslmode=disable
+            - DATABASE_URL=${DATABASE_URL}
         depends_on:
             - db
         networks:
@@ -30,9 +32,9 @@ services:
     db:
         image: postgres:latest
         environment:
-            - POSTGRES_USER=postgres
-            - POSTGRES_PASSWORD=7onr1MC/O2DLEjIr7lqCNE125o6Wd5Phmh6z3mioipE=
-            - POSTGRES_DB=reddit_cluster
+            - POSTGRES_USER=${POSTGRES_USER}
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            - POSTGRES_DB=${POSTGRES_DB}
         ports:
             - '5432:5432'
         volumes:
@@ -40,6 +42,8 @@ services:
             - ./migrations/schema.sql:/docker-entrypoint-initdb.d/migrations/schema.sql
         networks:
             - web
+        env_file:
+            - .env
 
     precalculate:
         build:
