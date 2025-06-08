@@ -1,7 +1,12 @@
 -- name: EnqueueCrawlJob :exec
 INSERT INTO crawl_jobs (subreddit, status, created_at, updated_at)
 VALUES ($1, 'queued', now(), now())
-ON CONFLICT (subreddit) DO NOTHING;
+ON CONFLICT (subreddit) DO UPDATE SET
+  status = 'queued',
+  retries = 0,
+  last_attempt = NULL,
+  duration_ms = NULL,
+  updated_at = now();
 
 -- name: GetNextCrawlJob :one
 SELECT * FROM crawl_jobs
