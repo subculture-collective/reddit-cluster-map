@@ -1,5 +1,3 @@
-version: '3'
-
 services:
     api:
         build:
@@ -7,11 +5,13 @@ services:
             dockerfile: Dockerfile
         command: go run ./cmd/server
         ports:
-            - '8080:8080'
+            - '8000:8000'
         environment:
             - DATABASE_URL=postgres://postgres:7onr1MC%2FO2DLEjIr7lqCNE125o6Wd5Phmh6z3mioipE%3D@db:5432/reddit_cluster?sslmode=disable
         depends_on:
             - db
+        networks:
+            - web
 
     crawler:
         build:
@@ -22,6 +22,10 @@ services:
             - DATABASE_URL=postgres://postgres:7onr1MC%2FO2DLEjIr7lqCNE125o6Wd5Phmh6z3mioipE%3D@db:5432/reddit_cluster?sslmode=disable
         depends_on:
             - db
+        networks:
+            - web
+        env_file:
+            - .env
 
     db:
         image: postgres:latest
@@ -33,6 +37,30 @@ services:
             - '5432:5432'
         volumes:
             - postgres_data:/var/lib/postgresql/data
+            - ./migrations:/docker-entrypoint-initdb.d
+        networks:
+            - web
+
+    precalculate:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        command: sh -c "while :; do go run ./cmd/precalculate || echo 'Precalculation failed at $(date)'; sleep 3600; done"
+        depends_on:
+            - db
+        env_file:
+            - .env
+        networks:
+            - web
+
+    reddit_frontend:
+        build:
+            context: ../frontend
+            dockerfile: Dockerfile
+        ports:
+            - "8080:80"
+        networks:
+            - web
 
 volumes:
     postgres_data:

@@ -10,6 +10,35 @@ import (
 	"database/sql"
 )
 
+const getStaleSubreddits = `-- name: GetStaleSubreddits :many
+SELECT name FROM subreddits 
+WHERE last_seen < NOW() - INTERVAL '7 days'
+ORDER BY last_seen ASC
+`
+
+func (q *Queries) GetStaleSubreddits(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getStaleSubreddits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSubreddit = `-- name: GetSubreddit :one
 SELECT name, title, description, subscribers, created_at, last_seen FROM subreddits WHERE name = $1
 `

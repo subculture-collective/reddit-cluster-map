@@ -13,7 +13,7 @@ func NewRouter(q *db.Queries) *mux.Router {
 	r.HandleFunc("/subreddits", handlers.GetSubreddits(q)).Methods("GET")
 
 	// Crawl
-	r.HandleFunc("/crawl", handlers.PostCrawl(q)).Methods("POST")
+	r.HandleFunc("/api/crawl", handlers.PostCrawl(q)).Methods("POST")
 
 	// Users
 	r.HandleFunc("/users", handlers.GetUsers(q)).Methods("GET")
@@ -29,7 +29,7 @@ func NewRouter(q *db.Queries) *mux.Router {
 
 	// Graph
 	graphHandler := handlers.NewHandler(q)
-	r.HandleFunc("/graph", graphHandler.GetGraphData).Methods("GET")
+	r.HandleFunc("/api/graph", graphHandler.GetGraphData).Methods("GET")
 	
 	return r
 }
