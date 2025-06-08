@@ -10,84 +10,211 @@ import (
 	"database/sql"
 )
 
+const bulkInsertGraphLink = `-- name: BulkInsertGraphLink :exec
+INSERT INTO graph_links (source, target)
+VALUES ($1, $2)
+`
+
+type BulkInsertGraphLinkParams struct {
+	Source string
+	Target string
+}
+
+func (q *Queries) BulkInsertGraphLink(ctx context.Context, arg BulkInsertGraphLinkParams) error {
+	_, err := q.db.ExecContext(ctx, bulkInsertGraphLink, arg.Source, arg.Target)
+	return err
+}
+
+const bulkInsertGraphNode = `-- name: BulkInsertGraphNode :exec
+INSERT INTO graph_nodes (id, name, val, type)
+VALUES ($1, $2, $3, $4)
+`
+
+type BulkInsertGraphNodeParams struct {
+	ID   string
+	Name sql.NullString
+	Val  sql.NullInt32
+	Type sql.NullString
+}
+
+func (q *Queries) BulkInsertGraphNode(ctx context.Context, arg BulkInsertGraphNodeParams) error {
+	_, err := q.db.ExecContext(ctx, bulkInsertGraphNode,
+		arg.ID,
+		arg.Name,
+		arg.Val,
+		arg.Type,
+	)
+	return err
+}
+
+const clearGraphTables = `-- name: ClearGraphTables :exec
+DELETE FROM graph_nodes
+`
+
+func (q *Queries) ClearGraphTables(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearGraphTables)
+	return err
+}
+
+const createGraphLink = `-- name: CreateGraphLink :one
+INSERT INTO graph_links (
+    source,
+    target
+) VALUES (
+    $1, $2
+) RETURNING source, target, created_at
+`
+
+type CreateGraphLinkParams struct {
+	Source string
+	Target string
+}
+
+func (q *Queries) CreateGraphLink(ctx context.Context, arg CreateGraphLinkParams) (GraphLink, error) {
+	row := q.db.QueryRowContext(ctx, createGraphLink, arg.Source, arg.Target)
+	var i GraphLink
+	err := row.Scan(&i.Source, &i.Target, &i.CreatedAt)
+	return i, err
+}
+
+const createGraphNode = `-- name: CreateGraphNode :one
+INSERT INTO graph_nodes (
+    id,
+    name,
+    val,
+    type
+) VALUES (
+    $1, $2, $3, $4
+) RETURNING id, name, val, type, created_at
+`
+
+type CreateGraphNodeParams struct {
+	ID   string
+	Name sql.NullString
+	Val  sql.NullInt32
+	Type sql.NullString
+}
+
+func (q *Queries) CreateGraphNode(ctx context.Context, arg CreateGraphNodeParams) (GraphNode, error) {
+	row := q.db.QueryRowContext(ctx, createGraphNode,
+		arg.ID,
+		arg.Name,
+		arg.Val,
+		arg.Type,
+	)
+	var i GraphNode
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Val,
+		&i.Type,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAllComments = `-- name: GetAllComments :many
+SELECT id, post_id, author, subreddit, parent_id, body, created_at, score, last_seen, depth FROM comments
+`
+
+func (q *Queries) GetAllComments(ctx context.Context) ([]Comment, error) {
+	rows, err := q.db.QueryContext(ctx, getAllComments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Comment
+	for rows.Next() {
+		var i Comment
+		if err := rows.Scan(
+			&i.ID,
+			&i.PostID,
+			&i.Author,
+			&i.Subreddit,
+			&i.ParentID,
+			&i.Body,
+			&i.CreatedAt,
+			&i.Score,
+			&i.LastSeen,
+			&i.Depth,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllPosts = `-- name: GetAllPosts :many
+SELECT id, subreddit, author, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen FROM posts
+`
+
+func (q *Queries) GetAllPosts(ctx context.Context) ([]Post, error) {
+	rows, err := q.db.QueryContext(ctx, getAllPosts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Post
+	for rows.Next() {
+		var i Post
+		if err := rows.Scan(
+			&i.ID,
+			&i.Subreddit,
+			&i.Author,
+			&i.Title,
+			&i.Selftext,
+			&i.Permalink,
+			&i.CreatedAt,
+			&i.Score,
+			&i.Flair,
+			&i.Url,
+			&i.IsSelf,
+			&i.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getGraphData = `-- name: GetGraphData :many
-WITH post_nodes AS (
-    SELECT 
-        id as node_id,
-        title as node_name,
-        score as node_value,
-        'post' as node_type
-    FROM posts
-),
-comment_nodes AS (
-    SELECT 
-        id as node_id,
-        LEFT(body, 50) as node_name,
-        score as node_value,
-        'comment' as node_type
-    FROM comments
-),
-all_nodes AS (
-    SELECT node_id, node_name, node_value, node_type FROM post_nodes
-    UNION ALL
-    SELECT node_id, node_name, node_value, node_type FROM comment_nodes
-),
-post_comment_links AS (
-    SELECT 
-        post_id as source,
-        id as target
-    FROM comments
-),
-user_links AS (
-    SELECT DISTINCT
-        p1.id as source,
-        p2.id as target
-    FROM posts p1
-    JOIN posts p2 ON p1.author = p2.author AND p1.id < p2.id
-    UNION
-    SELECT DISTINCT
-        c1.id as source,
-        c2.id as target
-    FROM comments c1
-    JOIN comments c2 ON c1.author = c2.author AND c1.id < c2.id
-    UNION
-    SELECT DISTINCT
-        p.id as source,
-        c.id as target
-    FROM posts p
-    JOIN comments c ON p.author = c.author
-)
 SELECT 
-    'node' as data_type,
-    node_id as id,
-    node_name as name,
-    node_value as val,
-    node_type as type
-FROM all_nodes
+    'node'::TEXT as data_type,
+    id::TEXT as id,
+    name,
+    val::TEXT as val,
+    type
+FROM graph_nodes
 UNION ALL
 SELECT 
-    'link' as data_type,
-    source as id,
-    target as name,
-    1 as val,
-    'connection' as type
-FROM post_comment_links
-UNION ALL
-SELECT 
-    'link' as data_type,
-    source as id,
-    target as name,
-    1 as val,
-    'user' as type
-FROM user_links
+    'link'::TEXT as data_type,
+    source::TEXT as id,
+    target::TEXT as name,
+    '1'::TEXT as val,
+    'connection'::TEXT as type
+FROM graph_links
 `
 
 type GetGraphDataRow struct {
 	DataType string
-	ID       int64
+	ID       string
 	Name     sql.NullString
-	Val      sql.NullInt32
-	Type     string
+	Val      string
+	Type     sql.NullString
 }
 
 func (q *Queries) GetGraphData(ctx context.Context) ([]GetGraphDataRow, error) {

@@ -33,6 +33,20 @@ type CrawlJob struct {
 	UpdatedAt   sql.NullTime
 }
 
+type GraphLink struct {
+	Source    string
+	Target    string
+	CreatedAt sql.NullTime
+}
+
+type GraphNode struct {
+	ID        string
+	Name      sql.NullString
+	Val       sql.NullInt32
+	Type      sql.NullString
+	CreatedAt sql.NullTime
+}
+
 type Post struct {
 	ID        string
 	Subreddit string
@@ -55,14 +69,6 @@ type Subreddit struct {
 	Subscribers sql.NullInt32
 	CreatedAt   sql.NullTime
 	LastSeen    sql.NullTime
-}
-
-type SubredditEdge struct {
-	Source      string
-	Target      string
-	SharedUsers int32
-	UpdatedAt   sql.NullTime
-	CreatedAt   sql.NullTime
 }
 
 type User struct {

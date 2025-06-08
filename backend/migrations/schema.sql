@@ -44,15 +44,6 @@ CREATE TABLE comments (
 
 CREATE INDEX idx_comments_parent_id ON comments(parent_id);
 
-CREATE TABLE subreddit_edges (
-  source TEXT NOT NULL,
-  target TEXT NOT NULL,
-  shared_users INT NOT NULL DEFAULT 1,
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  created_at TIMESTAMPTZ DEFAULT now(),
-  PRIMARY KEY (source, target)
-);
-
 CREATE TABLE crawl_jobs (
   id SERIAL PRIMARY KEY,
   subreddit TEXT NOT NULL UNIQUE,
@@ -66,3 +57,23 @@ CREATE TABLE crawl_jobs (
 );
 
 CREATE INDEX idx_crawl_jobs_status ON crawl_jobs(status);
+
+CREATE TABLE graph_nodes (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    val INT,
+    type TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE graph_links (
+    source TEXT NOT NULL,
+    target TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (source, target),
+    FOREIGN KEY (source) REFERENCES graph_nodes(id) ON DELETE CASCADE,
+    FOREIGN KEY (target) REFERENCES graph_nodes(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_graph_links_source ON graph_links(source);
+CREATE INDEX idx_graph_links_target ON graph_links(target);
