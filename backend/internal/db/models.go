@@ -33,6 +33,35 @@ type CrawlJob struct {
 	UpdatedAt   sql.NullTime
 }
 
+type GraphDatum struct {
+	ID        int32
+	DataType  string
+	NodeID    sql.NullInt64
+	NodeName  sql.NullString
+	NodeValue sql.NullInt32
+	NodeType  sql.NullString
+	Source    sql.NullInt64
+	Target    sql.NullInt64
+	UpdatedAt sql.NullTime
+}
+
+type GraphLink struct {
+	ID        int32
+	Source    string
+	Target    string
+	CreatedAt sql.NullTime
+	UpdatedAt sql.NullTime
+}
+
+type GraphNode struct {
+	ID        string
+	Name      string
+	Val       sql.NullInt32
+	Type      sql.NullString
+	CreatedAt sql.NullTime
+	UpdatedAt sql.NullTime
+}
+
 type Post struct {
 	ID        string
 	Subreddit string
@@ -57,12 +86,13 @@ type Subreddit struct {
 	LastSeen    sql.NullTime
 }
 
-type SubredditEdge struct {
-	Source      string
-	Target      string
-	SharedUsers int32
-	UpdatedAt   sql.NullTime
-	CreatedAt   sql.NullTime
+type SubredditRelationship struct {
+	ID                int32
+	SourceSubredditID sql.NullInt32
+	TargetSubredditID sql.NullInt32
+	OverlapCount      int32
+	CreatedAt         sql.NullTime
+	UpdatedAt         sql.NullTime
 }
 
 type User struct {
@@ -70,4 +100,13 @@ type User struct {
 	CreatedAt sql.NullTime
 	LastSeen  sql.NullTime
 	FirstSeen sql.NullTime
+}
+
+type UserSubredditActivity struct {
+	ID            int32
+	UserID        sql.NullInt32
+	SubredditID   sql.NullInt32
+	ActivityCount int32
+	CreatedAt     sql.NullTime
+	UpdatedAt     sql.NullTime
 }

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/onnwee/reddit-cluster-map/backend/internal/crawler"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
@@ -16,6 +15,7 @@ type CrawlRequest struct {
 
 func PostCrawl(q *db.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("[PostCrawl] Received request: %v", r)
 		var req CrawlRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -36,9 +36,6 @@ func PostCrawl(q *db.Queries) http.HandlerFunc {
 			http.Error(w, "Failed to enqueue job", http.StatusInternalServerError)
 			return
 		}
-
-		// ⚠️ Consider only calling StartDBBackedCrawl once globally instead of per request
-		go crawler.StartCrawlWorker(r.Context(), q)
 
 		w.WriteHeader(http.StatusAccepted)
 		w.Write([]byte("Seeded and crawler started.\n"))

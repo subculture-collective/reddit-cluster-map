@@ -166,7 +166,8 @@ ON CONFLICT (id) DO UPDATE
 SET
   body = EXCLUDED.body,
   parent_id = EXCLUDED.parent_id,
-  depth = EXCLUDED.depth
+  depth = EXCLUDED.depth,
+  last_seen = now()
 `
 
 type UpsertCommentParams struct {
