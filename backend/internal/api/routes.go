@@ -24,14 +24,12 @@ func NewRouter(q *db.Queries) *mux.Router {
 	// Comments
 	r.HandleFunc("/comments", handlers.GetComments(q)).Methods("GET")
 
-	// Edges
-	r.HandleFunc("/edges", handlers.GetSubredditEdges(q)).Methods("GET")
-
 	// Crawl Jobs
 	r.HandleFunc("/jobs", handlers.GetCrawlJobs(q)).Methods("GET")
 
 	// Graph
-	r.HandleFunc("/graph", handlers.GetGraphData(q)).Methods("GET")
+	graphHandler := handlers.NewHandler(q)
+	r.HandleFunc("/graph", graphHandler.GetGraphData).Methods("GET")
 	
 	return r
 }

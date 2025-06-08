@@ -1,14 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
-	"context"
 
 	"github.com/joho/godotenv"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/api"
-	"github.com/onnwee/reddit-cluster-map/backend/internal/server"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/crawler"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/server"
 )
 
 func main() {
@@ -18,6 +18,11 @@ func main() {
 	queries, err := server.InitDB()
 	if err != nil {
 		log.Fatalf("❌ DB init failed: %v", err)
+	}
+
+	srv := server.NewServer(queries)
+	if err := srv.Start(ctx); err != nil {
+		log.Fatalf("❌ Server start failed: %v", err)
 	}
 
 	go crawler.StartCrawlWorker(ctx, queries)
