@@ -1,8 +1,32 @@
+-- name: GetPrecalculatedGraphData :many
+SELECT
+    'node' as data_type,
+    id,
+    name,
+    val,
+    type,
+    NULL as source,
+    NULL as target
+FROM graph_nodes
+UNION ALL
+SELECT
+    'link' as data_type,
+    id::text,
+    NULL as name,
+    NULL as val,
+    NULL as type,
+    source,
+    target
+FROM graph_links
+ORDER BY data_type, id;
+
 -- name: GetAllPosts :many
-SELECT * FROM posts;
+SELECT id, title, score
+FROM posts;
 
 -- name: GetAllComments :many
-SELECT * FROM comments;
+SELECT id, body, score, post_id
+FROM comments;
 
 -- name: CreateGraphNode :one
 INSERT INTO graph_nodes (
@@ -23,8 +47,7 @@ INSERT INTO graph_links (
 ) RETURNING *;
 
 -- name: ClearGraphTables :exec
-DELETE FROM graph_nodes;
-DELETE FROM graph_links;
+TRUNCATE TABLE graph_nodes, graph_links;
 
 -- name: BulkInsertGraphNode :exec
 INSERT INTO graph_nodes (id, name, val, type)

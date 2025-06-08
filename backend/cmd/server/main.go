@@ -7,7 +7,6 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/api"
-	"github.com/onnwee/reddit-cluster-map/backend/internal/crawler"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/server"
 )
 
@@ -24,8 +23,6 @@ func main() {
 	if err := srv.Start(ctx); err != nil {
 		log.Fatalf("❌ Server start failed: %v", err)
 	}
-
-	go crawler.StartCrawlWorker(ctx, queries)
 
 	router := api.NewRouter(queries)
 

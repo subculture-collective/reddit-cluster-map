@@ -29,6 +29,9 @@ CREATE TABLE posts (
     last_seen TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE INDEX idx_posts_subreddit ON posts(subreddit);
+CREATE INDEX idx_posts_author ON posts(author);
+
 CREATE TABLE comments (
     id TEXT PRIMARY KEY,
     post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
@@ -43,6 +46,9 @@ CREATE TABLE comments (
 );
 
 CREATE INDEX idx_comments_parent_id ON comments(parent_id);
+CREATE INDEX idx_comments_post_id ON comments(post_id);
+CREATE INDEX idx_comments_author ON comments(author);
+CREATE INDEX idx_comments_subreddit ON comments(subreddit);
 
 CREATE TABLE crawl_jobs (
   id SERIAL PRIMARY KEY,
@@ -57,23 +63,75 @@ CREATE TABLE crawl_jobs (
 );
 
 CREATE INDEX idx_crawl_jobs_status ON crawl_jobs(status);
+CREATE INDEX idx_crawl_jobs_subreddit ON crawl_jobs(subreddit);
 
 CREATE TABLE graph_nodes (
     id TEXT PRIMARY KEY,
-    name TEXT,
-    val INT,
+    name TEXT NOT NULL,
+    val INTEGER,
     type TEXT,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX idx_graph_nodes_name ON graph_nodes(name);
+CREATE INDEX idx_graph_nodes_name_hash ON graph_nodes (substring(name, 1, 10));
+
 CREATE TABLE graph_links (
+    id SERIAL PRIMARY KEY,
     source TEXT NOT NULL,
     target TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY (source, target),
-    FOREIGN KEY (source) REFERENCES graph_nodes(id) ON DELETE CASCADE,
-    FOREIGN KEY (target) REFERENCES graph_nodes(id) ON DELETE CASCADE
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (source) REFERENCES graph_nodes(id),
+    FOREIGN KEY (target) REFERENCES graph_nodes(id)
 );
 
 CREATE INDEX idx_graph_links_source ON graph_links(source);
 CREATE INDEX idx_graph_links_target ON graph_links(target);
+
+-- New tables from migrations
+CREATE TABLE subreddit_relationships (
+    id SERIAL PRIMARY KEY,
+    source_subreddit_id INTEGER,
+    target_subreddit_id INTEGER,
+    overlap_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(source_subreddit_id, target_subreddit_id)
+);
+
+CREATE INDEX idx_subreddit_relationships_source ON subreddit_relationships(source_subreddit_id);
+CREATE INDEX idx_subreddit_relationships_target ON subreddit_relationships(target_subreddit_id);
+CREATE INDEX idx_subreddit_relationships_composite ON subreddit_relationships(source_subreddit_id, target_subreddit_id);
+
+CREATE TABLE user_subreddit_activity (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER,
+    subreddit_id INTEGER,
+    activity_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, subreddit_id)
+);
+
+CREATE INDEX idx_user_subreddit_activity_user ON user_subreddit_activity(user_id);
+CREATE INDEX idx_user_subreddit_activity_subreddit ON user_subreddit_activity(subreddit_id);
+CREATE INDEX idx_user_subreddit_activity_composite ON user_subreddit_activity(user_id, subreddit_id);
+
+CREATE TABLE graph_data (
+    id SERIAL PRIMARY KEY,
+    data_type TEXT NOT NULL,
+    node_id BIGINT,
+    node_name TEXT,
+    node_value INTEGER,
+    node_type TEXT,
+    source BIGINT,
+    target BIGINT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_graph_data_data_type ON graph_data(data_type);
+CREATE INDEX idx_graph_data_node_id ON graph_data(node_id);
+CREATE INDEX idx_graph_data_source ON graph_data(source);
+CREATE INDEX idx_graph_data_target ON graph_data(target);

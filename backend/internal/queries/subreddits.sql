@@ -15,3 +15,8 @@ SELECT * FROM subreddits ORDER BY last_seen DESC LIMIT $1 OFFSET $2;
 
 -- name: TouchSubreddit :exec
 UPDATE subreddits SET last_seen = now() WHERE name = $1;
+
+-- name: GetStaleSubreddits :many
+SELECT name FROM subreddits 
+WHERE last_seen < NOW() - INTERVAL '7 days'
+ORDER BY last_seen ASC;
