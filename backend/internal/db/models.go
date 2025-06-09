@@ -9,21 +9,21 @@ import (
 )
 
 type Comment struct {
-	ID        string
-	PostID    string
-	Author    string
-	Subreddit string
-	ParentID  sql.NullString
-	Body      sql.NullString
-	CreatedAt sql.NullTime
-	Score     sql.NullInt32
-	LastSeen  sql.NullTime
-	Depth     sql.NullInt32
+	ID          string
+	PostID      string
+	AuthorID    int32
+	SubredditID int32
+	ParentID    sql.NullString
+	Body        sql.NullString
+	CreatedAt   sql.NullTime
+	Score       sql.NullInt32
+	LastSeen    sql.NullTime
+	Depth       sql.NullInt32
 }
 
 type CrawlJob struct {
 	ID          int32
-	Subreddit   string
+	SubredditID int32
 	Status      string
 	Retries     sql.NullInt32
 	LastAttempt sql.NullTime
@@ -63,21 +63,22 @@ type GraphNode struct {
 }
 
 type Post struct {
-	ID        string
-	Subreddit string
-	Author    string
-	Title     sql.NullString
-	Selftext  sql.NullString
-	Permalink sql.NullString
-	CreatedAt sql.NullTime
-	Score     sql.NullInt32
-	Flair     sql.NullString
-	Url       sql.NullString
-	IsSelf    sql.NullBool
-	LastSeen  sql.NullTime
+	ID          string
+	SubredditID int32
+	AuthorID    int32
+	Title       sql.NullString
+	Selftext    sql.NullString
+	Permalink   sql.NullString
+	CreatedAt   sql.NullTime
+	Score       sql.NullInt32
+	Flair       sql.NullString
+	Url         sql.NullString
+	IsSelf      sql.NullBool
+	LastSeen    sql.NullTime
 }
 
 type Subreddit struct {
+	ID          int32
 	Name        string
 	Title       sql.NullString
 	Description sql.NullString
@@ -88,14 +89,15 @@ type Subreddit struct {
 
 type SubredditRelationship struct {
 	ID                int32
-	SourceSubredditID sql.NullInt32
-	TargetSubredditID sql.NullInt32
+	SourceSubredditID int32
+	TargetSubredditID int32
 	OverlapCount      int32
 	CreatedAt         sql.NullTime
 	UpdatedAt         sql.NullTime
 }
 
 type User struct {
+	ID        int32
 	Username  string
 	CreatedAt sql.NullTime
 	LastSeen  sql.NullTime
@@ -104,8 +106,8 @@ type User struct {
 
 type UserSubredditActivity struct {
 	ID            int32
-	UserID        sql.NullInt32
-	SubredditID   sql.NullInt32
+	UserID        int32
+	SubredditID   int32
 	ActivityCount int32
 	CreatedAt     sql.NullTime
 	UpdatedAt     sql.NullTime

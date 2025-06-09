@@ -8,36 +8,8 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/graph"
 )
-
-func precalculateGraphData(dbConn *sql.DB, queries *db.Queries) error {
-	ctx := context.Background()
-	graphData, err := queries.GetGraphData(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Clear existing data
-	_, err = dbConn.ExecContext(ctx, "TRUNCATE graph_data")
-	if err != nil {
-		return err
-	}
-
-	// Insert new data
-	for _, data := range graphData {
-		_, err = dbConn.ExecContext(ctx, `
-			INSERT INTO graph_data (data_type, node_id, node_name, node_value, node_type, source, target)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-		`, data.DataType, data.ID, data.Name, data.Val, data.Type, data.ID, data.Name)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Update timestamp
-	_, err = dbConn.ExecContext(ctx, "UPDATE graph_data SET updated_at = CURRENT_TIMESTAMP")
-	return err
-}
 
 func main() {
 	dbURL := os.Getenv("DATABASE_URL")
@@ -51,9 +23,10 @@ func main() {
 	defer dbConn.Close()
 
 	queries := db.New(dbConn)
+	graphService := graph.NewService(queries)
 
-	err = precalculateGraphData(dbConn, queries)
-	if err != nil {
+	ctx := context.Background()
+	if err := graphService.PrecalculateGraphData(ctx); err != nil {
 		log.Fatalf("Failed to precalculate graph data: %v", err)
 	}
 

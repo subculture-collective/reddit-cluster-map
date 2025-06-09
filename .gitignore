@@ -83,6 +83,7 @@ backend/sqlc.json
 backend/sqlc.gen.go
 backend/**/sqlc.json
 backend/**/sqlc.gen.go
+backend/backups
 
 # Go build artifacts
 *.exe

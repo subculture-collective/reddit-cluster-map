@@ -36,6 +36,7 @@ export default function Graph3D() {
                 );
                 const data = await response.json();
                 setGraphData(data);
+                console.log(`DATA: ${JSON.stringify(data)}`);
             } catch (error: unknown) {
                 if (error instanceof Error && error.name === 'AbortError') {
                     console.log('Fetch aborted');

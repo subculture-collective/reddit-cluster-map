@@ -9,7 +9,13 @@ import (
 
 func GetComments(q *db.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		comments, err := q.ListComments(r.Context())
+		postID := r.URL.Query().Get("post_id")
+		if postID == "" {
+			http.Error(w, "post_id is required", http.StatusBadRequest)
+			return
+		}
+
+		comments, err := q.ListCommentsByPost(r.Context(), postID)
 		if err != nil {
 			http.Error(w, "Failed to fetch comments", http.StatusInternalServerError)
 			return

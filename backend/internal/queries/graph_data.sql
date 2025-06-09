@@ -1,4 +1,4 @@
--- name: GetGraphData2 :many
+-- name: GetGraphData :many
 WITH subreddit_nodes AS (
     SELECT 
         'subreddit_' || id as id,
@@ -11,7 +11,8 @@ user_nodes AS (
     SELECT 
         'user_' || id as id,
         username as name,
-        comment_count + post_count as val,
+        (SELECT COUNT(*) FROM comments WHERE author_id = users.id) + 
+        (SELECT COUNT(*) FROM posts WHERE author_id = users.id) as val,
         'user' as type
     FROM users
 ),

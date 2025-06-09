@@ -10,8 +10,30 @@ import (
 	"database/sql"
 )
 
+const getComment = `-- name: GetComment :one
+SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth FROM comments WHERE id = $1
+`
+
+func (q *Queries) GetComment(ctx context.Context, id string) (Comment, error) {
+	row := q.db.QueryRowContext(ctx, getComment, id)
+	var i Comment
+	err := row.Scan(
+		&i.ID,
+		&i.PostID,
+		&i.AuthorID,
+		&i.SubredditID,
+		&i.ParentID,
+		&i.Body,
+		&i.CreatedAt,
+		&i.Score,
+		&i.LastSeen,
+		&i.Depth,
+	)
+	return i, err
+}
+
 const getCommentsByPost = `-- name: GetCommentsByPost :many
-SELECT id, post_id, author, subreddit, parent_id, body, created_at, score, last_seen, depth FROM comments WHERE post_id = $1 ORDER BY created_at DESC
+SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth FROM comments WHERE post_id = $1 ORDER BY created_at DESC
 `
 
 func (q *Queries) GetCommentsByPost(ctx context.Context, postID string) ([]Comment, error) {
@@ -26,8 +48,8 @@ func (q *Queries) GetCommentsByPost(ctx context.Context, postID string) ([]Comme
 		if err := rows.Scan(
 			&i.ID,
 			&i.PostID,
-			&i.Author,
-			&i.Subreddit,
+			&i.AuthorID,
+			&i.SubredditID,
 			&i.ParentID,
 			&i.Body,
 			&i.CreatedAt,
@@ -49,17 +71,17 @@ func (q *Queries) GetCommentsByPost(ctx context.Context, postID string) ([]Comme
 }
 
 const getCommentsByUser = `-- name: GetCommentsByUser :many
-SELECT id, post_id, author, subreddit, parent_id, body, created_at, score, last_seen, depth FROM comments WHERE author = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
+SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth FROM comments WHERE author_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
 type GetCommentsByUserParams struct {
-	Author string
-	Limit  int32
-	Offset int32
+	AuthorID int32
+	Limit    int32
+	Offset   int32
 }
 
 func (q *Queries) GetCommentsByUser(ctx context.Context, arg GetCommentsByUserParams) ([]Comment, error) {
-	rows, err := q.db.QueryContext(ctx, getCommentsByUser, arg.Author, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, getCommentsByUser, arg.AuthorID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -70,8 +92,8 @@ func (q *Queries) GetCommentsByUser(ctx context.Context, arg GetCommentsByUserPa
 		if err := rows.Scan(
 			&i.ID,
 			&i.PostID,
-			&i.Author,
-			&i.Subreddit,
+			&i.AuthorID,
+			&i.SubredditID,
 			&i.ParentID,
 			&i.Body,
 			&i.CreatedAt,
@@ -92,41 +114,12 @@ func (q *Queries) GetCommentsByUser(ctx context.Context, arg GetCommentsByUserPa
 	return items, nil
 }
 
-const insertComment = `-- name: InsertComment :exec
-INSERT INTO comments (id, post_id, subreddit, author, body, created_at, parent_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (id) DO NOTHING
+const listCommentsByPost = `-- name: ListCommentsByPost :many
+SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth FROM comments WHERE post_id = $1 ORDER BY created_at ASC
 `
 
-type InsertCommentParams struct {
-	ID        string
-	PostID    string
-	Subreddit string
-	Author    string
-	Body      sql.NullString
-	CreatedAt sql.NullTime
-	ParentID  sql.NullString
-}
-
-func (q *Queries) InsertComment(ctx context.Context, arg InsertCommentParams) error {
-	_, err := q.db.ExecContext(ctx, insertComment,
-		arg.ID,
-		arg.PostID,
-		arg.Subreddit,
-		arg.Author,
-		arg.Body,
-		arg.CreatedAt,
-		arg.ParentID,
-	)
-	return err
-}
-
-const listComments = `-- name: ListComments :many
-SELECT id, post_id, author, subreddit, parent_id, body, created_at, score, last_seen, depth FROM comments ORDER BY created_at DESC LIMIT 100
-`
-
-func (q *Queries) ListComments(ctx context.Context) ([]Comment, error) {
-	rows, err := q.db.QueryContext(ctx, listComments)
+func (q *Queries) ListCommentsByPost(ctx context.Context, postID string) ([]Comment, error) {
+	rows, err := q.db.QueryContext(ctx, listCommentsByPost, postID)
 	if err != nil {
 		return nil, err
 	}
@@ -137,8 +130,8 @@ func (q *Queries) ListComments(ctx context.Context) ([]Comment, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.PostID,
-			&i.Author,
-			&i.Subreddit,
+			&i.AuthorID,
+			&i.SubredditID,
 			&i.ParentID,
 			&i.Body,
 			&i.CreatedAt,
@@ -160,34 +153,42 @@ func (q *Queries) ListComments(ctx context.Context) ([]Comment, error) {
 }
 
 const upsertComment = `-- name: UpsertComment :exec
-INSERT INTO comments (id, post_id, author, subreddit, body, parent_id, depth)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (id) DO UPDATE
-SET
-  body = EXCLUDED.body,
+INSERT INTO comments (id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9)
+ON CONFLICT (id) DO UPDATE SET
+  post_id = EXCLUDED.post_id,
+  author_id = EXCLUDED.author_id,
+  subreddit_id = EXCLUDED.subreddit_id,
   parent_id = EXCLUDED.parent_id,
-  depth = EXCLUDED.depth,
-  last_seen = now()
+  body = EXCLUDED.body,
+  created_at = EXCLUDED.created_at,
+  score = EXCLUDED.score,
+  last_seen = now(),
+  depth = EXCLUDED.depth
 `
 
 type UpsertCommentParams struct {
-	ID        string
-	PostID    string
-	Author    string
-	Subreddit string
-	Body      sql.NullString
-	ParentID  sql.NullString
-	Depth     sql.NullInt32
+	ID          string
+	PostID      string
+	AuthorID    int32
+	SubredditID int32
+	ParentID    sql.NullString
+	Body        sql.NullString
+	CreatedAt   sql.NullTime
+	Score       sql.NullInt32
+	Depth       sql.NullInt32
 }
 
 func (q *Queries) UpsertComment(ctx context.Context, arg UpsertCommentParams) error {
 	_, err := q.db.ExecContext(ctx, upsertComment,
 		arg.ID,
 		arg.PostID,
-		arg.Author,
-		arg.Subreddit,
-		arg.Body,
+		arg.AuthorID,
+		arg.SubredditID,
 		arg.ParentID,
+		arg.Body,
+		arg.CreatedAt,
+		arg.Score,
 		arg.Depth,
 	)
 	return err

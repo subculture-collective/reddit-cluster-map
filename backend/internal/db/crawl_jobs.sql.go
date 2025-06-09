@@ -7,42 +7,40 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const crawlJobExists = `-- name: CrawlJobExists :one
 SELECT EXISTS (
-  SELECT 1 FROM crawl_jobs WHERE subreddit = $1 AND status IN ('queued', 'in_progress')
+  SELECT 1 FROM crawl_jobs WHERE subreddit_id = $1 AND status IN ('queued', 'in_progress')
 ) AS exists
 `
 
-func (q *Queries) CrawlJobExists(ctx context.Context, subreddit string) (bool, error) {
-	row := q.db.QueryRowContext(ctx, crawlJobExists, subreddit)
+func (q *Queries) CrawlJobExists(ctx context.Context, subredditID int32) (bool, error) {
+	row := q.db.QueryRowContext(ctx, crawlJobExists, subredditID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
 }
 
 const enqueueCrawlJob = `-- name: EnqueueCrawlJob :exec
-INSERT INTO crawl_jobs (subreddit, status, created_at, updated_at)
-VALUES ($1, 'queued', now(), now())
-ON CONFLICT (subreddit) DO UPDATE SET
-  status = 'queued',
-  retries = 0,
-  last_attempt = NULL,
-  duration_ms = NULL,
-  updated_at = now()
+INSERT INTO crawl_jobs (subreddit_id, status, retries, enqueued_by)
+VALUES ($1, 'queued', 0, $2)
+ON CONFLICT (subreddit_id) DO NOTHING
 `
 
-func (q *Queries) EnqueueCrawlJob(ctx context.Context, subreddit string) error {
-	_, err := q.db.ExecContext(ctx, enqueueCrawlJob, subreddit)
+type EnqueueCrawlJobParams struct {
+	SubredditID int32
+	EnqueuedBy  sql.NullString
+}
+
+func (q *Queries) EnqueueCrawlJob(ctx context.Context, arg EnqueueCrawlJobParams) error {
+	_, err := q.db.ExecContext(ctx, enqueueCrawlJob, arg.SubredditID, arg.EnqueuedBy)
 	return err
 }
 
 const getNextCrawlJob = `-- name: GetNextCrawlJob :one
-SELECT id, subreddit, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at FROM crawl_jobs
-WHERE status = 'queued'
-ORDER BY created_at ASC
-LIMIT 1
+SELECT id, subreddit_id, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at FROM crawl_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1
 `
 
 func (q *Queries) GetNextCrawlJob(ctx context.Context) (CrawlJob, error) {
@@ -50,7 +48,7 @@ func (q *Queries) GetNextCrawlJob(ctx context.Context) (CrawlJob, error) {
 	var i CrawlJob
 	err := row.Scan(
 		&i.ID,
-		&i.Subreddit,
+		&i.SubredditID,
 		&i.Status,
 		&i.Retries,
 		&i.LastAttempt,
@@ -63,7 +61,7 @@ func (q *Queries) GetNextCrawlJob(ctx context.Context) (CrawlJob, error) {
 }
 
 const getPendingCrawlJobs = `-- name: GetPendingCrawlJobs :many
-SELECT id, subreddit, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at FROM crawl_jobs
+SELECT id, subreddit_id, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at FROM crawl_jobs
 WHERE status = 'queued' OR status = 'in_progress'
 ORDER BY created_at ASC
 LIMIT $1
@@ -80,7 +78,7 @@ func (q *Queries) GetPendingCrawlJobs(ctx context.Context, limit int32) ([]Crawl
 		var i CrawlJob
 		if err := rows.Scan(
 			&i.ID,
-			&i.Subreddit,
+			&i.SubredditID,
 			&i.Status,
 			&i.Retries,
 			&i.LastAttempt,
@@ -103,11 +101,16 @@ func (q *Queries) GetPendingCrawlJobs(ctx context.Context, limit int32) ([]Crawl
 }
 
 const listCrawlJobs = `-- name: ListCrawlJobs :many
-SELECT id, subreddit, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at FROM crawl_jobs ORDER BY created_at DESC LIMIT 100
+SELECT id, subreddit_id, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at FROM crawl_jobs ORDER BY created_at DESC LIMIT $1 OFFSET $2
 `
 
-func (q *Queries) ListCrawlJobs(ctx context.Context) ([]CrawlJob, error) {
-	rows, err := q.db.QueryContext(ctx, listCrawlJobs)
+type ListCrawlJobsParams struct {
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListCrawlJobs(ctx context.Context, arg ListCrawlJobsParams) ([]CrawlJob, error) {
+	rows, err := q.db.QueryContext(ctx, listCrawlJobs, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +120,7 @@ func (q *Queries) ListCrawlJobs(ctx context.Context) ([]CrawlJob, error) {
 		var i CrawlJob
 		if err := rows.Scan(
 			&i.ID,
-			&i.Subreddit,
+			&i.SubredditID,
 			&i.Status,
 			&i.Retries,
 			&i.LastAttempt,
@@ -140,8 +143,7 @@ func (q *Queries) ListCrawlJobs(ctx context.Context) ([]CrawlJob, error) {
 }
 
 const markCrawlJobFailed = `-- name: MarkCrawlJobFailed :exec
-UPDATE crawl_jobs SET status = 'failed', retries = retries + 1, updated_at = now()
-WHERE id = $1
+UPDATE crawl_jobs SET status = 'failed', retries = retries + 1, updated_at = now() WHERE id = $1
 `
 
 func (q *Queries) MarkCrawlJobFailed(ctx context.Context, id int32) error {
@@ -161,8 +163,7 @@ func (q *Queries) MarkCrawlJobInProgress(ctx context.Context, id int32) error {
 }
 
 const markCrawlJobStarted = `-- name: MarkCrawlJobStarted :exec
-UPDATE crawl_jobs SET status = 'crawling', last_attempt = now(), updated_at = now()
-WHERE id = $1
+UPDATE crawl_jobs SET status = 'crawling', last_attempt = now(), updated_at = now() WHERE id = $1
 `
 
 func (q *Queries) MarkCrawlJobStarted(ctx context.Context, id int32) error {
@@ -171,8 +172,7 @@ func (q *Queries) MarkCrawlJobStarted(ctx context.Context, id int32) error {
 }
 
 const markCrawlJobSuccess = `-- name: MarkCrawlJobSuccess :exec
-UPDATE crawl_jobs SET status = 'success', updated_at = now()
-WHERE id = $1
+UPDATE crawl_jobs SET status = 'success', updated_at = now() WHERE id = $1
 `
 
 func (q *Queries) MarkCrawlJobSuccess(ctx context.Context, id int32) error {
@@ -181,7 +181,7 @@ func (q *Queries) MarkCrawlJobSuccess(ctx context.Context, id int32) error {
 }
 
 const nextCrawlJob = `-- name: NextCrawlJob :one
-SELECT id, subreddit, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at FROM crawl_jobs
+SELECT id, subreddit_id, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at FROM crawl_jobs
 WHERE status = 'pending'
 ORDER BY created_at
 LIMIT 1
@@ -193,7 +193,7 @@ func (q *Queries) NextCrawlJob(ctx context.Context) (CrawlJob, error) {
 	var i CrawlJob
 	err := row.Scan(
 		&i.ID,
-		&i.Subreddit,
+		&i.SubredditID,
 		&i.Status,
 		&i.Retries,
 		&i.LastAttempt,

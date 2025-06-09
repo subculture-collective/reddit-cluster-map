@@ -10,13 +10,14 @@ import (
 )
 
 const getUser = `-- name: GetUser :one
-SELECT username, created_at, last_seen, first_seen FROM users WHERE username = $1
+SELECT id, username, created_at, last_seen, first_seen FROM users WHERE username = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, username string) (User, error) {
 	row := q.db.QueryRowContext(ctx, getUser, username)
 	var i User
 	err := row.Scan(
+		&i.ID,
 		&i.Username,
 		&i.CreatedAt,
 		&i.LastSeen,
@@ -25,37 +26,8 @@ func (q *Queries) GetUser(ctx context.Context, username string) (User, error) {
 	return i, err
 }
 
-const getUserSubreddits = `-- name: GetUserSubreddits :many
-SELECT DISTINCT posts.subreddit FROM posts WHERE posts.author = $1
-UNION
-SELECT DISTINCT comments.subreddit FROM comments WHERE comments.author = $1
-`
-
-func (q *Queries) GetUserSubreddits(ctx context.Context, author string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, getUserSubreddits, author)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var subreddit string
-		if err := rows.Scan(&subreddit); err != nil {
-			return nil, err
-		}
-		items = append(items, subreddit)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listUsers = `-- name: ListUsers :many
-SELECT username, created_at, last_seen, first_seen FROM users ORDER BY last_seen DESC LIMIT $1 OFFSET $2
+SELECT id, username, created_at, last_seen, first_seen FROM users ORDER BY last_seen DESC LIMIT $1 OFFSET $2
 `
 
 type ListUsersParams struct {
@@ -73,6 +45,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 	for rows.Next() {
 		var i User
 		if err := rows.Scan(
+			&i.ID,
 			&i.Username,
 			&i.CreatedAt,
 			&i.LastSeen,
@@ -92,9 +65,10 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 }
 
 const upsertUser = `-- name: UpsertUser :exec
-INSERT INTO users (username, first_seen, last_seen)
+INSERT INTO users (username, created_at, last_seen)
 VALUES ($1, now(), now())
-ON CONFLICT (username) DO UPDATE SET last_seen = now()
+ON CONFLICT (username) DO UPDATE SET
+  last_seen = now()
 `
 
 func (q *Queries) UpsertUser(ctx context.Context, username string) error {
