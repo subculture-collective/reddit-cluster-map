@@ -22,10 +22,18 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 	startTime := time.Now()
 	log.Printf("🕷️ Starting crawl job #%d", job.ID)
 
+	// Update job status to crawling
+	if err := q.MarkCrawlJobStarted(ctx, job.ID); err != nil {
+		log.Printf("⚠️ Failed to update job status to crawling: %v", err)
+		return err
+	}
+
 	// Get subreddit name from ID
 	subreddit, err := q.GetSubredditByID(ctx, job.SubredditID)
 	if err != nil {
 		log.Printf("⚠️ Failed to get subreddit with ID %d: %v", job.SubredditID, err)
+		// Update job status to failed
+		_ = q.MarkCrawlJobFailed(ctx, job.ID)
 		return err
 	}
 
@@ -33,6 +41,8 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 	info, posts, err := CrawlSubreddit(subreddit.Name)
 	if err != nil {
 		log.Printf("❌ Failed to crawl r/%s: %v", subreddit.Name, err)
+		// Update job status to failed
+		_ = q.MarkCrawlJobFailed(ctx, job.ID)
 		return err
 	}
 
@@ -47,6 +57,8 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 	})
 	if err != nil {
 		log.Printf("⚠️ Failed to upsert subreddit r/%s: %v", subreddit.Name, err)
+		// Update job status to failed
+		_ = q.MarkCrawlJobFailed(ctx, job.ID)
 		return err
 	}
 	log.Printf("✅ Updated subreddit r/%s", subreddit.Name)
@@ -59,12 +71,16 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 	insertedPosts, err := crawlAndStorePosts(ctx, q, job.SubredditID, posts)
 	if err != nil {
 		log.Printf("⚠️ Failed to crawl and store posts: %v", err)
+		// Update job status to failed
+		_ = q.MarkCrawlJobFailed(ctx, job.ID)
 		return err
 	}
 	log.Printf("✅ Stored %d posts", len(insertedPosts))
 
 	if err := crawlAndStoreComments(ctx, q, job.SubredditID, posts, utils.GetEnvAsInt("MAX_COMMENT_DEPTH", 5), insertedPosts); err != nil {
 		log.Printf("⚠️ Failed to crawl and store comments: %v", err)
+		// Update job status to failed
+		_ = q.MarkCrawlJobFailed(ctx, job.ID)
 		return err
 	}
 
@@ -72,6 +88,13 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 
 	duration := time.Since(startTime)
 	log.Printf("🎉 Completed crawl job #%d for r/%s in %v", job.ID, subreddit.Name, duration)
+
+	// Update job status to success
+	if err := q.MarkCrawlJobSuccess(ctx, job.ID); err != nil {
+		log.Printf("⚠️ Failed to update job status to success: %v", err)
+		return err
+	}
+
 	return nil
 }
 

@@ -53,4 +53,4 @@ stop-crawler:
 	docker compose stop crawler
 
 precalculate:
-	docker compose run --rm precalculate go run ./cmd/precalculate
+	docker compose run --rm precalculate /app/precalculate

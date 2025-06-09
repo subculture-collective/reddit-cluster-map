@@ -1,6 +1,6 @@
 -- name: UpsertUser :exec
-INSERT INTO users (username, created_at, last_seen, first_seen)
-VALUES ($1, now(), now(), now())
+INSERT INTO users (username, created_at, last_seen)
+VALUES ($1, now(), now())
 ON CONFLICT (username) DO UPDATE SET
   last_seen = now();
 

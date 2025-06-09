@@ -46,7 +46,7 @@ services:
             sh -c "
             while :; do
                 # Run precalculation
-                ./precalculate || echo 'Precalculation failed at $(date)'
+                /app/precalculate || echo 'Precalculation failed at $(date)'
                 
                 # Run database backup
                 /app/scripts/backup.sh || echo 'Backup failed at $(date)'

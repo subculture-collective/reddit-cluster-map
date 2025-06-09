@@ -41,9 +41,9 @@ func (s *Service) CalculateSubredditRelationships(ctx context.Context) error {
 	// For each pair of subreddits, calculate user overlap
 	relationshipCount := 0
 	for i, s1 := range subreddits {
+		log.Printf("Processing subreddit %d/%d: r/%s", i, len(subreddits), s1.Name)
 		for j := i + 1; j < len(subreddits); j++ {
 			s2 := subreddits[j]
-			
 			// Get users who posted/commented in both subreddits
 			overlap, err := s.queries.GetSubredditOverlap(ctx, db.GetSubredditOverlapParams{
 				SubredditID:   s1.ID,
