@@ -31,6 +31,9 @@ func getAccessToken() (string, error) {
 
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
+	// Explicitly request read scope for application-only OAuth
+	// Reddit may return a token with limited capabilities without it
+	data.Set("scope", "read")
 
 	ua := config.Load().UserAgent
 	build := func() (*http.Request, error) {
