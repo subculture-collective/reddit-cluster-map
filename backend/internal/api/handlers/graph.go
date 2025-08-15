@@ -1,19 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
-
-	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
 // Handler handles HTTP requests for the graph API.
-type Handler struct {
-	queries *db.Queries
-}
+type GraphDataReader interface { GetGraphData(ctx context.Context) ([]json.RawMessage, error) }
+type Handler struct { queries GraphDataReader }
 
 // NewHandler creates a new graph handler.
-func NewHandler(q *db.Queries) *Handler {
+func NewHandler(q GraphDataReader) *Handler {
 	return &Handler{queries: q}
 }
 
@@ -43,5 +41,11 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	// The query returns a single row JSON object; unwrap the slice if present
+	if len(data) == 1 {
+		w.Write(data[0])
+		return
+	}
+	// Fallback: return empty structure
+	w.Write([]byte(`{"nodes":[],"links":[]}`))
 } 

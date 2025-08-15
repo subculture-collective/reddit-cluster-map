@@ -59,7 +59,9 @@ func NewCrawler(q *db.Queries) *Crawler {
 func (c *Crawler) Start(ctx context.Context) {
 	log.Println("🚀 Starting crawler...")
 	ticker := time.NewTicker(5 * time.Second)
+	staleTicker := time.NewTicker(6 * time.Hour)
 	defer ticker.Stop()
+	defer staleTicker.Stop()
 
 	for {
 		select {
@@ -72,6 +74,10 @@ func (c *Crawler) Start(ctx context.Context) {
 		case <-ticker.C:
 			if err := c.processNextJob(ctx); err != nil {
 				log.Printf("⚠️ Error processing job: %v", err)
+			}
+		case <-staleTicker.C:
+			if err := checkAndRequeueStaleSubreddits(ctx, c.queries); err != nil {
+				log.Printf("⚠️ Failed to requeue stale subreddits: %v", err)
 			}
 		}
 	}

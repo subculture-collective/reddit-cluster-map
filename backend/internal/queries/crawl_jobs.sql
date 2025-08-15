@@ -25,18 +25,15 @@ ORDER BY created_at
 LIMIT 1
 FOR UPDATE SKIP LOCKED;
 
--- name: GetPendingCrawlJobs :many
 SELECT * FROM crawl_jobs
-WHERE status = 'queued' OR status = 'in_progress'
+WHERE status = 'queued' OR status = 'crawling'
 ORDER BY created_at ASC
 LIMIT $1;
 
--- name: MarkCrawlJobInProgress :exec
 UPDATE crawl_jobs
-SET status = 'in_progress'
+SET status = 'crawling'
 WHERE id = $1;
 
--- name: CrawlJobExists :one
 SELECT EXISTS (
-  SELECT 1 FROM crawl_jobs WHERE subreddit_id = $1 AND status IN ('queued', 'in_progress')
+  SELECT 1 FROM crawl_jobs WHERE subreddit_id = $1 AND status IN ('queued', 'crawling')
 ) AS exists;

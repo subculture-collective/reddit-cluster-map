@@ -12,7 +12,7 @@ import (
 
 const crawlJobExists = `-- name: CrawlJobExists :one
 SELECT EXISTS (
-  SELECT 1 FROM crawl_jobs WHERE subreddit_id = $1 AND status IN ('queued', 'in_progress')
+	SELECT 1 FROM crawl_jobs WHERE subreddit_id = $1 AND status IN ('queued', 'crawling')
 ) AS exists
 `
 
@@ -62,7 +62,7 @@ func (q *Queries) GetNextCrawlJob(ctx context.Context) (CrawlJob, error) {
 
 const getPendingCrawlJobs = `-- name: GetPendingCrawlJobs :many
 SELECT id, subreddit_id, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at FROM crawl_jobs
-WHERE status = 'queued' OR status = 'in_progress'
+WHERE status = 'queued' OR status = 'crawling'
 ORDER BY created_at ASC
 LIMIT $1
 `
@@ -153,7 +153,7 @@ func (q *Queries) MarkCrawlJobFailed(ctx context.Context, id int32) error {
 
 const markCrawlJobInProgress = `-- name: MarkCrawlJobInProgress :exec
 UPDATE crawl_jobs
-SET status = 'in_progress'
+SET status = 'crawling'
 WHERE id = $1
 `
 

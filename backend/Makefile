@@ -9,7 +9,7 @@ CRAWLER_CONTAINER = backend-crawler-1
 DB_USER = postgres
 DB_NAME = reddit_cluster
 
-.PHONY: reset migrate drop logs logs-api logs-db logs-crawler logs-all kickstart migrate-up start-crawler stop-crawler test-crawl precalculate
+.PHONY: reset migrate drop logs logs-api logs-db logs-crawler logs-all kickstart migrate-up start-crawler stop-crawler test-crawl precalculate test test-integration
 
 # Reset and migrate database
 reset:
@@ -54,3 +54,11 @@ stop-crawler:
 
 precalculate:
 	docker compose run --rm precalculate /app/precalculate
+
+# Run all unit tests
+test:
+	go test ./...
+
+# Run only integration tests (skips unless TEST_DATABASE_URL is set)
+test-integration:
+	go test ./internal/graph -run Integration

@@ -1,15 +1,37 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
-func GetSubreddits(q *db.Queries) http.HandlerFunc {
+// SubredditsLister abstracts listing with pagination for testability.
+type SubredditsLister interface {
+    ListSubreddits(ctx context.Context, params db.ListSubredditsParams) ([]db.Subreddit, error)
+}
+
+func GetSubreddits(q SubredditsLister) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		subs, err := q.ListSubreddits(r.Context(), db.ListSubredditsParams{})
+		// Defaults
+		limit := int32(100)
+		offset := int32(0)
+
+		if v := r.URL.Query().Get("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				limit = int32(n)
+			}
+		}
+		if v := r.URL.Query().Get("offset"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+				offset = int32(n)
+			}
+		}
+
+		subs, err := q.ListSubreddits(r.Context(), db.ListSubredditsParams{Limit: limit, Offset: offset})
 		if err != nil {
 			http.Error(w, "Failed to fetch subreddits", http.StatusInternalServerError)
 			return

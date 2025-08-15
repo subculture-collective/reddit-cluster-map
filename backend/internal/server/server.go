@@ -39,5 +39,21 @@ func NewServer(q *db.Queries) *Server {
 func (s *Server) Start(ctx context.Context) error {
 	// Start the graph precalculation job
 	go s.graphJob.Start(ctx)
+	// Seed default subreddits if queue is empty
+	go func() {
+		// tiny delay to allow DB init
+		time.Sleep(2 * time.Second)
+		// Try to fetch pending jobs; if none, enqueue a few defaults
+		jobs, err := s.DB.GetPendingCrawlJobs(ctx, 1)
+		if err == nil && len(jobs) == 0 {
+			defaults := []string{"AskReddit", "worldnews", "technology"}
+			for _, name := range defaults {
+				id, err := s.DB.UpsertSubreddit(ctx, db.UpsertSubredditParams{Name: name})
+				if err == nil {
+					_ = s.DB.EnqueueCrawlJob(ctx, db.EnqueueCrawlJobParams{SubredditID: id})
+				}
+			}
+		}
+	}()
 	return nil
 }

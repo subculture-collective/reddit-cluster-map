@@ -9,6 +9,9 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/httpx"
 )
 
 var accessToken string
@@ -29,18 +32,20 @@ func getAccessToken() (string, error) {
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
 
-	req, _ := http.NewRequest("POST", "https://www.reddit.com/api/v1/access_token", strings.NewReader(data.Encode()))
-	req.SetBasicAuth(clientID, clientSecret)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", "reddit-cluster-map/0.1")
-
-	resp, err := http.DefaultClient.Do(req)
+	ua := config.Load().UserAgent
+	build := func() (*http.Request, error) {
+		req, _ := http.NewRequest("POST", "https://www.reddit.com/api/v1/access_token", strings.NewReader(data.Encode()))
+		req.SetBasicAuth(clientID, clientSecret)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("User-Agent", ua)
+		return req, nil
+	}
+	resp, err := httpx.DoWithRetryFactory(httpClient, build, nil)
 	if err != nil {
 		log.Printf("⚠️ Failed to request access token: %v", err)
 		return "", err
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != 200 {
 		log.Printf("⚠️ Token request failed: %s", resp.Status)
 		return "", fmt.Errorf("token request failed: %s", resp.Status)
