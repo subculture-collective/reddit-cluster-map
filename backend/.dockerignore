@@ -13,6 +13,7 @@
 **/.nuxt
 **/.temp
 **/.serverless
+backups/
 **/bower_components
 **/.eslintcache
 **/.stylelintcache

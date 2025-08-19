@@ -25,3 +25,15 @@ var authenticatedGet = func(url string) (*http.Response, error) {
 	pre := func(ctx context.Context, attempt int) error { waitForRateLimit(); return nil }
 	return httpx.DoWithRetryFactory(httpClient, build, pre)
 }
+
+// unauthenticatedGet performs a GET without OAuth, but with Reddit-compliant User-Agent and retries.
+var unauthenticatedGet = func(url string) (*http.Response, error) {
+	ua := config.Load().UserAgent
+	build := func() (*http.Request, error) {
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("User-Agent", ua)
+		return req, nil
+	}
+	pre := func(ctx context.Context, attempt int) error { waitForRateLimit(); return nil }
+	return httpx.DoWithRetryFactory(httpClient, build, pre)
+}

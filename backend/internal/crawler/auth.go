@@ -1,6 +1,7 @@
 package crawler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -43,7 +44,8 @@ func getAccessToken() (string, error) {
 		req.Header.Set("User-Agent", ua)
 		return req, nil
 	}
-	resp, err := httpx.DoWithRetryFactory(httpClient, build, nil)
+	pre := func(ctx context.Context, attempt int) error { waitForRateLimit(); return nil }
+	resp, err := httpx.DoWithRetryFactory(httpClient, build, pre)
 	if err != nil {
 		log.Printf("⚠️ Failed to request access token: %v", err)
 		return "", err

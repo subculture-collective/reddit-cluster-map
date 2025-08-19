@@ -3,12 +3,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
     depends_on:
       - db
     networks:
-      - web
+      web:
+        aliases:
+          - reddit-api
     env_file:
       - .env
 
@@ -27,8 +27,6 @@ services:
     image: postgres:latest
     environment:
       - POSTGRES_INITDB_ARGS=--data-checksums
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Mount only the base schema to ensure correct init order
@@ -69,10 +67,10 @@ services:
     build:
       context: ../frontend
       dockerfile: Dockerfile
-    ports:
-      - "8080:80"
     networks:
-      - web
+      web:
+        aliases:
+          - reddit_frontend
     env_file:
       - .env
 
