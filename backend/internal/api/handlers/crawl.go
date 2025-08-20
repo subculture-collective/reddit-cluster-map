@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/onnwee/reddit-cluster-map/backend/internal/crawler"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
@@ -53,15 +54,20 @@ func PostCrawl(q CrawlQueue) http.HandlerFunc {
 			return
 		}
 
-		// Avoid duplicate queue entries if already queued or in progress
-		if exists, err := q.CrawlJobExists(r.Context(), subreddit); err == nil && !exists {
-			if err := q.EnqueueCrawlJob(r.Context(), db.EnqueueCrawlJobParams{
-				SubredditID: subreddit,
-				EnqueuedBy:  sql.NullString{String: "api", Valid: true},
-			}); err != nil {
-				log.Printf("❌ Failed to enqueue %s: %v", req.Subreddit, err)
-				http.Error(w, "Failed to enqueue job", http.StatusInternalServerError)
-				return
+		// Ensure a job exists; if already queued/crawling, do nothing.
+		if exists, err := q.CrawlJobExists(r.Context(), subreddit); err == nil {
+			if !exists {
+				if err := q.EnqueueCrawlJob(r.Context(), db.EnqueueCrawlJobParams{
+					SubredditID: subreddit,
+					EnqueuedBy:  sql.NullString{String: "api", Valid: true},
+				}); err != nil {
+					log.Printf("❌ Failed to enqueue %s: %v", req.Subreddit, err)
+					http.Error(w, "Failed to enqueue job", http.StatusInternalServerError)
+					return
+				}
+			} else {
+				// Promote requested subreddit job by bumping priority.
+				_ = crawler.BumpPriority(r.Context(), q.(*db.Queries), subreddit, 1)
 			}
 		}
 

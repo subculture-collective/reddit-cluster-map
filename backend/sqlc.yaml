@@ -1,12 +1,13 @@
-version: '2'
+version: "2"
 
 sql:
-    - engine: postgresql
-      schema:
-          - 'migrations/schema.sql'
-      queries:
-          - 'internal/queries/'
-      gen:
-          go:
-              out: 'internal/db'
-              package: 'db'
+  - engine: postgresql
+    schema:
+      - "migrations/schema.sql"
+      - "migrations/*.sql"
+    queries:
+      - "internal/queries/"
+    gen:
+      go:
+        out: "internal/db"
+        package: "db"

@@ -137,7 +137,8 @@ func tryUserListingOAuth(u string) ([]string, bool, error) {
 		subs, err := parseUserListing(resp)
 		return subs, true, err
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
-		log.Printf("ℹ️ OAuth listing status %d; will try alternate strategies", resp.StatusCode)
+		// NOTE: This log is intentionally muted to reduce noise from frequent 401/403/404 on app-only OAuth.
+		// log.Printf("ℹ️ OAuth listing status %d; will try alternate strategies", resp.StatusCode)
 		return nil, false, nil
 	default:
 		return nil, false, fmt.Errorf("unexpected status: %d", resp.StatusCode)

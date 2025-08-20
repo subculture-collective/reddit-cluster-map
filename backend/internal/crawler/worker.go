@@ -10,6 +10,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq" // Import the postgres driver
+	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
@@ -57,7 +58,11 @@ func NewCrawler(q *db.Queries) *Crawler {
 
 // Start begins the crawler process
 func (c *Crawler) Start(ctx context.Context) {
+	// Main crawler loop: wakes up on a short interval, grabs one queued job, processes it.
 	log.Println("🚀 Starting crawler...")
+	// On start, reset stale in-progress jobs (e.g., container restarts)
+	cfg := config.Load()
+	_ = ResetIncompleteJobs(ctx, c.queries, time.Duration(cfg.ResetCrawlingAfterMin)*time.Minute)
 	ticker := time.NewTicker(5 * time.Second)
 	staleTicker := time.NewTicker(6 * time.Hour)
 	defer ticker.Stop()
@@ -72,13 +77,17 @@ func (c *Crawler) Start(ctx context.Context) {
 			log.Println("🛑 Crawler stopped by signal")
 			return
 		case <-ticker.C:
+			// Pull the next queued job, if any, and process it end-to-end.
 			if err := c.processNextJob(ctx); err != nil {
 				log.Printf("⚠️ Error processing job: %v", err)
 			}
 		case <-staleTicker.C:
+			// Periodically requeue subs not crawled in a while to keep data fresh.
 			if err := checkAndRequeueStaleSubreddits(ctx, c.queries); err != nil {
 				log.Printf("⚠️ Failed to requeue stale subreddits: %v", err)
 			}
+			// Also enqueue any subreddits not seen in configured TTL in created_at order
+			_ = RequeueStaleSubreddits(ctx, c.queries, time.Duration(cfg.StaleDays)*24*time.Hour)
 		}
 	}
 }
@@ -90,12 +99,12 @@ func (c *Crawler) Stop() {
 
 // processNextJob handles a single crawl job
 func (c *Crawler) processNextJob(ctx context.Context) error {
-	job, err := c.queries.GetNextCrawlJob(ctx)
+	job, err := ClaimNextJob(ctx, c.queries)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil
 		}
-		return fmt.Errorf("failed to get next job: %w", err)
+		return fmt.Errorf("failed to claim next job: %w", err)
 	}
 
 	return handleJob(ctx, c.queries, job)

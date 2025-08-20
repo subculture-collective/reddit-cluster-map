@@ -9,7 +9,7 @@ CRAWLER_CONTAINER = backend-crawler-1
 DB_USER = postgres
 DB_NAME = reddit_cluster
 
-.PHONY: reset migrate drop logs logs-api logs-db logs-crawler logs-all kickstart migrate-up start-crawler stop-crawler test-crawl precalculate test test-integration
+.PHONY: reset migrate drop logs logs-api logs-db logs-crawler logs-all kickstart migrate-up start-crawler stop-crawler test-crawl precalculate test test-integration sqlc generate
 
 # Reset and migrate database
 reset:
@@ -62,3 +62,11 @@ test:
 # Run only integration tests (skips unless TEST_DATABASE_URL is set)
 test-integration:
 	go test ./internal/graph -run Integration
+
+# Generate sqlc code from SQL files
+sqlc:
+	@command -v sqlc >/dev/null 2>&1 || { echo "sqlc not found. Install from https://docs.sqlc.dev/en/latest/overview/install.html"; exit 1; }
+	sqlc generate
+
+# Alias for sqlc
+generate: sqlc

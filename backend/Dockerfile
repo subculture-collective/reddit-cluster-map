@@ -43,8 +43,8 @@ RUN apt-get update && \
 COPY --from=builder /app/server .
 COPY --from=builder /app/migrations ./migrations
 
-# Expose port
-EXPOSE 8080
+# Expose the internal port the server listens on
+EXPOSE 8000
 
 # Run the application
 CMD ["./server"]

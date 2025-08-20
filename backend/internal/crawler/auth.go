@@ -41,9 +41,11 @@ func getAccessToken() (string, error) {
 		req, _ := http.NewRequest("POST", "https://www.reddit.com/api/v1/access_token", strings.NewReader(data.Encode()))
 		req.SetBasicAuth(clientID, clientSecret)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		// Reddit requires a descriptive and stable User-Agent
 		req.Header.Set("User-Agent", ua)
 		return req, nil
 	}
+	// Token requests also respect the global pacing to avoid burst traffic during retries.
 	pre := func(ctx context.Context, attempt int) error { waitForRateLimit(); return nil }
 	resp, err := httpx.DoWithRetryFactory(httpClient, build, pre)
 	if err != nil {

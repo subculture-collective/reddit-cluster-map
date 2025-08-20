@@ -27,98 +27,44 @@ A full-stack application for collecting, analyzing, and visualizing Reddit commu
 - **PostgreSQL** — Persistent storage
 - **sqlc** — Compile-time query generation
 - **Prometheus + Grafana** — Monitoring and observability
-- **Docker** — Containerized deployment
 
-### 📡 Data Collection
+# Reddit Cluster Map
 
-- **Reddit API** — Real-time and recent posts/comments
-- **Pushshift.io** — Historical Reddit archives
+Collect, analyze, and visualize relationships between Reddit communities and users as an interactive network graph.
 
-### 📊 Graph Analysis
+## Docs
 
-- **NetworkX** or **igraph** (Python)
-- **gonum/graph** (Go-native alternative for scalable analysis)
+- System overview: docs/overview.md
+- Setup & quickstart: docs/setup.md
+- API reference: docs/api.md
 
----
+## What it does
 
-## 🔄 Workflow
+- Crawls subreddits for posts and comments (paced and OAuth-authenticated).
+- Stores normalized data in Postgres.
+- Precomputes a graph (nodes + links) based on shared participation and activity.
+- Serves the graph at `/api/graph` for the React frontend to render in 3D.
 
-1. **Crawl Subreddits**: Target subreddits are scheduled via crawl jobs.
-2. **Fetch & Store**: Recent posts and comments are fetched and stored in Postgres.
-3. **Analyze**: Graph relationships are derived from shared user activity, post/comment structure, and other metadata.
-4. **Visualize**: Interactive network maps are rendered on the frontend.
+## Services
 
----
+- API server (Go): REST endpoints and scheduled graph job.
+- Crawler (Go): processes crawl jobs and discovers related subs.
+- Database (Postgres): primary storage.
+- Frontend (React+Vite): interactive graph UI, proxied via nginx.
 
-## 📂 Project Structure
+## Quick start
 
-```
-
+See docs/setup.md for environment variables, Docker compose, and seeding your first crawl.
 /backend
-/cmd           # Entrypoints
-/internal
-/db          # sqlc-generated queries
-/api         # REST routes
-/server      # Core server logic
-/utils       # Helper functions
 
-/frontend
-/components    # React UI components
-/pages         # Routes/views
-/styles        # Tailwind setup
-/lib           # D3 or Cytoscape logic
+### Backend dev tips
 
-/ops
-docker-compose.yml  # Local dev stack
-grafana/             # Dashboards
-prometheus/          # Configs
-
-````
-
----
-
-## 🧪 Local Dev
-
-**Requirements**:
-
-- Docker
-- Go 1.21+
-- Node.js 18+
-
-### Start Services
-
-```bash
-make dev        # Launches API, DB, Prometheus, Grafana
-make frontend   # Starts Vite dev server
-````
-
-### Env Variables
-
-```bash
-cp .env.example .env
-```
-
-Ensure your `.env` includes:
-
-```env
-REDDIT_CLIENT_ID=
-REDDIT_CLIENT_SECRET=
-REDDIT_USER_AGENT=
-DATABASE_URL=postgres://...
-```
-
----
-
-## 📈 Metrics
-
-- Prometheus scrapes metrics at `/metrics`
-- Grafana dashboards visualize crawl jobs, DB health, and data volumes
-
----
-
-## 🧠 Coming Soon
-
-- [ ] User-submitted subreddit targeting
-- [ ] In-browser cluster exploration with filters and tooltips
-- [ ] GraphQL API layer for more flexible queries
-- [ ] Community similarity scoring (Jaccard / Cosine / Graph embeddings)
+- Regenerate sqlc code after editing SQL in `backend/internal/queries/*.sql`:
+  - From `backend/`: `make sqlc` (alias: `make generate`)
+- Configure Reddit OAuth in `backend/.env` (see `backend/.env.example`):
+  - REDDIT_APP_NAME=cluster-map
+  - REDDIT_APP_TYPE=personal use script
+  - REDDIT_CLIENT_ID=XDdO0bzRuPAn3UfpUW7yXg
+  - REDDIT_CLIENT_SECRET=…
+  - REDDIT_REDIRECT_URI=https://reddit-cluster-map.onnwee.me/oauth/reddit/callback
+  - REDDIT_SCOPES="identity read"

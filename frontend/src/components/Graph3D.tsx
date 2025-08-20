@@ -34,7 +34,8 @@ export default function Graph3D({
 
   const load = async (signal?: AbortSignal) => {
     try {
-      // Join base and path safely to avoid double /api
+      // Build API url. VITE_API_URL can be '' (same-origin proxy) or '/api' (nginx proxy),
+      // or a full URL in other deployments. We strip trailing slash and append '/graph'.
       const base = (import.meta.env?.VITE_API_URL || "/api").replace(/\/$/, "");
       const url = `${base}/graph`;
       const response = await fetch(url, { signal });

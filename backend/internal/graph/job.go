@@ -23,6 +23,7 @@ func (j *Job) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	// Run immediately on start
+	// Precalculates the entire graph (nodes + edges) and stores in DB tables used by queries.
 	if err := j.service.PrecalculateGraphData(ctx); err != nil {
 		log.Printf("Error precalculating graph data: %v", err)
 	}

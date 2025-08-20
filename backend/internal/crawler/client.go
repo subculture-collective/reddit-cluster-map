@@ -10,6 +10,9 @@ import (
 
 var httpClient = &http.Client{Timeout: config.Load().HTTPTimeout}
 
+// authenticatedGet issues a GET with OAuth Bearer token and Reddit-compliant User-Agent.
+// It uses DoWithRetryFactory which applies light retries and a pre-attempt hook
+// wired to waitForRateLimit() so we never exceed our global pacing.
 var authenticatedGet = func(url string) (*http.Response, error) {
 	token, err := getAccessToken()
 	if err != nil {

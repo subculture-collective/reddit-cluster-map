@@ -22,6 +22,14 @@ type Config struct {
 	MaxPostsPerSub     int
 	PostsSort          string
 	PostsTimeFilter    string
+	// Reddit OAuth (user-auth) configuration
+	RedditClientID     string
+	RedditClientSecret string
+	RedditRedirectURI  string
+	RedditScopes       string
+	// Crawler scheduling
+	StaleDays                int
+	ResetCrawlingAfterMin    int
 }
 
 var cached *Config
@@ -48,6 +56,12 @@ func Load() *Config {
 		MaxPostsPerSub:     utils.GetEnvAsInt("MAX_POSTS_PER_SUB", 25),
 		PostsSort:          strings.ToLower(strings.TrimSpace(os.Getenv("POSTS_SORT"))),
 		PostsTimeFilter:    strings.ToLower(strings.TrimSpace(os.Getenv("POSTS_TIME_FILTER"))),
+	RedditClientID:     strings.TrimSpace(os.Getenv("REDDIT_CLIENT_ID")),
+	RedditClientSecret: strings.TrimSpace(os.Getenv("REDDIT_CLIENT_SECRET")),
+	RedditRedirectURI:  strings.TrimSpace(os.Getenv("REDDIT_REDIRECT_URI")),
+	RedditScopes:       strings.TrimSpace(os.Getenv("REDDIT_SCOPES")),
+	StaleDays:           utils.GetEnvAsInt("STALE_DAYS", 30),
+	ResetCrawlingAfterMin: utils.GetEnvAsInt("RESET_CRAWLING_AFTER_MIN", 15),
 	}
 	if cached.PostsSort == "" { cached.PostsSort = "top" }
 	if cached.PostsTimeFilter == "" { cached.PostsTimeFilter = "day" }
