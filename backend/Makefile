@@ -9,7 +9,7 @@ CRAWLER_CONTAINER = backend-crawler-1
 DB_USER = postgres
 DB_NAME = reddit_cluster
 
-.PHONY: reset migrate drop logs logs-api logs-db logs-crawler logs-all kickstart migrate-up start-crawler stop-crawler test-crawl precalculate test test-integration sqlc generate
+.PHONY: reset migrate drop logs logs-api logs-db logs-crawler logs-all kickstart migrate-up migrate-up-local migrate-priority-fix start-crawler stop-crawler test-crawl precalculate test test-integration sqlc generate
 
 # Reset and migrate database
 reset:
@@ -27,6 +27,17 @@ migrate-up:
 		echo "Using provided DATABASE_URL..."; \
 	fi; \
 	migrate -path migrations -database "$$DATABASE_URL" up
+
+# Force a localhost-based DATABASE_URL for running migrations from host
+migrate-up-local:
+	@echo "Running migrations against localhost using .env credentials"
+	@DATABASE_URL="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)?sslmode=disable" \
+	migrate -path migrations -database "$$DATABASE_URL" up
+
+# Apply only the crawl_jobs priority column/index directly inside the db container (fallback)
+migrate-priority-fix:
+	@docker compose exec -T db psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c \
+	"ALTER TABLE crawl_jobs ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 0; CREATE INDEX IF NOT EXISTS idx_crawl_jobs_priority ON crawl_jobs(priority);"
 
 # Logs
 logs-api:

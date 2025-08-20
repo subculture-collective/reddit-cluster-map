@@ -88,14 +88,17 @@ SELECT COUNT(*)
 FROM user_activity ua
 JOIN other_activity oa ON ua.author_id = oa.author_id;
 
--- name: CreateSubredditRelationship :one
 INSERT INTO subreddit_relationships (
     source_subreddit_id,
     target_subreddit_id,
     overlap_count
 ) VALUES (
     $1, $2, $3
-) RETURNING *;
+) ON CONFLICT (source_subreddit_id, target_subreddit_id)
+DO UPDATE SET
+    overlap_count = EXCLUDED.overlap_count,
+    updated_at = now()
+RETURNING *;
 
 -- name: ClearSubredditRelationships :exec
 TRUNCATE TABLE subreddit_relationships;

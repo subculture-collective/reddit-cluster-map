@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
@@ -60,6 +61,13 @@ func RequeueStaleSubreddits(ctx context.Context, q *db.Queries, ttl time.Duratio
 func BumpPriority(ctx context.Context, q *db.Queries, subredditID int32, delta int) error {
     const stmt = `UPDATE crawl_jobs SET priority = priority + $2, updated_at=now() WHERE subreddit_id = $1`
     _, err := q.DB().ExecContext(ctx, stmt, subredditID, delta)
+    if err != nil {
+        // If priority column doesn't exist yet, ignore
+        if pqErr, ok := err.(*pq.Error); ok && string(pqErr.Code) == "42703" {
+            _, _ = q.DB().ExecContext(ctx, `UPDATE crawl_jobs SET updated_at=now() WHERE subreddit_id = $1`, subredditID)
+            return nil
+        }
+    }
     return err
 }
 
@@ -68,17 +76,33 @@ func ClaimNextJob(ctx context.Context, q *db.Queries) (db.CrawlJob, error) {
     tx, err := q.DB().(*sql.DB).BeginTx(ctx, &sql.TxOptions{})
     if err != nil { return db.CrawlJob{}, err }
     defer func() { if err != nil { _ = tx.Rollback() } }()
-    const sel = `SELECT id, subreddit_id, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at
-                 FROM crawl_jobs
-                 WHERE status='queued'
-                 ORDER BY priority DESC, created_at ASC
-                 FOR UPDATE SKIP LOCKED
-                 LIMIT 1`
-    row := tx.QueryRowContext(ctx, sel)
     var j db.CrawlJob
+    // Try priority-aware selection first
+    sel := `SELECT id, subreddit_id, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at
+            FROM crawl_jobs
+            WHERE status='queued'
+            ORDER BY priority DESC, created_at ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT 1`
+    row := tx.QueryRowContext(ctx, sel)
     if err = row.Scan(&j.ID, &j.SubredditID, &j.Status, &j.Retries, &j.LastAttempt, &j.DurationMs, &j.EnqueuedBy, &j.CreatedAt, &j.UpdatedAt); err != nil {
-        if err == sql.ErrNoRows { _ = tx.Rollback(); return db.CrawlJob{}, sql.ErrNoRows }
-        _ = tx.Rollback(); return db.CrawlJob{}, err
+        // Fallback if priority column is missing
+        if pqErr, ok := err.(*pq.Error); ok && string(pqErr.Code) == "42703" {
+            sel = `SELECT id, subreddit_id, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at
+                   FROM crawl_jobs
+                   WHERE status='queued'
+                   ORDER BY created_at ASC
+                   FOR UPDATE SKIP LOCKED
+                   LIMIT 1`
+            row = tx.QueryRowContext(ctx, sel)
+            if err = row.Scan(&j.ID, &j.SubredditID, &j.Status, &j.Retries, &j.LastAttempt, &j.DurationMs, &j.EnqueuedBy, &j.CreatedAt, &j.UpdatedAt); err != nil {
+                if err == sql.ErrNoRows { _ = tx.Rollback(); return db.CrawlJob{}, sql.ErrNoRows }
+                _ = tx.Rollback(); return db.CrawlJob{}, err
+            }
+        } else {
+            if err == sql.ErrNoRows { _ = tx.Rollback(); return db.CrawlJob{}, sql.ErrNoRows }
+            _ = tx.Rollback(); return db.CrawlJob{}, err
+        }
     }
     if _, err = tx.ExecContext(ctx, `UPDATE crawl_jobs SET status='crawling', last_attempt=now(), updated_at=now() WHERE id=$1`, j.ID); err != nil {
         _ = tx.Rollback(); return db.CrawlJob{}, err

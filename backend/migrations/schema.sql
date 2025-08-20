@@ -56,6 +56,7 @@ CREATE TABLE crawl_jobs (
   id SERIAL PRIMARY KEY,
   subreddit_id INTEGER NOT NULL REFERENCES subreddits(id) UNIQUE,
   status TEXT NOT NULL DEFAULT 'queued', -- queued, crawling, success, failed
+    priority INT DEFAULT 0,
   retries INT DEFAULT 0,
   last_attempt TIMESTAMPTZ DEFAULT now(),
   duration_ms INT,
@@ -66,6 +67,7 @@ CREATE TABLE crawl_jobs (
 
 CREATE INDEX idx_crawl_jobs_status ON crawl_jobs(status);
 CREATE INDEX idx_crawl_jobs_subreddit_id ON crawl_jobs(subreddit_id);
+CREATE INDEX idx_crawl_jobs_priority ON crawl_jobs(priority);
 
 CREATE TABLE graph_nodes (
     id TEXT PRIMARY KEY,

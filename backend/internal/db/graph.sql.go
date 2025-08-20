@@ -140,12 +140,16 @@ func (q *Queries) CreateGraphNode(ctx context.Context, arg CreateGraphNodeParams
 
 const createSubredditRelationship = `-- name: CreateSubredditRelationship :one
 INSERT INTO subreddit_relationships (
-    source_subreddit_id,
-    target_subreddit_id,
-    overlap_count
+	source_subreddit_id,
+	target_subreddit_id,
+	overlap_count
 ) VALUES (
-    $1, $2, $3
-) RETURNING id, source_subreddit_id, target_subreddit_id, overlap_count, created_at, updated_at
+	$1, $2, $3
+) ON CONFLICT (source_subreddit_id, target_subreddit_id)
+DO UPDATE SET
+	overlap_count = EXCLUDED.overlap_count,
+	updated_at = now()
+RETURNING id, source_subreddit_id, target_subreddit_id, overlap_count, created_at, updated_at
 `
 
 type CreateSubredditRelationshipParams struct {
