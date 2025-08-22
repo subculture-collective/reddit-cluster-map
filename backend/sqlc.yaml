@@ -1,13 +1,12 @@
 version: "2"
 
 sql:
-  - engine: postgresql
-    schema:
-      - "migrations/schema.sql"
-      - "migrations/*.sql"
+  - schema:
+      - migrations/*.sql
     queries:
-      - "internal/queries/"
+      - internal/queries/
+    engine: postgresql
     gen:
       go:
-        out: "internal/db"
-        package: "db"
+        out: internal/db
+        package: db

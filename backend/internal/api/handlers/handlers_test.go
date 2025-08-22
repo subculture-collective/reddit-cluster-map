@@ -57,6 +57,10 @@ func (f *fakeGraphQueries) GetGraphData(ctx context.Context) ([]json.RawMessage,
     for _, b := range f.data { out = append(out, json.RawMessage(b)) }
     return out, nil
 }
+// Satisfy interface; return no precalculated rows so handler falls back to GetGraphData
+func (f *fakeGraphQueries) GetPrecalculatedGraphData(ctx context.Context) ([]db.GetPrecalculatedGraphDataRow, error) {
+    return nil, nil
+}
 
 func TestGraphHandler_UnwrapsSingleRow(t *testing.T) {
     h := &Handler{queries: (&fakeGraphQueries{data: [][]byte{[]byte(`{"nodes":[{"id":"x"}],"links":[]}`)}})}

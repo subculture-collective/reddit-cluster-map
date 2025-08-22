@@ -30,6 +30,8 @@ type Config struct {
 	// Crawler scheduling
 	StaleDays                int
 	ResetCrawlingAfterMin    int
+	// API background graph job control
+	DisableAPIGraphJob bool
 }
 
 var cached *Config
@@ -62,6 +64,7 @@ func Load() *Config {
 	RedditScopes:       strings.TrimSpace(os.Getenv("REDDIT_SCOPES")),
 	StaleDays:           utils.GetEnvAsInt("STALE_DAYS", 30),
 	ResetCrawlingAfterMin: utils.GetEnvAsInt("RESET_CRAWLING_AFTER_MIN", 15),
+	DisableAPIGraphJob:    utils.GetEnvAsBool("DISABLE_API_GRAPH_JOB", false),
 	}
 	if cached.PostsSort == "" { cached.PostsSort = "top" }
 	if cached.PostsTimeFilter == "" { cached.PostsTimeFilter = "day" }
@@ -70,3 +73,9 @@ func Load() *Config {
 
 // ResetForTest clears cached config; for use in tests only.
 func ResetForTest() { cached = nil }
+
+// GetEnvBool reads a boolean environment variable with a default.
+// Use this when you need to check a flag not present in the cached config.
+func (c *Config) GetEnvBool(key string, def bool) bool {
+	return utils.GetEnvAsBool(key, def)
+}

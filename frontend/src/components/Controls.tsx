@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { TypeFilters } from "../types/ui";
 
@@ -26,6 +26,49 @@ export default function Controls({
   onShowLabelsChange,
 }: Props) {
   const [search, setSearch] = useState("");
+  const [srv, setSrv] = useState<{
+    crawler_enabled: boolean;
+    precalc_enabled: boolean;
+  } | null>(null);
+  const [srvErr, setSrvErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchServices();
+  }, []);
+
+  const fetchServices = () => {
+    const base = (import.meta.env?.VITE_API_URL || "/api").replace(/\/$/, "");
+    fetch(`${base}/admin/services`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        setSrv(await r.json());
+      })
+      .catch((e) => setSrvErr(String(e)));
+  };
+
+  const updateSrv = async (
+    patch: Partial<{ crawler_enabled: boolean; precalc_enabled: boolean }>
+  ) => {
+    try {
+      setSaving(true);
+      const base = (import.meta.env?.VITE_API_URL || "/api").replace(/\/$/, "");
+      const r = await fetch(`${base}/admin/services`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setSrv(await r.json());
+      setSrvErr(null);
+    } catch (e) {
+      setSrvErr(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // runPrecalcNow removed; precalc runs as its own service
 
   const onToggle = (key: keyof TypeFilters) =>
     onFiltersChange({ ...filters, [key]: !filters[key] });
@@ -43,6 +86,33 @@ export default function Controls({
 
   return (
     <div className="absolute z-20 top-2 right-2 bg-black/60 text-white p-3 rounded shadow flex flex-col gap-3">
+      <div className="text-xs text-white/70">Admin</div>
+      <div className="flex items-center gap-3 text-sm">
+        <button
+          className={`px-3 py-1 rounded border ${
+            srv?.crawler_enabled
+              ? "bg-green-600 border-green-400"
+              : "bg-gray-700 border-gray-500"
+          } text-white font-semibold`}
+          disabled={!srv || saving}
+          onClick={() => updateSrv({ crawler_enabled: !srv?.crawler_enabled })}
+        >
+          {srv?.crawler_enabled ? "Crawler ON" : "Crawler OFF"}
+        </button>
+        <button
+          className={`px-3 py-1 rounded border ${
+            srv?.precalc_enabled
+              ? "bg-green-600 border-green-400"
+              : "bg-gray-700 border-gray-500"
+          } text-white font-semibold`}
+          disabled={!srv || saving}
+          onClick={() => updateSrv({ precalc_enabled: !srv?.precalc_enabled })}
+        >
+          {srv?.precalc_enabled ? "Precalc ON" : "Precalc OFF"}
+        </button>
+        {/* Precalc runs in its own service; run-now removed */}
+        {srvErr && <span className="text-red-400 text-xs">{srvErr}</span>}
+      </div>
       <div className="flex gap-2 items-center">
         <input
           value={search}

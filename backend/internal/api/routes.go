@@ -41,6 +41,12 @@ func NewRouter(q *db.Queries) *mux.Router {
 	// Graph data for the frontend: GET /api/graph
 	graphHandler := handlers.NewHandler(q)
 	r.HandleFunc("/api/graph", graphHandler.GetGraphData).Methods("GET")
+
+	// Admin: toggle background services
+	admin := handlers.NewAdminHandler(q)
+	r.HandleFunc("/api/admin/services", admin.GetServices).Methods("GET")
+	r.HandleFunc("/api/admin/services", admin.UpdateServices).Methods("POST")
+	// precalc is handled in its own service; no run-now route
 	// Crawl status
 	r.HandleFunc("/api/crawl/status", handlers.GetCrawlStatus(q)).Methods("GET")
 	

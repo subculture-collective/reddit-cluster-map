@@ -8,6 +8,11 @@ interface Props {
 
 export default function Inspector({ selected, onClear, onFocus }: Props) {
   if (!selected) return null;
+  // Only show inspector when the selected node has at least one connection
+  const hasConnections =
+    (typeof selected.degree === "number" && selected.degree > 0) ||
+    (selected.neighbors && selected.neighbors.length > 0);
+  if (!hasConnections) return null;
   return (
     <div className="absolute z-20 bottom-2 left-2 bg-black/70 text-white p-3 rounded shadow max-w-md">
       <div className="flex justify-between items-center mb-2">

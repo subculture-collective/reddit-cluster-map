@@ -78,7 +78,8 @@ CREATE TABLE graph_nodes (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_graph_nodes_name ON graph_nodes(name);
+-- Avoid wide btree index on full name to prevent oversized index entries; keep a small prefix index instead
+-- CREATE INDEX idx_graph_nodes_name ON graph_nodes(name);
 CREATE INDEX idx_graph_nodes_name_hash ON graph_nodes (substring(name, 1, 10));
 
 CREATE TABLE graph_links (
@@ -88,7 +89,8 @@ CREATE TABLE graph_links (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (source) REFERENCES graph_nodes(id),
-    FOREIGN KEY (target) REFERENCES graph_nodes(id)
+    FOREIGN KEY (target) REFERENCES graph_nodes(id),
+    UNIQUE(source, target)
 );
 
 CREATE INDEX idx_graph_links_source ON graph_links(source);

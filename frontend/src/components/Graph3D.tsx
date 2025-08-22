@@ -27,6 +27,7 @@ export default function Graph3D({
   onNodeSelect,
   showLabels,
 }: Props) {
+  const [onlyLinked, setOnlyLinked] = useState(true);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,8 +35,6 @@ export default function Graph3D({
 
   const load = async (signal?: AbortSignal) => {
     try {
-      // Build API url. VITE_API_URL can be '' (same-origin proxy) or '/api' (nginx proxy),
-      // or a full URL in other deployments. We strip trailing slash and append '/graph'.
       const base = (import.meta.env?.VITE_API_URL || "/api").replace(/\/$/, "");
       const url = `${base}/graph`;
       const response = await fetch(url, { signal });
@@ -52,11 +51,11 @@ export default function Graph3D({
   useEffect(() => {
     const controller = new AbortController();
     load(controller.signal);
-
-    return () => {
-      controller.abort();
-    };
+    // Disable periodic polling to reduce distraction
+    return () => controller.abort();
   }, []);
+
+  // Removed per-type counters to keep UI minimal and avoid distraction
 
   const getColor = useMemo(
     () => (type?: string) => {
@@ -96,33 +95,55 @@ export default function Graph3D({
     );
   }, [focusNodeId, graphData]);
 
-  if (error) return <div className="p-4 text-red-400">Error: {error}</div>;
-  if (!graphData) return <div className="p-4">Loading graph…</div>;
-
-  // Filter nodes by selected types
+  // Filter nodes by selected types (always define for hooks)
   const allowed = new Set(
     Object.entries(filters)
       .filter(([, v]) => v)
       .map(([k]) => k)
   );
-  const nodes = graphData.nodes.filter((n) => !n.type || allowed.has(n.type));
-  const nodeIds = new Set(nodes.map((n) => n.id));
-  const links = graphData.links.filter(
+  const allNodes = graphData?.nodes ?? [];
+  const allLinks = graphData?.links ?? [];
+  const filteredNodes = allNodes.filter((n) => !n.type || allowed.has(n.type));
+  const nodeIds = new Set(filteredNodes.map((n) => n.id));
+  const links = allLinks.filter(
     (l) => nodeIds.has(l.source) && nodeIds.has(l.target)
   );
+
+  const linkedNodeIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const l of links) {
+      ids.add(l.source);
+      ids.add(l.target);
+    }
+    return ids;
+  }, [links]);
+  const nodes = onlyLinked
+    ? filteredNodes.filter((n) => linkedNodeIds.has(n.id))
+    : filteredNodes;
   const filtered: GraphData = { nodes, links };
+
+  if (error) return <div className="p-4 text-red-400">Error: {error}</div>;
+  if (!graphData) return <div className="p-4">Loading graph…</div>;
 
   return (
     <div className="w-full h-screen relative">
+      {/* Minimal HUD: hide running counters and auto-poll UI; keep manual Reload */}
       <div className="absolute top-2 left-2 z-10 bg-black/50 text-white rounded px-3 py-2 text-sm flex items-center gap-3">
-        <span>Nodes: {graphData.nodes.length}</span>
-        <span>Links: {graphData.links.length}</span>
         <button
-          className="ml-2 border border-white/30 rounded px-2 py-1 hover:bg-white/10"
+          className="border border-white/30 rounded px-2 py-1 hover:bg-white/10"
           onClick={() => load()}
         >
           Reload
         </button>
+        <label className="ml-2 flex items-center gap-1 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={onlyLinked}
+            onChange={() => setOnlyLinked((v) => !v)}
+            className="accent-blue-400"
+          />
+          <span className="opacity-80">Only show linked nodes</span>
+        </label>
       </div>
       <ForceGraph3D
         ref={fgRef}
@@ -134,10 +155,8 @@ export default function Graph3D({
         linkColor={() => "#999"}
         linkOpacity={linkOpacity}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onNodeClick={(node: any) => onNodeSelect?.(node?.id)}
+        onNodeClick={(node: any) => onNodeSelect?.(node?.name)}
         backgroundColor="#000000"
-        // Render labels conditionally (using the default tooltip works out of the box).
-        // For persistent labels, we'd use three-spritetext; this is a toggle placeholder.
         enableNodeDrag={true}
       />
     </div>

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq" // Import the postgres driver
+	"github.com/onnwee/reddit-cluster-map/backend/internal/admin"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
@@ -77,6 +78,12 @@ func (c *Crawler) Start(ctx context.Context) {
 			log.Println("🛑 Crawler stopped by signal")
 			return
 		case <-ticker.C:
+			// Check if disabled via admin flag
+			enabled, _ := admin.GetBool(ctx, c.queries, "crawler_enabled", true)
+			if !enabled {
+				// skip quietly; avoid noisy logs every tick
+				continue
+			}
 			// Pull the next queued job, if any, and process it end-to-end.
 			if err := c.processNextJob(ctx); err != nil {
 				log.Printf("⚠️ Error processing job: %v", err)

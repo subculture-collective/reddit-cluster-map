@@ -12,7 +12,10 @@ import (
 
 const bulkInsertGraphLink = `-- name: BulkInsertGraphLink :exec
 INSERT INTO graph_links (source, target)
-VALUES ($1, $2)
+SELECT $1, $2
+WHERE EXISTS (SELECT 1 FROM graph_nodes WHERE id = $1)
+  AND EXISTS (SELECT 1 FROM graph_nodes WHERE id = $2)
+ON CONFLICT (source, target) DO NOTHING
 `
 
 type BulkInsertGraphLinkParams struct {
@@ -28,6 +31,11 @@ func (q *Queries) BulkInsertGraphLink(ctx context.Context, arg BulkInsertGraphLi
 const bulkInsertGraphNode = `-- name: BulkInsertGraphNode :exec
 INSERT INTO graph_nodes (id, name, val, type)
 VALUES ($1, $2, $3, $4)
+ON CONFLICT (id) DO UPDATE SET
+	name = EXCLUDED.name,
+	val = EXCLUDED.val,
+	type = EXCLUDED.type,
+	updated_at = now()
 `
 
 type BulkInsertGraphNodeParams struct {

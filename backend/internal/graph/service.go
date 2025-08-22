@@ -5,8 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"unicode/utf8"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
@@ -42,273 +47,277 @@ type GraphStore interface {
 	GetUserTotalActivity(ctx context.Context, authorID int32) (int32, error)
 }
 
-func NewService(store GraphStore) *Service {
-	return &Service{store: store}
+func NewService(store GraphStore) *Service { return &Service{store: store} }
+
+// truncateUTF8 returns a string with at most max runes, preserving valid UTF-8 boundaries.
+func truncateUTF8(s string, max int) string {
+	if max <= 0 || s == "" {
+		return ""
+	}
+	i := 0
+	for idx := range s { // idx is start byte index of the next rune
+		if i == max {
+			return s[:idx]
+		}
+		i++
+	}
+	return s
 }
 
-// CalculateSubredditRelationships calculates relationships between subreddits based on user overlap
+// CalculateSubredditRelationships via user activity co-occurrence (incremental upsert)
 func (s *Service) CalculateSubredditRelationships(ctx context.Context) error {
-	log.Printf("🔄 Starting subreddit relationship calculation")
-	
-	// Clear existing relationships
-	if err := s.store.ClearSubredditRelationships(ctx); err != nil {
-		return fmt.Errorf("failed to clear subreddit relationships: %w", err)
-	}
-	log.Printf("🧹 Cleared existing subreddit relationships")
+	log.Printf("🔄 Starting subreddit relationship calculation (via co-occurrence)")
 
-	// Get all subreddits
-	subreddits, err := s.store.GetAllSubreddits(ctx)
+	acts, err := s.store.GetAllUserSubredditActivity(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to fetch subreddits: %w", err)
+		return fmt.Errorf("failed to fetch user activity for relationships: %w", err)
 	}
-	log.Printf("📊 Processing %d subreddits for relationships", len(subreddits))
+	if len(acts) == 0 {
+		log.Printf("ℹ️ No user activity yet; skipping relationships")
+		return nil
+	}
 
-	// For each pair of subreddits, calculate user overlap
-	relationshipCount := 0
-	for i, s1 := range subreddits {
-		log.Printf("Processing subreddit %d/%d: r/%s", i, len(subreddits), s1.Name)
-		for j := i + 1; j < len(subreddits); j++ {
-			s2 := subreddits[j]
-			// Get users who posted/commented in both subreddits
-			overlap, err := s.store.GetSubredditOverlap(ctx, db.GetSubredditOverlapParams{
-				SubredditID:   s1.ID,
-				SubredditID_2: s2.ID,
-			})
-			if err != nil {
-				log.Printf("⚠️ Failed to calculate overlap between r/%s and r/%s: %v", s1.Name, s2.Name, err)
-				continue
+	// Group subreddit ids per user
+	perUser := make(map[int32][]int32, 1024)
+	for _, a := range acts {
+		perUser[a.UserID] = append(perUser[a.UserID], a.SubredditID)
+	}
+
+	// Count unordered pairs
+	type pair struct{ a, b int32 }
+	counts := make(map[pair]int32, 4096)
+	for _, subs := range perUser {
+		if len(subs) == 0 {
+			continue
+		}
+		seen := make(map[int32]struct{}, len(subs))
+		uniq := make([]int32, 0, len(subs))
+		for _, id := range subs {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				uniq = append(uniq, id)
 			}
-
-			if overlap > 0 {
-				// Insert relationship in both directions
-				_, err := s.store.CreateSubredditRelationship(ctx, db.CreateSubredditRelationshipParams{
-					SourceSubredditID: s1.ID,
-					TargetSubredditID: s2.ID,
-					OverlapCount:      int32(overlap),
-				})
-				if err != nil {
-					log.Printf("⚠️ Failed to create relationship from r/%s to r/%s: %v", s1.Name, s2.Name, err)
-					continue
+		}
+		for i := 0; i < len(uniq); i++ {
+			for j := i + 1; j < len(uniq); j++ {
+				a, b := uniq[i], uniq[j]
+				if a > b {
+					a, b = b, a
 				}
-
-				_, err = s.store.CreateSubredditRelationship(ctx, db.CreateSubredditRelationshipParams{
-					SourceSubredditID: s2.ID,
-					TargetSubredditID: s1.ID,
-					OverlapCount:      int32(overlap),
-				})
-				if err != nil {
-					log.Printf("⚠️ Failed to create relationship from r/%s to r/%s: %v", s2.Name, s1.Name, err)
-					continue
-				}
-				relationshipCount++
+				counts[pair{a, b}]++
 			}
 		}
 	}
-	log.Printf("✅ Created %d subreddit relationships", relationshipCount)
+
+	upserts := 0
+	for p, c := range counts {
+		if c <= 0 {
+			continue
+		}
+		if _, err := s.store.CreateSubredditRelationship(ctx, db.CreateSubredditRelationshipParams{SourceSubredditID: p.a, TargetSubredditID: p.b, OverlapCount: c}); err != nil {
+			log.Printf("⚠️ relationship upsert %d->%d failed: %v", p.a, p.b, err)
+		} else {
+			upserts++
+		}
+		if _, err := s.store.CreateSubredditRelationship(ctx, db.CreateSubredditRelationshipParams{SourceSubredditID: p.b, TargetSubredditID: p.a, OverlapCount: c}); err != nil {
+			log.Printf("⚠️ relationship upsert %d->%d failed: %v", p.b, p.a, err)
+		} else {
+			upserts++
+		}
+	}
+	log.Printf("✅ Upserted %d subreddit relationship rows", upserts)
 	return nil
 }
 
-// CalculateUserActivity calculates user activity in subreddits
+// CalculateUserActivity computes per-user subreddit activity (parallel) and incrementally inserts user→subreddit links
 func (s *Service) CalculateUserActivity(ctx context.Context) error {
 	log.Printf("🔄 Starting user activity calculation")
-	
-	// Clear existing activity data
 	if err := s.store.ClearUserSubredditActivity(ctx); err != nil {
 		return fmt.Errorf("failed to clear user activity: %w", err)
 	}
 	log.Printf("🧹 Cleared existing user activity data")
 
-	// Get all users
 	users, err := s.store.GetAllUsers(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch users: %w", err)
 	}
-	log.Printf("👥 Processing activity for %d users", len(users))
+	if len(users) == 0 {
+		log.Printf("ℹ️ No users found for activity calculation")
+		return nil
+	}
 
-	activityCount := 0
-	// For each user, calculate their activity in each subreddit
-	for _, user := range users {
-		// Get all subreddits where the user has posted or commented
-	subreddits, err := s.store.GetUserSubreddits(ctx, user.ID)
-		if err != nil {
-			log.Printf("⚠️ Failed to get subreddits for user %s: %v", user.Username, err)
-			continue
+	// Determine workers
+	workers := 4
+	if wStr := os.Getenv("PRECALC_ACTIVITY_WORKERS"); wStr != "" {
+		if w, err := strconv.Atoi(wStr); err == nil && w > 0 {
+			workers = w
 		}
+	} else if p := runtime.GOMAXPROCS(0); p > 0 && p < workers {
+		workers = p
+	}
+	if workers > len(users) {
+		workers = len(users)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	log.Printf("⚙️ Calculating activity with %d workers", workers)
 
-		for _, subreddit := range subreddits {
-			// Calculate total activity (posts + comments)
-			activity, err := s.store.GetUserSubredditActivityCount(ctx, db.GetUserSubredditActivityCountParams{
-				AuthorID:    user.ID,
-				SubredditID: subreddit.ID,
-			})
-			if err != nil {
-				log.Printf("⚠️ Failed to calculate activity for user %s in r/%s: %v", user.Username, subreddit.Name, err)
-				continue
-			}
-
-			if activity > 0 {
-				_, err := s.store.CreateUserSubredditActivity(ctx, db.CreateUserSubredditActivityParams{
-					UserID:        user.ID,
-					SubredditID:   subreddit.ID,
-					ActivityCount: activity,
-				})
+	var total int64
+	userCh := make(chan db.GetAllUsersRow, workers*2)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for u := range userCh {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				subs, err := s.store.GetUserSubreddits(ctx, u.ID)
 				if err != nil {
-					log.Printf("⚠️ Failed to create activity record for user %s in r/%s: %v", user.Username, subreddit.Name, err)
+					log.Printf("⚠️ GetUserSubreddits %s: %v", u.Username, err)
 					continue
 				}
-				activityCount++
+				for _, sr := range subs {
+					act, err := s.store.GetUserSubredditActivityCount(ctx, db.GetUserSubredditActivityCountParams{AuthorID: u.ID, SubredditID: sr.ID})
+					if err != nil {
+						log.Printf("⚠️ GetUserSubredditActivityCount %s r/%s: %v", u.Username, sr.Name, err)
+						continue
+					}
+					if act <= 0 {
+						continue
+					}
+					if _, err := s.store.CreateUserSubredditActivity(ctx, db.CreateUserSubredditActivityParams{UserID: u.ID, SubredditID: sr.ID, ActivityCount: act}); err != nil {
+						log.Printf("⚠️ CreateUserSubredditActivity %s r/%s: %v", u.Username, sr.Name, err)
+						continue
+					}
+					// Note: Defer user→subreddit link insertion until after nodes exist to satisfy FKs
+					atomic.AddInt64(&total, 1)
+				}
 			}
-		}
+		}()
 	}
-	log.Printf("✅ Created %d user activity records", activityCount)
+	for _, u := range users {
+		userCh <- u
+	}
+	close(userCh)
+	wg.Wait()
+	log.Printf("✅ Created %d user activity records", total)
 	return nil
 }
 
-// PrecalculateGraphData precalculates the graph data and stores it in the database.
+// PrecalculateGraphData builds nodes and links. It preserves existing graph rows unless PRECALC_CLEAR_ON_START is set.
 func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	log.Printf("🔄 Starting graph data precalculation")
-	
-	// First calculate relationships and activity
-	if err := s.CalculateSubredditRelationships(ctx); err != nil {
-		return fmt.Errorf("failed to calculate subreddit relationships: %w", err)
+
+	// Optional clear on start (must happen before node/link inserts)
+	if config.Load().GetEnvBool("PRECALC_CLEAR_ON_START", false) {
+		if err := s.store.ClearGraphTables(ctx); err != nil {
+			return fmt.Errorf("failed to clear graph tables: %w", err)
+		}
+		log.Printf("🧹 Cleared existing graph data (requested)")
+	} else {
+		log.Printf("ℹ️ Preserving existing graph data; running incremental precalc")
 	}
 
-	if err := s.CalculateUserActivity(ctx); err != nil {
-		return fmt.Errorf("failed to calculate user activity: %w", err)
-	}
-
-	// Clear existing graph data
-	if err := s.store.ClearGraphTables(ctx); err != nil {
-		return fmt.Errorf("failed to clear graph tables: %w", err)
-	}
-	log.Printf("🧹 Cleared existing graph data")
-
-	// Env toggles and limits for detailed content graph
 	cfg := config.Load()
 	detailed := cfg.DetailedGraph
 	postsPerSub := int32(cfg.PostsPerSubInGraph)
 	commentsPerPost := int(cfg.CommentsPerPost)
 
-	// Create user nodes first (so user->post/comment links will be valid later)
+	// Users -> nodes
 	users, err := s.store.GetAllUsers(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch users: %w", err)
 	}
 	log.Printf("👥 Creating nodes for %d users", len(users))
-
 	userNodeCount := 0
-	for _, user := range users {
-		// Calculate total activity
-	activity, err := s.store.GetUserTotalActivity(ctx, user.ID)
+	for _, u := range users {
+		total, err := s.store.GetUserTotalActivity(ctx, u.ID)
 		if err != nil {
-			log.Printf("⚠️ Failed to calculate total activity for user %s: %v", user.Username, err)
+			log.Printf("⚠️ total activity %s: %v", u.Username, err)
 			continue
 		}
-
-	err = s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{
-			ID:   fmt.Sprintf("user_%d", user.ID),
-			Name: user.Username,
-			Val:  sql.NullString{String: strconv.FormatInt(int64(activity), 10), Valid: true},
-			Type: sql.NullString{String: "user", Valid: true},
-		})
-		if err != nil {
-			log.Printf("⚠️ Failed to insert user node for %s: %v", user.Username, err)
+		if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("user_%d", u.ID), Name: u.Username, Val: sql.NullString{String: strconv.FormatInt(int64(total), 10), Valid: true}, Type: sql.NullString{String: "user", Valid: true}}); err != nil {
+			log.Printf("⚠️ insert user node %s: %v", u.Username, err)
 			continue
 		}
 		userNodeCount++
 	}
 	log.Printf("✅ Created %d user nodes", userNodeCount)
 
-	// Get all subreddits and create nodes
+	// Subreddits -> nodes
 	subreddits, err := s.store.GetAllSubreddits(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch subreddits: %w", err)
 	}
 	log.Printf("📊 Creating nodes for %d subreddits", len(subreddits))
-
-	subredditNodeCount := 0
-	for _, subreddit := range subreddits {
-		var subscribers sql.NullString
-		if subreddit.Subscribers.Valid {
-			subscribers = sql.NullString{String: strconv.FormatInt(int64(subreddit.Subscribers.Int32), 10), Valid: true}
+	subNodeCount := 0
+	for _, sr := range subreddits {
+		var subs sql.NullString
+		if sr.Subscribers.Valid {
+			subs = sql.NullString{String: strconv.FormatInt(int64(sr.Subscribers.Int32), 10), Valid: true}
 		}
-	err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{
-			ID:   fmt.Sprintf("subreddit_%d", subreddit.ID),
-			Name: subreddit.Name,
-			Val:  subscribers,
-			Type: sql.NullString{String: "subreddit", Valid: true},
-		})
-		if err != nil {
-			log.Printf("⚠️ Failed to insert subreddit node for r/%s: %v", subreddit.Name, err)
+		if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("subreddit_%d", sr.ID), Name: sr.Name, Val: subs, Type: sql.NullString{String: "subreddit", Valid: true}}); err != nil {
+			log.Printf("⚠️ insert subreddit node r/%s: %v", sr.Name, err)
 			continue
 		}
-		subredditNodeCount++
+		subNodeCount++
 	}
-	log.Printf("✅ Created %d subreddit nodes", subredditNodeCount)
+	log.Printf("✅ Created %d subreddit nodes", subNodeCount)
 
-	// Optionally: create post and comment nodes and edges
-	type authoredPost struct {
-		postID   string
-		authorID int32
+	// After nodes exist, compute activity and relationships so we can safely add links later
+	if err := s.CalculateUserActivity(ctx); err != nil {
+		return fmt.Errorf("failed to calculate user activity: %w", err)
 	}
-	type authoredComment struct {
-		commentID string
-		authorID  int32
-		postID    string
+	if err := s.CalculateSubredditRelationships(ctx); err != nil {
+		return fmt.Errorf("failed to calculate subreddit relationships: %w", err)
 	}
+
+	// Detailed content graph (optional)
+	type authoredPost struct{ postID string; authorID int32 }
+	type authoredComment struct{ commentID string; authorID int32; postID string }
 	var authoredPosts []authoredPost
 	var authoredComments []authoredComment
+	postToSub := map[string]int32{}
+	commentToSub := map[string]int32{}
 
 	if detailed {
 		log.Printf("🧩 Building detailed content graph: posts and comments")
-		// For each subreddit, add up to postsPerSub posts
-	// Track mappings for later direct cross-links
-	postToSub := map[string]int32{}
-	commentToSub := map[string]int32{}
 		for _, sr := range subreddits {
 			posts, err := s.store.ListPostsBySubreddit(ctx, db.ListPostsBySubredditParams{SubredditID: sr.ID, Limit: postsPerSub, Offset: 0})
 			if err != nil {
-				log.Printf("⚠️ Failed to list posts for r/%s: %v", sr.Name, err)
+				log.Printf("⚠️ list posts r/%s: %v", sr.Name, err)
 				continue
 			}
 			for _, p := range posts {
-				// Node for post
-				title := strings.TrimSpace(p.Title.String)
-				if title == "" {
-					title = fmt.Sprintf("post %s", p.ID)
-				}
-				var scoreStr sql.NullString
+					title := strings.TrimSpace(p.Title.String)
+					if title == "" {
+						title = fmt.Sprintf("post %s", p.ID)
+					}
+					if utf8.RuneCountInString(title) > 256 {
+						title = truncateUTF8(title, 256)
+					}
+				var score sql.NullString
 				if p.Score.Valid {
-					scoreStr = sql.NullString{String: strconv.FormatInt(int64(p.Score.Int32), 10), Valid: true}
+					score = sql.NullString{String: strconv.FormatInt(int64(p.Score.Int32), 10), Valid: true}
 				}
-				if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{
-					ID:   fmt.Sprintf("post_%s", p.ID),
-					Name: title,
-					Val:  scoreStr,
-					Type: sql.NullString{String: "post", Valid: true},
-				}); err != nil {
-					log.Printf("⚠️ Failed to insert post node %s: %v", p.ID, err)
-					continue
-				}
-				// Edge subreddit -> post
-				if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{
-					Source: fmt.Sprintf("subreddit_%d", sr.ID),
-					Target: fmt.Sprintf("post_%s", p.ID),
-				}); err != nil {
-					log.Printf("⚠️ Failed to link subreddit->post (%s): %v", p.ID, err)
-				}
+				_ = s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("post_%s", p.ID), Name: title, Val: score, Type: sql.NullString{String: "post", Valid: true}})
+				_ = s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("subreddit_%d", sr.ID), Target: fmt.Sprintf("post_%s", p.ID)})
 				postToSub[p.ID] = sr.ID
 				authoredPosts = append(authoredPosts, authoredPost{postID: p.ID, authorID: p.AuthorID})
 
-				// Comments for this post (cap)
 				comments, err := s.store.ListCommentsByPost(ctx, p.ID)
 				if err != nil {
-					log.Printf("⚠️ Failed to list comments for post %s: %v", p.ID, err)
+					log.Printf("⚠️ list comments %s: %v", p.ID, err)
 					continue
 				}
-				// First pass: insert comment nodes (respect limit)
 				inserted := map[string]bool{}
 				count := 0
+				// First pass: insert up to N comment nodes and record which ones exist
 				for _, c := range comments {
 					if count >= commentsPerPost {
 						break
@@ -318,61 +327,42 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 					if name == "" {
 						name = fmt.Sprintf("comment %s", cid)
 					}
-					var scoreStr sql.NullString
+					if utf8.RuneCountInString(name) > 256 {
+						name = truncateUTF8(name, 256)
+					}
+					var cscore sql.NullString
 					if c.Score.Valid {
-						scoreStr = sql.NullString{String: strconv.FormatInt(int64(c.Score.Int32), 10), Valid: true}
+						cscore = sql.NullString{String: strconv.FormatInt(int64(c.Score.Int32), 10), Valid: true}
 					}
-					if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{
-						ID:   fmt.Sprintf("comment_%s", cid),
-						Name: name,
-						Val:  scoreStr,
-						Type: sql.NullString{String: "comment", Valid: true},
-					}); err != nil {
-						log.Printf("⚠️ Failed to insert comment node %s: %v", cid, err)
-						continue
-					}
+					_ = s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("comment_%s", cid), Name: name, Val: cscore, Type: sql.NullString{String: "comment", Valid: true}})
 					inserted[cid] = true
 					commentToSub[cid] = c.SubredditID
 					authoredComments = append(authoredComments, authoredComment{commentID: cid, authorID: c.AuthorID, postID: p.ID})
 					count++
 				}
-				// Second pass: insert edges for comment parents
-				count = 0
+				// Second pass: add links only for comments whose nodes were inserted
 				for _, c := range comments {
-					if count >= commentsPerPost {
-						break
-					}
 					cid := c.ID
+					if !inserted[cid] {
+						continue
+					}
 					parent := strings.TrimSpace(c.ParentID.String)
 					parentID := parent
 					if strings.HasPrefix(parentID, "t1_") || strings.HasPrefix(parentID, "t3_") {
 						parentID = parentID[3:]
 					}
-					// Prefer comment->comment if parent comment exists, else post->comment
 					if strings.HasPrefix(parent, "t1_") && inserted[parentID] {
-						_ = s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{
-							Source: fmt.Sprintf("comment_%s", parentID),
-							Target: fmt.Sprintf("comment_%s", cid),
-						})
+						_ = s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("comment_%s", parentID), Target: fmt.Sprintf("comment_%s", cid)})
 					} else {
-						_ = s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{
-							Source: fmt.Sprintf("post_%s", p.ID),
-							Target: fmt.Sprintf("comment_%s", cid),
-						})
+						_ = s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("post_%s", p.ID), Target: fmt.Sprintf("comment_%s", cid)})
 					}
-					count++
 				}
 			}
 		}
-		// Build direct cross-links among content by same author across different subreddits
+		// Cross-links among content by same author across different subreddits
 		maxLinks := cfg.MaxAuthorLinks
 		if maxLinks > 0 {
-			// Build per-author content lists with subtype and subreddit id
-			type item struct {
-				id        string
-				kind      string // "post" or "comment"
-				subreddit int32
-			}
+			type item struct{ id, kind string; subreddit int32 }
 			byAuthor := map[int32][]item{}
 			for _, ap := range authoredPosts {
 				if subID, ok := postToSub[ap.postID]; ok {
@@ -384,9 +374,8 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 					byAuthor[ac.authorID] = append(byAuthor[ac.authorID], item{id: ac.commentID, kind: "comment", subreddit: subID})
 				}
 			}
-			// Create limited outgoing links per item to items in other subreddits
 			made := 0
-			linkSeen := map[string]bool{}
+			seen := map[string]bool{}
 			for _, items := range byAuthor {
 				for i := range items {
 					src := items[i]
@@ -402,11 +391,11 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 						srcID := fmt.Sprintf("%s_%s", src.kind, src.id)
 						dstID := fmt.Sprintf("%s_%s", dst.kind, dst.id)
 						key := srcID + "->" + dstID
-						if linkSeen[key] {
+						if seen[key] {
 							continue
 						}
 						if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: srcID, Target: dstID}); err == nil {
-							linkSeen[key] = true
+							seen[key] = true
 							links++
 							made++
 						}
@@ -417,64 +406,42 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 		}
 	}
 
-	// Create links for subreddit relationships
+	// Subreddit relationships -> links
 	relationships, err := s.store.GetAllSubredditRelationships(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch relationships: %w", err)
 	}
-	log.Printf("🔗 Creating %d subreddit relationship links", len(relationships))
-
-	relationshipLinkCount := 0
+	relLinks := 0
 	for _, rel := range relationships {
-	err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{
-			Source: fmt.Sprintf("subreddit_%d", rel.SourceSubredditID),
-			Target: fmt.Sprintf("subreddit_%d", rel.TargetSubredditID),
-		})
-		if err != nil {
-			log.Printf("⚠️ Failed to insert relationship link: %v", err)
-			continue
+		if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("subreddit_%d", rel.SourceSubredditID), Target: fmt.Sprintf("subreddit_%d", rel.TargetSubredditID)}); err == nil {
+			relLinks++
 		}
-		relationshipLinkCount++
 	}
-	log.Printf("✅ Created %d subreddit relationship links", relationshipLinkCount)
+	log.Printf("✅ Created %d subreddit relationship links", relLinks)
 
-	// Create links for user activity
-	activities, err := s.store.GetAllUserSubredditActivity(ctx)
+	// User activity -> links (idempotent)
+	acts, err := s.store.GetAllUserSubredditActivity(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch activities: %w", err)
 	}
-	log.Printf("🔗 Creating %d user activity links", len(activities))
-
-	activityLinkCount := 0
-	for _, activity := range activities {
-	err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{
-			Source: fmt.Sprintf("user_%d", activity.UserID),
-			Target: fmt.Sprintf("subreddit_%d", activity.SubredditID),
-		})
-		if err != nil {
-			log.Printf("⚠️ Failed to insert activity link: %v", err)
-			continue
+	actLinks := 0
+	for _, a := range acts {
+		if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", a.UserID), Target: fmt.Sprintf("subreddit_%d", a.SubredditID)}); err == nil {
+			actLinks++
 		}
-		activityLinkCount++
 	}
-	log.Printf("✅ Created %d user activity links", activityLinkCount)
-	// Optionally: links from user to posts/comments to stitch cross-subreddit content
+	log.Printf("✅ Created %d user activity links", actLinks)
+
 	if detailed {
 		upost := 0
 		for _, ap := range authoredPosts {
-			if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{
-				Source: fmt.Sprintf("user_%d", ap.authorID),
-				Target: fmt.Sprintf("post_%s", ap.postID),
-			}); err == nil {
+			if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", ap.authorID), Target: fmt.Sprintf("post_%s", ap.postID)}); err == nil {
 				upost++
 			}
 		}
 		ucom := 0
 		for _, ac := range authoredComments {
-			if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{
-				Source: fmt.Sprintf("user_%d", ac.authorID),
-				Target: fmt.Sprintf("comment_%s", ac.commentID),
-			}); err == nil {
+			if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", ac.authorID), Target: fmt.Sprintf("comment_%s", ac.commentID)}); err == nil {
 				ucom++
 			}
 		}
@@ -490,4 +457,4 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-} 
+}

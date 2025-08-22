@@ -14,7 +14,6 @@ import (
 type Server struct {
 	DB *db.Queries
 	graphService *graph.Service
-	graphJob *graph.Job
 }
 
 func InitDB() (*db.Queries, error) {
@@ -27,18 +26,15 @@ func InitDB() (*db.Queries, error) {
 
 func NewServer(q *db.Queries) *Server {
 	graphService := graph.NewService(q)
-	graphJob := graph.NewJob(graphService, 1*time.Hour) // Update every hour
 
 	return &Server{
 		DB: q,
 		graphService: graphService,
-		graphJob: graphJob,
 	}
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	// Start the graph precalculation job
-	go s.graphJob.Start(ctx)
+	// The graph precalculation runs in a dedicated service now; API will not start it.
 	// Seed default subreddits if queue is empty
 	go func() {
 		// tiny delay to allow DB init
