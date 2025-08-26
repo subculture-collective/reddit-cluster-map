@@ -68,5 +68,8 @@ func TestGraphHandler_UnwrapsSingleRow(t *testing.T) {
     req := httptest.NewRequest(http.MethodGet, "/graph", nil)
     h.GetGraphData(rr, req)
     if rr.Code != http.StatusOK { t.Fatalf("expected 200, got %d", rr.Code) }
-    if got := rr.Body.String(); got != `{"nodes":[{"id":"x"}],"links":[]}` { t.Fatalf("unexpected body: %s", got) }
+    // After handler re-encodes to apply caps, allow value/default differences but same IDs
+    var out struct{ Nodes []struct{ ID string `json:"id"` } `json:"nodes"`; Links []any `json:"links"` }
+    if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil { t.Fatalf("decode: %v", err) }
+    if len(out.Nodes) != 1 || out.Nodes[0].ID != "x" { t.Fatalf("unexpected body: %s", rr.Body.String()) }
 }

@@ -5,9 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
@@ -17,6 +21,22 @@ type GraphDataReader interface {
 	GetGraphData(ctx context.Context) ([]json.RawMessage, error)
 	// Precalculated graph tables (graph_nodes/graph_links)
 	GetPrecalculatedGraphData(ctx context.Context) ([]db.GetPrecalculatedGraphDataRow, error)
+}
+
+// graphCacheEntry holds a cached response and its expiry.
+type graphCacheEntry struct {
+	data      []byte
+	expiresAt time.Time
+}
+
+var (
+	graphCache   = make(map[string]graphCacheEntry)
+	graphCacheMu sync.Mutex
+	graphCacheTTL = 60 * time.Second
+)
+
+func cacheKey(maxNodes, maxLinks int) string {
+	return strconv.Itoa(maxNodes) + ":" + strconv.Itoa(maxLinks)
 }
 
 type Handler struct { queries GraphDataReader }
@@ -45,57 +65,81 @@ type GraphResponse struct {
 // It prefers the precalculated graph tables (graph_nodes/graph_links) when available,
 // and falls back to the legacy aggregated JSON if none are present.
 func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	// Try precalculated tables first
-	rows, err := h.queries.GetPrecalculatedGraphData(ctx)
+	// Derive a bounded context to avoid very long queries
+	cfg := config.Load()
+	timeout := cfg.HTTPTimeout
+	if timeout <= 0 {
+		timeout = 8 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	// Optional caps and fallback control via query params
+	maxNodes := parseIntDefault(r.URL.Query().Get("max_nodes"), 20000)
+	maxLinks := parseIntDefault(r.URL.Query().Get("max_links"), 50000)
+	fallback := r.URL.Query().Get("fallback")
+	allowFallback := fallback == "" || fallback == "1" || strings.EqualFold(fallback, "true")
+
+	// Check cache first
+	key := cacheKey(maxNodes, maxLinks)
+	now := time.Now()
+	graphCacheMu.Lock()
+	entry, found := graphCache[key]
+	if found && entry.expiresAt.After(now) {
+		graphCacheMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(entry.data)
+		return
+	}
+	graphCacheMu.Unlock()
+	// Try precalculated tables (capped) first
+	rows, err := fetchPrecalcCapped(ctx, h.queries, maxNodes, maxLinks)
 	if err == nil && len(rows) > 0 {
-		resp := GraphResponse{Nodes: make([]GraphNode, 0, len(rows)), Links: make([]GraphLink, 0, len(rows))}
+		// Build nodes/links then apply caps
+		nodes := make(map[string]GraphNode, len(rows))
+		links := make([]GraphLink, 0, len(rows))
 		for _, row := range rows {
 			switch strings.ToLower(row.DataType) {
 			case "node":
-				// row.Val is text; best-effort parse to int
-				v := 0
-				if row.Val != "" {
-					if iv, perr := strconv.Atoi(row.Val); perr == nil {
-						v = iv
-					}
-				}
+				v := atoiSafe(row.Val)
 				t := ""
 				if (row.Type != sql.NullString{}) && row.Type.Valid {
 					t = row.Type.String
 				}
-				resp.Nodes = append(resp.Nodes, GraphNode{
-					ID:   row.ID,
-					Name: row.Name,
-					Val:  v,
-					Type: t,
-				})
+				nodes[row.ID] = GraphNode{ID: row.ID, Name: row.Name, Val: v, Type: t}
 			case "link":
-				// Source/Target are TEXT in SQL but generated as interface{} here; stringify safely
 				src := toString(row.Source)
 				tgt := toString(row.Target)
 				if src != "" && tgt != "" {
-					resp.Links = append(resp.Links, GraphLink{Source: src, Target: tgt})
+					links = append(links, GraphLink{Source: src, Target: tgt})
 				}
 			}
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
+	resp := capGraph(nodes, links, maxNodes, maxLinks)
+	// Marshal once so we can both write and cache it
+	b, _ := json.Marshal(resp)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(b)
+	// store in cache
+	graphCacheMu.Lock()
+	graphCache[key] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
+	graphCacheMu.Unlock()
 		return
 	}
 
 	// Fallback to legacy aggregated JSON (users+subreddits only)
-	data, err := h.queries.GetGraphData(ctx)
-	if err != nil {
-		http.Error(w, "Failed to fetch graph data", http.StatusInternalServerError)
+	if !allowFallback {
+		w.Header().Set("Content-Type", "application/json")
+		empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
+		b, _ := json.Marshal(empty)
+		_, _ = w.Write(b)
+		// cache empty response too
+		graphCacheMu.Lock()
+		graphCache[key] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
+		graphCacheMu.Unlock()
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if len(data) == 1 {
-		w.Write(data[0])
-		return
-	}
-	w.Write([]byte(`{"nodes":[],"links":[]}`))
+	handleLegacyGraph(ctx, w, h, maxNodes, maxLinks)
 }
 
 func toString(v interface{}) string {
@@ -111,4 +155,129 @@ func toString(v interface{}) string {
 		}
 		return ""
 	}
+}
+
+// atoiSafe parses an int from text, returning 0 on error.
+func atoiSafe(s string) int {
+	if s == "" { return 0 }
+	if iv, err := strconv.Atoi(s); err == nil { return iv }
+	return 0
+}
+
+// capGraph selects up to maxNodes by weight and filters links accordingly.
+// Weight prefers higher Val and degree.
+func capGraph(nodes map[string]GraphNode, links []GraphLink, maxNodes, maxLinks int) GraphResponse {
+	if maxNodes <= 0 { maxNodes = 20000 }
+	if maxLinks <= 0 { maxLinks = 50000 }
+	// degree count
+	deg := make(map[string]int, len(nodes))
+	for _, l := range links {
+		deg[l.Source]++
+		deg[l.Target]++
+	}
+	// slice and sort by weight
+	list := make([]GraphNode, 0, len(nodes))
+	for _, n := range nodes {
+		list = append(list, n)
+	}
+	// weight = max(Val, degree)
+	sort.Slice(list, func(i, j int) bool {
+		wi := list[i].Val
+		if di := deg[list[i].ID]; di > wi { wi = di }
+		wj := list[j].Val
+		if dj := deg[list[j].ID]; dj > wj { wj = dj }
+		if wi == wj { return list[i].ID < list[j].ID }
+		return wi > wj
+	})
+	if len(list) > maxNodes { list = list[:maxNodes] }
+	keep := make(map[string]struct{}, len(list))
+	for _, n := range list { keep[n.ID] = struct{}{} }
+	keptLinks := make([]GraphLink, 0, min(maxLinks, len(links)))
+	for _, l := range links {
+		if _, ok := keep[l.Source]; !ok { continue }
+		if _, ok := keep[l.Target]; !ok { continue }
+		keptLinks = append(keptLinks, l)
+		if len(keptLinks) >= maxLinks { break }
+	}
+	return GraphResponse{Nodes: list, Links: keptLinks}
+}
+
+func min(a, b int) int { if a < b { return a } ; return b }
+
+func parseIntDefault(s string, def int) int {
+	if s == "" { return def }
+	if v, err := strconv.Atoi(s); err == nil { return v }
+	return def
+}
+
+func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, h *Handler, maxNodes, maxLinks int) {
+	data, err := h.queries.GetGraphData(ctx)
+	if err != nil {
+		http.Error(w, "Failed to fetch graph data", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if len(data) == 1 {
+		var resp GraphResponse
+		if err := json.Unmarshal(data[0], &resp); err == nil {
+			nodes := make(map[string]GraphNode, len(resp.Nodes))
+			for _, n := range resp.Nodes { nodes[n.ID] = n }
+	    capped := capGraph(nodes, resp.Links, maxNodes, maxLinks)
+	    // Marshal once so we can write and cache
+	    b, _ := json.Marshal(capped)
+	    _, _ = w.Write(b)
+	    // store in cache keyed by caps
+	    graphCacheMu.Lock()
+	    graphCache[cacheKey(maxNodes, maxLinks)] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
+	    graphCacheMu.Unlock()
+			return
+		}
+	}
+    // Unknown legacy format; return empty and cache it
+    empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
+    b, _ := json.Marshal(empty)
+    _, _ = w.Write(b)
+    graphCacheMu.Lock()
+    graphCache[cacheKey(maxNodes, maxLinks)] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
+    graphCacheMu.Unlock()
+}
+
+// fetchPrecalcCapped runs a DB-level capped selection of precalculated graph data.
+// It uses the underlying *db.Queries when available; otherwise falls back to the uncapped method.
+func fetchPrecalcCapped(ctx context.Context, q GraphDataReader, maxNodes, maxLinks int) ([]db.GetPrecalculatedGraphDataRow, error) {
+	// If we have direct access to *db.Queries, run a raw capped query.
+	if qq, ok := q.(*db.Queries); ok && qq != nil {
+		sqlText := `WITH sel_nodes AS (
+			SELECT id, name, val, type
+			FROM graph_nodes
+			LIMIT $1
+		), sel_links AS (
+			SELECT id, source, target
+			FROM graph_links gl
+			WHERE gl.source IN (SELECT id FROM sel_nodes)
+			  AND gl.target IN (SELECT id FROM sel_nodes)
+			LIMIT $2
+		)
+		SELECT 'node' as data_type, id, name, val::TEXT as val, type, NULL as source, NULL as target FROM sel_nodes
+		UNION ALL
+		SELECT 'link' as data_type, id::TEXT, NULL as name, NULL::TEXT as val, NULL as type, source, target FROM sel_links
+		ORDER BY data_type, id;`
+
+		rows, err := qq.DB().QueryContext(ctx, sqlText, maxNodes, maxLinks)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := make([]db.GetPrecalculatedGraphDataRow, 0, 1024)
+		for rows.Next() {
+			var r db.GetPrecalculatedGraphDataRow
+			if err := rows.Scan(&r.DataType, &r.ID, &r.Name, &r.Val, &r.Type, &r.Source, &r.Target); err != nil {
+				return nil, err
+			}
+			out = append(out, r)
+		}
+		return out, rows.Err()
+	}
+	// Fallback to uncapped method
+	return q.GetPrecalculatedGraphData(ctx)
 }

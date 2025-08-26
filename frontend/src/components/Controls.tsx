@@ -2,6 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { TypeFilters } from "../types/ui";
 
+type Physics = {
+  chargeStrength: number;
+  linkDistance: number;
+  velocityDecay: number;
+  cooldownTicks: number;
+  collisionRadius: number;
+};
+
+type SubredditSize =
+  | "subscribers"
+  | "activeUsers"
+  | "contentActivity"
+  | "interSubLinks";
+
 interface Props {
   filters: TypeFilters;
   onFiltersChange: (f: TypeFilters) => void;
@@ -9,22 +23,31 @@ interface Props {
   onLinkOpacityChange: (v: number) => void;
   nodeRelSize: number;
   onNodeRelSizeChange: (v: number) => void;
+  physics: Physics;
+  onPhysicsChange: (p: Physics) => void;
+  subredditSize: SubredditSize;
+  onSubredditSizeChange: (m: SubredditSize) => void;
   onFocusNode: (id?: string) => void;
   showLabels?: boolean;
   onShowLabelsChange?: (v: boolean) => void;
 }
 
-export default function Controls({
-  filters,
-  onFiltersChange,
-  linkOpacity,
-  onLinkOpacityChange,
-  nodeRelSize,
-  onNodeRelSizeChange,
-  onFocusNode,
-  showLabels,
-  onShowLabelsChange,
-}: Props) {
+export default function Controls(props: Props) {
+  const {
+    filters,
+    onFiltersChange,
+    linkOpacity,
+    onLinkOpacityChange,
+    nodeRelSize,
+    onNodeRelSizeChange,
+    physics,
+    onPhysicsChange,
+    subredditSize,
+    onSubredditSizeChange,
+    onFocusNode,
+    showLabels,
+    onShowLabelsChange,
+  } = props;
   const [search, setSearch] = useState("");
   const [srv, setSrv] = useState<{
     crawler_enabled: boolean;
@@ -32,7 +55,7 @@ export default function Controls({
   } | null>(null);
   const [srvErr, setSrvErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
+	console.log(saving)
   useEffect(() => {
     fetchServices();
   }, []);
@@ -94,7 +117,8 @@ export default function Controls({
               ? "bg-green-600 border-green-400"
               : "bg-gray-700 border-gray-500"
           } text-white font-semibold`}
-          disabled={!srv || saving}
+          //disabled={!srv || saving}
+          disabled={true}
           onClick={() => updateSrv({ crawler_enabled: !srv?.crawler_enabled })}
         >
           {srv?.crawler_enabled ? "Crawler ON" : "Crawler OFF"}
@@ -105,7 +129,8 @@ export default function Controls({
               ? "bg-green-600 border-green-400"
               : "bg-gray-700 border-gray-500"
           } text-white font-semibold`}
-          disabled={!srv || saving}
+          //   disabled={!srv || saving}
+          disabled={true}
           onClick={() => updateSrv({ precalc_enabled: !srv?.precalc_enabled })}
         >
           {srv?.precalc_enabled ? "Precalc ON" : "Precalc OFF"}
@@ -165,6 +190,128 @@ export default function Controls({
             onNodeRelSizeChange(parseInt(e.target.value))
           }
         />
+      </div>
+
+      {/* Subreddit sizing metric */}
+      <div className="flex gap-3 items-center">
+        <label className="text-sm whitespace-nowrap">Subreddit size</label>
+        <select
+          className="bg-black/40 border border-white/20 rounded px-2 py-1 text-sm outline-none"
+          value={subredditSize}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+            onSubredditSizeChange(e.target.value as Props["subredditSize"])
+          }
+        >
+          <option value="subscribers">Subscribers</option>
+          <option value="activeUsers">Active users</option>
+          <option value="contentActivity">Posts + comments</option>
+          <option value="interSubLinks">Inter-sub links</option>
+        </select>
+      </div>
+
+      {/* Physics: Repulsion (charge strength) */}
+      <div className="flex gap-3 items-center">
+        <label className="text-sm">Repulsion</label>
+        <input
+          type="range"
+          min={-400}
+          max={0}
+          step={5}
+          value={physics.chargeStrength}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            onPhysicsChange({
+              ...physics,
+              chargeStrength: parseInt(e.target.value),
+            })
+          }
+        />
+        <span className="text-xs opacity-70 w-12 text-right">
+          {physics.chargeStrength}
+        </span>
+      </div>
+
+      {/* Physics: Link distance */}
+      <div className="flex gap-3 items-center">
+        <label className="text-sm">Link dist</label>
+        <input
+          type="range"
+          min={10}
+          max={200}
+          step={5}
+          value={physics.linkDistance}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            onPhysicsChange({
+              ...physics,
+              linkDistance: parseInt(e.target.value),
+            })
+          }
+        />
+        <span className="text-xs opacity-70 w-12 text-right">
+          {physics.linkDistance}
+        </span>
+      </div>
+
+      {/* Physics: Velocity decay */}
+      <div className="flex gap-3 items-center">
+        <label className="text-sm">Damping</label>
+        <input
+          type="range"
+          min={0.7}
+          max={0.99}
+          step={0.01}
+          value={physics.velocityDecay}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            onPhysicsChange({
+              ...physics,
+              velocityDecay: parseFloat(e.target.value),
+            })
+          }
+        />
+        <span className="text-xs opacity-70 w-12 text-right">
+          {physics.velocityDecay.toFixed(2)}
+        </span>
+      </div>
+
+      {/* Physics: Cooldown ticks */}
+      <div className="flex gap-3 items-center">
+        <label className="text-sm">Cooldown</label>
+        <input
+          type="range"
+          min={0}
+          max={400}
+          step={10}
+          value={physics.cooldownTicks}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            onPhysicsChange({
+              ...physics,
+              cooldownTicks: parseInt(e.target.value),
+            })
+          }
+        />
+        <span className="text-xs opacity-70 w-12 text-right">
+          {physics.cooldownTicks}
+        </span>
+      </div>
+
+      {/* Physics: Collision radius (0 disables) */}
+      <div className="flex gap-3 items-center">
+        <label className="text-sm">Collision</label>
+        <input
+          type="range"
+          min={0}
+          max={20}
+          step={0.5}
+          value={physics.collisionRadius}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            onPhysicsChange({
+              ...physics,
+              collisionRadius: parseFloat(e.target.value),
+            })
+          }
+        />
+        <span className="text-xs opacity-70 w-12 text-right">
+          {physics.collisionRadius.toFixed(1)}
+        </span>
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-sm">

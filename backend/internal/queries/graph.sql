@@ -20,6 +20,42 @@ SELECT
 FROM graph_links
 ORDER BY data_type, id;
 
+-- name: GetPrecalculatedGraphDataCapped :many
+WITH sel_nodes AS (
+    SELECT id, name, val, type
+    FROM graph_nodes
+    ORDER BY (
+        CASE WHEN val ~ '^[0-9]+$' THEN val::BIGINT ELSE 0 END
+    ) DESC NULLS LAST, id
+    LIMIT $1
+), sel_links AS (
+    SELECT id, source, target
+    FROM graph_links gl
+    WHERE gl.source IN (SELECT id FROM sel_nodes)
+      AND gl.target IN (SELECT id FROM sel_nodes)
+    LIMIT $2
+)
+SELECT
+    'node' AS data_type,
+    n.id,
+    n.name,
+    n.val::TEXT AS val,
+    n.type,
+    NULL AS source,
+    NULL AS target
+FROM sel_nodes n
+UNION ALL
+SELECT
+    'link' AS data_type,
+    l.id::TEXT,
+    NULL AS name,
+    NULL::TEXT AS val,
+    NULL AS type,
+    l.source,
+    l.target
+FROM sel_links l
+ORDER BY data_type, id;
+
 -- name: GetAllPosts :many
 SELECT id, title, score
 FROM posts;
