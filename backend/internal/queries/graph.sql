@@ -20,44 +20,76 @@ SELECT
 FROM graph_links
 ORDER BY data_type, id;
 
--- name: GetPrecalculatedGraphDataCapped :many
+-- name: GetPrecalculatedGraphDataCappedAll :many
 WITH sel_nodes AS (
     SELECT gn.id, gn.name, gn.val, gn.type
     FROM graph_nodes gn
-    WHERE (
-        sqlc.narg(type_filter) IS NULL
-        OR array_length(sqlc.narg(type_filter), 1) = 0
-        OR (gn.type IS NOT NULL AND gn.type = ANY(sqlc.narg(type_filter)))
-    )
     ORDER BY (
         CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
     ) DESC NULLS LAST, gn.id
-        LIMIT sqlc.arg(node_limit)
+    LIMIT $1
 ), sel_links AS (
     SELECT id, source, target
     FROM graph_links gl
     WHERE gl.source IN (SELECT id FROM sel_nodes)
-      AND gl.target IN (SELECT id FROM sel_nodes)
-        LIMIT sqlc.arg(link_limit)
+        AND gl.target IN (SELECT id FROM sel_nodes)
+    LIMIT $2
 )
 SELECT
-    'node' AS data_type,
-    n.id,
-    n.name,
-    CAST(n.val AS TEXT) AS val,
-    n.type,
-    NULL AS source,
-    NULL AS target
+        'node' AS data_type,
+        n.id,
+        n.name,
+        CAST(n.val AS TEXT) AS val,
+        n.type,
+        NULL AS source,
+        NULL AS target
 FROM sel_nodes n
 UNION ALL
 SELECT
-    'link' AS data_type,
-    CAST(l.id AS TEXT),
-    NULL AS name,
-    CAST(NULL AS TEXT) AS val,
-    NULL AS type,
-    l.source,
-    l.target
+        'link' AS data_type,
+        CAST(l.id AS TEXT),
+        NULL AS name,
+        CAST(NULL AS TEXT) AS val,
+        NULL AS type,
+        l.source,
+        l.target
+FROM sel_links l
+ORDER BY data_type, id;
+
+-- name: GetPrecalculatedGraphDataCappedFiltered :many
+WITH sel_nodes AS (
+    SELECT gn.id, gn.name, gn.val, gn.type
+    FROM graph_nodes gn
+    WHERE gn.type IS NOT NULL AND gn.type = ANY($1::text[])
+    ORDER BY (
+        CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
+    ) DESC NULLS LAST, gn.id
+    LIMIT $2
+), sel_links AS (
+    SELECT id, source, target
+    FROM graph_links gl
+    WHERE gl.source IN (SELECT id FROM sel_nodes)
+        AND gl.target IN (SELECT id FROM sel_nodes)
+    LIMIT $3
+)
+SELECT
+        'node' AS data_type,
+        n.id,
+        n.name,
+        CAST(n.val AS TEXT) AS val,
+        n.type,
+        NULL AS source,
+        NULL AS target
+FROM sel_nodes n
+UNION ALL
+SELECT
+        'link' AS data_type,
+        CAST(l.id AS TEXT),
+        NULL AS name,
+        CAST(NULL AS TEXT) AS val,
+        NULL AS type,
+        l.source,
+        l.target
 FROM sel_links l
 ORDER BY data_type, id;
 
@@ -69,7 +101,7 @@ FROM posts;
 SELECT id, body, score, post_id
 FROM comments;
 
--- name: CreateGraphNode :one
+-- name: BulkInsertGraphNode :exec
 INSERT INTO graph_nodes (
     id,
     name,
@@ -77,7 +109,13 @@ INSERT INTO graph_nodes (
     type
 ) VALUES (
     $1, $2, $3, $4
-) RETURNING *;
+)
+ON CONFLICT (id) DO UPDATE
+SET
+    name = EXCLUDED.name,
+    val = EXCLUDED.val,
+    type = EXCLUDED.type,
+    updated_at = now();
 
 -- name: CreateGraphLink :one
 INSERT INTO graph_links (

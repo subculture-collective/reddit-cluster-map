@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lib/pq"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
@@ -22,7 +21,8 @@ type GraphDataReader interface {
 	GetGraphData(ctx context.Context) ([]json.RawMessage, error)
 	// Precalculated graph tables (graph_nodes/graph_links)
 	GetPrecalculatedGraphData(ctx context.Context) ([]db.GetPrecalculatedGraphDataRow, error)
-	GetPrecalculatedGraphDataCapped(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedParams) ([]db.GetPrecalculatedGraphDataCappedRow, error)
+	GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error)
+	GetPrecalculatedGraphDataCappedFiltered(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedFilteredParams) ([]db.GetPrecalculatedGraphDataCappedFilteredRow, error)
 }
 
 // graphCacheEntry holds a cached response and its expiry.
@@ -315,39 +315,58 @@ func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, h *Handler, m
 // fetchPrecalcCapped runs a DB-level capped selection of precalculated graph data.
 // It uses the underlying *db.Queries when available; otherwise falls back to the uncapped method.
 func fetchPrecalcCapped(ctx context.Context, q GraphDataReader, maxNodes, maxLinks int, allowAll bool, allowedTypes []string) ([]db.GetPrecalculatedGraphDataRow, error) {
-	if maxNodes <= 0 {
-		maxNodes = 20000
-	}
-	if maxLinks <= 0 {
-		maxLinks = 50000
-	}
-	var typeArg interface{}
-	if allowAll {
-		typeArg = nil
-	} else {
-		typeArg = pq.Array(allowedTypes)
-	}
-	rows, err := q.GetPrecalculatedGraphDataCapped(ctx, db.GetPrecalculatedGraphDataCappedParams{
-		TypeFilter: typeArg,
-		NodeLimit:  int32(maxNodes),
-		LinkLimit:  int32(maxLinks),
-	})
-	if err != nil {
-		return q.GetPrecalculatedGraphData(ctx)
-	}
-	converted := make([]db.GetPrecalculatedGraphDataRow, len(rows))
-	for i, r := range rows {
-		converted[i] = db.GetPrecalculatedGraphDataRow{
-			DataType: r.DataType,
-			ID:       r.ID,
-			Name:     r.Name,
-			Val:      r.Val,
-			Type:     r.Type,
-			Source:   r.Source,
-			Target:   r.Target,
-		}
-	}
-	return converted, nil
+       if maxNodes <= 0 {
+	       maxNodes = 20000
+       }
+       if maxLinks <= 0 {
+	       maxLinks = 50000
+       }
+       if allowAll {
+	       allRows, err := q.GetPrecalculatedGraphDataCappedAll(ctx, db.GetPrecalculatedGraphDataCappedAllParams{
+		       Limit:   int32(maxNodes),
+		       Limit_2: int32(maxLinks),
+	       })
+	       if err != nil {
+		       return q.GetPrecalculatedGraphData(ctx)
+	       }
+	       converted := make([]db.GetPrecalculatedGraphDataRow, len(allRows))
+	       for i, r := range allRows {
+		       converted[i] = db.GetPrecalculatedGraphDataRow{
+			       DataType: r.DataType,
+			       ID:       r.ID,
+			       Name:     r.Name,
+			       Val:      r.Val,
+			       Type:     r.Type,
+			       Source:   r.Source,
+			       Target:   r.Target,
+		       }
+	       }
+	       return converted, nil
+       } else {
+	       arr := make([]string, len(allowedTypes))
+	       copy(arr, allowedTypes)
+	       filteredRows, err := q.GetPrecalculatedGraphDataCappedFiltered(ctx, db.GetPrecalculatedGraphDataCappedFilteredParams{
+		       Column1: arr,
+		       Limit:   int32(maxNodes),
+		       Limit_2: int32(maxLinks),
+	       })
+	       if err != nil {
+		       return q.GetPrecalculatedGraphData(ctx)
+	       }
+	       converted := make([]db.GetPrecalculatedGraphDataRow, len(filteredRows))
+	       for i, r := range filteredRows {
+		       converted[i] = db.GetPrecalculatedGraphDataRow{
+			       DataType: r.DataType,
+			       ID:       r.ID,
+			       Name:     r.Name,
+			       Val:      r.Val,
+			       Type:     r.Type,
+			       Source:   r.Source,
+			       Target:   r.Target,
+		       }
+	       }
+	       return converted, nil
+       }
 }
 
 func parseTypes(raw string) (map[string]struct{}, []string, string, bool) {

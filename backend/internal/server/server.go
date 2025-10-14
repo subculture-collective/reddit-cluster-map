@@ -12,7 +12,7 @@ import (
 )
 
 type Server struct {
-	DB *db.Queries
+	DB           *db.Queries
 	graphService *graph.Service
 }
 
@@ -28,7 +28,7 @@ func NewServer(q *db.Queries) *Server {
 	graphService := graph.NewService(q)
 
 	return &Server{
-		DB: q,
+		DB:           q,
 		graphService: graphService,
 	}
 }
@@ -40,7 +40,7 @@ func (s *Server) Start(ctx context.Context) error {
 		// tiny delay to allow DB init
 		time.Sleep(2 * time.Second)
 		// Try to fetch pending jobs; if none, enqueue a few defaults
-		jobs, err := s.DB.GetPendingCrawlJobs(ctx, 1)
+		jobs, err := s.DB.ListQueueWithNames(ctx)
 		if err == nil && len(jobs) == 0 {
 			defaults := []string{"AskReddit", "worldnews", "technology"}
 			for _, name := range defaults {

@@ -27,8 +27,8 @@ func (q *Queries) CrawlJobExists(ctx context.Context, subredditID int32) (bool, 
 
 const enqueueCrawlJob = `-- name: EnqueueCrawlJob :exec
 INSERT INTO crawl_jobs (subreddit_id, status, retries, enqueued_by)
-VALUES ($1, 'queued', 0, $2)
-ON CONFLICT (subreddit_id) DO NOTHING
+SELECT $1, 'queued', 0, $2
+WHERE NOT EXISTS (SELECT 1 FROM crawl_jobs WHERE subreddit_id = $1)
 `
 
 type EnqueueCrawlJobParams struct {
@@ -42,31 +42,54 @@ func (q *Queries) EnqueueCrawlJob(ctx context.Context, arg EnqueueCrawlJobParams
 }
 
 const listCrawlJobs = `-- name: ListCrawlJobs :many
-SELECT id, subreddit_id, status, priority, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at FROM crawl_jobs ORDER BY created_at DESC LIMIT $1 OFFSET $2
+SELECT
+  id,
+  subreddit_id,
+  status,
+  retries,
+  priority,
+  last_attempt,
+  enqueued_by,
+  created_at,
+  updated_at
+FROM crawl_jobs
+ORDER BY created_at DESC
+LIMIT $1::int OFFSET $2::int
 `
 
 type ListCrawlJobsParams struct {
-	Limit  int32
-	Offset int32
+	Column1 int32
+	Column2 int32
 }
 
-func (q *Queries) ListCrawlJobs(ctx context.Context, arg ListCrawlJobsParams) ([]CrawlJob, error) {
-	rows, err := q.db.QueryContext(ctx, listCrawlJobs, arg.Limit, arg.Offset)
+type ListCrawlJobsRow struct {
+	ID          int32
+	SubredditID int32
+	Status      string
+	Retries     sql.NullInt32
+	Priority    sql.NullInt32
+	LastAttempt sql.NullTime
+	EnqueuedBy  sql.NullString
+	CreatedAt   sql.NullTime
+	UpdatedAt   sql.NullTime
+}
+
+func (q *Queries) ListCrawlJobs(ctx context.Context, arg ListCrawlJobsParams) ([]ListCrawlJobsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCrawlJobs, arg.Column1, arg.Column2)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CrawlJob
+	var items []ListCrawlJobsRow
 	for rows.Next() {
-		var i CrawlJob
+		var i ListCrawlJobsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SubredditID,
 			&i.Status,
-			&i.Priority,
 			&i.Retries,
+			&i.Priority,
 			&i.LastAttempt,
-			&i.DurationMs,
 			&i.EnqueuedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
