@@ -11,11 +11,41 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unicode/utf8"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
+
+// progressLogger provides periodic progress output based on a modulo interval.
+type progressLogger struct {
+	name     string
+	interval int
+	start    time.Time
+	count    int
+}
+
+func newProgressLogger(name string, interval int) *progressLogger {
+	if interval <= 0 {
+		interval = 10000
+	}
+	return &progressLogger{name: name, interval: interval, start: time.Now()}
+}
+func (p *progressLogger) Inc(n int) {
+	p.count += n
+	if p.count%p.interval == 0 {
+		elapsed := time.Since(p.start)
+		rate := float64(p.count) / elapsed.Seconds()
+		log.Printf("⏱ %s: %d items (%.0f/sec)", p.name, p.count, rate)
+	}
+}
+func (p *progressLogger) Done(totalLabel string) {
+	elapsed := time.Since(p.start)
+	rate := float64(p.count) / elapsed.Seconds()
+	if totalLabel == "" { totalLabel = fmt.Sprintf("%d", p.count) }
+	log.Printf("✅ %s complete: %s items in %s (%.0f/sec)", p.name, totalLabel, elapsed.Truncate(time.Millisecond), rate)
+}
 
 type Service struct {
 	store GraphStore
@@ -229,46 +259,96 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	postsPerSub := int32(cfg.PostsPerSubInGraph)
 	commentsPerPost := int(cfg.CommentsPerPost)
 
-	// Users -> nodes (aggregate totals in a single query to avoid per-user COUNTs)
+	// Users & Subreddits -> nodes (batched upsert inside single transaction for speed)
 	usersWithActivity, err := s.store.ListUsersWithActivity(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch user activity totals: %w", err)
 	}
-	log.Printf("👥 Creating nodes for %d users", len(usersWithActivity))
-	userNodeCount := 0
-	for _, u := range usersWithActivity {
-		total := int64(u.TotalActivity)
-		val := sql.NullString{Valid: true, String: strconv.FormatInt(total, 10)}
-		if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("user_%d", u.ID), Name: u.Username, Val: val, Type: sql.NullString{String: "user", Valid: true}}); err != nil {
-			log.Printf("⚠️ insert user node %s: %v", u.Username, err)
-			continue
-		}
-		userNodeCount++
-	}
-	log.Printf("✅ Created %d user nodes", userNodeCount)
-
-	// Subreddits -> nodes
 	subreddits, err := s.store.GetAllSubreddits(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch subreddits: %w", err)
 	}
-	log.Printf("📊 Creating nodes for %d subreddits", len(subreddits))
-	subNodeCount := 0
-	for _, sr := range subreddits {
-		var subs sql.NullString
-		if sr.Subscribers.Valid {
-			subs = sql.NullString{String: strconv.FormatInt(int64(sr.Subscribers.Int32), 10), Valid: true}
-		}
-		if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("subreddit_%d", sr.ID), Name: sr.Name, Val: subs, Type: sql.NullString{String: "subreddit", Valid: true}}); err != nil {
-			log.Printf("⚠️ insert subreddit node r/%s: %v", sr.Name, err)
-			continue
-		}
-		subNodeCount++
-	}
-	log.Printf("✅ Created %d subreddit nodes", subNodeCount)
+	log.Printf("👥 Preparing %d user nodes and %d subreddit nodes", len(usersWithActivity), len(subreddits))
 
-	// After nodes exist, compute activity and relationships so we can safely add links later
-	if err := s.CalculateUserActivity(ctx); err != nil {
+	// Configurable node batch size / progress interval via env
+	nodeBatchSize := 1000
+	if v := os.Getenv("GRAPH_NODE_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 { nodeBatchSize = n }
+	}
+	progressInterval := 10000
+	if v := os.Getenv("GRAPH_PROGRESS_INTERVAL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 { progressInterval = n }
+	}
+	userProg := newProgressLogger("user-nodes", progressInterval)
+	subProg := newProgressLogger("subreddit-nodes", progressInterval)
+
+	// Attempt to unwrap underlying *db.Queries for transaction usage
+	// If store is *db.Queries we can optimize; otherwise fallback to existing per-row behavior
+	q, ok := s.store.(*db.Queries)
+    if !ok {
+        log.Printf("ℹ️ store is not *db.Queries; falling back to row-by-row inserts")
+        userNodeCount := 0
+        for _, u := range usersWithActivity {
+            total := int64(u.TotalActivity)
+            val := sql.NullString{Valid: true, String: strconv.FormatInt(total, 10)}
+            if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("user_%d", u.ID), Name: u.Username, Val: val, Type: sql.NullString{String: "user", Valid: true}}); err == nil {
+                userNodeCount++
+                userProg.Inc(1)
+            }
+        }
+        subNodeCount := 0
+        for _, sr := range subreddits {
+            var subs sql.NullString
+            if sr.Subscribers.Valid {
+                subs = sql.NullString{String: strconv.FormatInt(int64(sr.Subscribers.Int32), 10), Valid: true}
+            }
+            if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("subreddit_%d", sr.ID), Name: sr.Name, Val: subs, Type: sql.NullString{String: "subreddit", Valid: true}}); err == nil {
+                subNodeCount++
+                subProg.Inc(1)
+            }
+        }
+        log.Printf("✅ Created %d user nodes, %d subreddit nodes (fallback mode)", userNodeCount, subNodeCount)
+        userProg.Done("")
+        subProg.Done("")
+    } else {
+        start := time.Now()
+        nodeParams := make([]db.BulkInsertGraphNodeParams, 0, len(usersWithActivity)+len(subreddits))
+        for _, u := range usersWithActivity {
+            total := int64(u.TotalActivity)
+            val := sql.NullString{Valid: true, String: strconv.FormatInt(total, 10)}
+            nodeParams = append(nodeParams, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("user_%d", u.ID), Name: u.Username, Val: val, Type: sql.NullString{String: "user", Valid: true}})
+            userProg.Inc(1)
+        }
+        for _, sr := range subreddits {
+            var subs sql.NullString
+            if sr.Subscribers.Valid {
+                subs = sql.NullString{String: strconv.FormatInt(int64(sr.Subscribers.Int32), 10), Valid: true}
+            }
+            nodeParams = append(nodeParams, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("subreddit_%d", sr.ID), Name: sr.Name, Val: subs, Type: sql.NullString{String: "subreddit", Valid: true}})
+            subProg.Inc(1)
+        }
+        rawDBTX := q.DB()
+        if sqldb, ok2 := rawDBTX.(*sql.DB); ok2 {
+            tx, err := sqldb.BeginTx(ctx, &sql.TxOptions{})
+            if err != nil { return fmt.Errorf("begin tx: %w", err) }
+            txQueries := q.WithTx(tx)
+            if err := txQueries.BatchUpsertGraphNodes(ctx, nodeParams, nodeBatchSize); err != nil {
+                _ = tx.Rollback()
+                return fmt.Errorf("batch upsert nodes: %w", err)
+            }
+            if err := tx.Commit(); err != nil { return fmt.Errorf("commit node tx: %w", err) }
+        } else {
+            if err := q.BatchUpsertGraphNodes(ctx, nodeParams, nodeBatchSize); err != nil {
+                return fmt.Errorf("batch upsert nodes: %w", err)
+            }
+        }
+        dur := time.Since(start)
+        log.Printf("✅ Upserted %d graph nodes (users+subreddits) in %s", len(nodeParams), dur.Truncate(time.Millisecond))
+        userProg.Done("")
+        subProg.Done("")
+    }
+
+    if err := s.CalculateUserActivity(ctx); err != nil {
 		return fmt.Errorf("failed to calculate user activity: %w", err)
 	}
 	if err := s.CalculateSubredditRelationships(ctx); err != nil {
@@ -276,10 +356,10 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	}
 
 	// Detailed content graph (optional)
-	type authoredPost struct {
-		postID   string
-		authorID int32
-	}
+    type authoredPost struct {
+        postID   string
+        authorID int32
+    }
 	type authoredComment struct {
 		commentID string
 		authorID  int32
@@ -289,6 +369,46 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	var authoredComments []authoredComment
 	postToSub := map[string]int32{}
 	commentToSub := map[string]int32{}
+
+	var pendingLinks []db.BulkInsertGraphLinkParams
+	var pendingNodes []db.BulkInsertGraphNodeParams
+	linkBatchSize := 2000
+	if v := os.Getenv("GRAPH_LINK_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 { linkBatchSize = n }
+	}
+	linkProg := newProgressLogger("graph-links", progressInterval)
+	flushLinks := func(force bool) {
+		if len(pendingLinks) == 0 { return }
+		if !force && len(pendingLinks) < linkBatchSize { return }
+		if q2, ok2 := s.store.(*db.Queries); ok2 {
+			if err := q2.BatchInsertGraphLinks(ctx, pendingLinks, linkBatchSize); err != nil {
+				log.Printf("⚠️ batched link insert error: %v (fallback row-by-row)", err)
+				for _, l := range pendingLinks { _ = s.store.BulkInsertGraphLink(ctx, l) }
+			} else {
+				linkProg.Inc(len(pendingLinks))
+			}
+		} else {
+			for _, l := range pendingLinks { _ = s.store.BulkInsertGraphLink(ctx, l); linkProg.Inc(1) }
+		}
+		pendingLinks = pendingLinks[:0]
+	}
+
+	contentProg := newProgressLogger("content-nodes", progressInterval)
+	flushNodes := func(force bool) {
+		if len(pendingNodes) == 0 { return }
+		if !force && len(pendingNodes) < nodeBatchSize { return }
+		if q2, ok2 := s.store.(*db.Queries); ok2 {
+			if err := q2.BatchUpsertGraphNodes(ctx, pendingNodes, nodeBatchSize); err != nil {
+				log.Printf("⚠️ batched node upsert error: %v (fallback row-by-row)", err)
+				for _, n := range pendingNodes { _ = s.store.BulkInsertGraphNode(ctx, n); contentProg.Inc(1) }
+			} else {
+				contentProg.Inc(len(pendingNodes))
+			}
+		} else {
+			for _, n := range pendingNodes { _ = s.store.BulkInsertGraphNode(ctx, n); contentProg.Inc(1) }
+		}
+		pendingNodes = pendingNodes[:0]
+	}
 
 	if detailed {
 		log.Printf("🧩 Building detailed content graph: posts and comments")
@@ -310,8 +430,8 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 				if p.Score.Valid {
 					score = sql.NullString{String: strconv.FormatInt(int64(p.Score.Int32), 10), Valid: true}
 				}
-				_ = s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("post_%s", p.ID), Name: title, Val: score, Type: sql.NullString{String: "post", Valid: true}})
-				_ = s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("subreddit_%d", sr.ID), Target: fmt.Sprintf("post_%s", p.ID)})
+				pendingNodes = append(pendingNodes, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("post_%s", p.ID), Name: title, Val: score, Type: sql.NullString{String: "post", Valid: true}})
+				pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("subreddit_%d", sr.ID), Target: fmt.Sprintf("post_%s", p.ID)})
 				postToSub[p.ID] = sr.ID
 				authoredPosts = append(authoredPosts, authoredPost{postID: p.ID, authorID: p.AuthorID})
 
@@ -339,7 +459,7 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 					if c.Score.Valid {
 						cscore = sql.NullString{String: strconv.FormatInt(int64(c.Score.Int32), 10), Valid: true}
 					}
-					_ = s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("comment_%s", cid), Name: name, Val: cscore, Type: sql.NullString{String: "comment", Valid: true}})
+					pendingNodes = append(pendingNodes, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("comment_%s", cid), Name: name, Val: cscore, Type: sql.NullString{String: "comment", Valid: true}})
 					inserted[cid] = true
 					commentToSub[cid] = c.SubredditID
 					authoredComments = append(authoredComments, authoredComment{commentID: cid, authorID: c.AuthorID, postID: p.ID})
@@ -357,11 +477,14 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 						parentID = parentID[3:]
 					}
 					if strings.HasPrefix(parent, "t1_") && inserted[parentID] {
-						_ = s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("comment_%s", parentID), Target: fmt.Sprintf("comment_%s", cid)})
+						pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("comment_%s", parentID), Target: fmt.Sprintf("comment_%s", cid)})
 					} else {
-						_ = s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("post_%s", p.ID), Target: fmt.Sprintf("comment_%s", cid)})
+						pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("post_%s", p.ID), Target: fmt.Sprintf("comment_%s", cid)})
 					}
+					flushNodes(false)
 				}
+				// After processing all comments for this post, flush links in batch
+				flushLinks(false)
 			}
 		}
 		// Cross-links among content by same author across different subreddits
@@ -402,16 +525,18 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 						if seen[key] {
 							continue
 						}
-						if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: srcID, Target: dstID}); err == nil {
-							seen[key] = true
-							links++
-							made++
-						}
+						pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: srcID, Target: dstID})
+						seen[key] = true
+						links++
+						made++
 					}
 				}
+				flushLinks(false)
 			}
 			log.Printf("🔗 Added %d direct content-to-content links across subs (per-node cap=%d)", made, maxLinks)
 		}
+		flushNodes(true)
+		flushLinks(true)
 	}
 
 	// Subreddit relationships -> links
@@ -421,11 +546,12 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	}
 	relLinks := 0
 	for _, rel := range relationships {
-		if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("subreddit_%d", rel.SourceSubredditID), Target: fmt.Sprintf("subreddit_%d", rel.TargetSubredditID)}); err == nil {
-			relLinks++
-		}
+		pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("subreddit_%d", rel.SourceSubredditID), Target: fmt.Sprintf("subreddit_%d", rel.TargetSubredditID)})
+		relLinks++
+		if len(pendingLinks)%5000 == 0 { flushLinks(false) }
 	}
-	log.Printf("✅ Created %d subreddit relationship links", relLinks)
+	flushLinks(true)
+	log.Printf("✅ Queued %d subreddit relationship links", relLinks)
 
 	// User activity -> links (idempotent)
 	acts, err := s.store.GetAllUserSubredditActivity(ctx)
@@ -434,27 +560,30 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	}
 	actLinks := 0
 	for _, a := range acts {
-		if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", a.UserID), Target: fmt.Sprintf("subreddit_%d", a.SubredditID)}); err == nil {
-			actLinks++
-		}
+		pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", a.UserID), Target: fmt.Sprintf("subreddit_%d", a.SubredditID)})
+		actLinks++
+		if len(pendingLinks)%10000 == 0 { flushLinks(false) }
 	}
-	log.Printf("✅ Created %d user activity links", actLinks)
+	flushLinks(true)
+	log.Printf("✅ Queued %d user activity links", actLinks)
 
 	if detailed {
 		upost := 0
 		for _, ap := range authoredPosts {
-			if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", ap.authorID), Target: fmt.Sprintf("post_%s", ap.postID)}); err == nil {
-				upost++
-			}
+			pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", ap.authorID), Target: fmt.Sprintf("post_%s", ap.postID)})
+			upost++
+			if len(pendingLinks)%10000 == 0 { flushLinks(false) }
 		}
 		ucom := 0
 		for _, ac := range authoredComments {
-			if err := s.store.BulkInsertGraphLink(ctx, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", ac.authorID), Target: fmt.Sprintf("comment_%s", ac.commentID)}); err == nil {
-				ucom++
-			}
+			pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", ac.authorID), Target: fmt.Sprintf("comment_%s", ac.commentID)})
+			ucom++
+			if len(pendingLinks)%10000 == 0 { flushLinks(false) }
 		}
+		flushLinks(true)
 		log.Printf("🔗 Added %d user→post and %d user→comment links", upost, ucom)
 	}
+	linkProg.Done("")
 
 	log.Printf("🎉 Graph data precalculation completed successfully")
 	return nil

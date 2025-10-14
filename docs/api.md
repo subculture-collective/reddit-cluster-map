@@ -1,12 +1,30 @@
-# API Reference
+# API reference
 
-## Base URLs
+## Base URL
+
+- Public routes are served by the API container (Docker default: `http://api:8000`).
+- When served behind nginx (frontend), requests go to `/api/*`.
 
 ## Endpoints
 
 ### GET /api/graph
 
-Returns a pre-aggregated graph JSON: `{ nodes: [...], links: [...] }`.
+Returns the consolidated graph JSON:
+
+```
+{ "nodes": Node[], "links": Link[] }
+```
+
+Notes:
+
+- Prefers precalculated `graph_nodes`/`graph_links`; falls back to legacy JSON if empty.
+- Responses are cached for ~60s.
+- Results are capped using a consistent weighting: `max_nodes` and `max_links` query params.
+
+Query params:
+
+- `max_nodes` (number): cap nodes (default set by server; client may pass a lower cap)
+- `max_links` (number): cap links
 
 ### POST /api/crawl
 
@@ -22,13 +40,15 @@ Response: `202 Accepted` on success.
 
 ### GET /subreddits
 
-List subreddits with pagination.
+List subreddits.
 
 Query params: `limit`, `offset`.
 
 ### GET /users
 
 List users with pagination.
+
+Query params: `limit`, `offset`.
 
 ### GET /posts
 
@@ -46,24 +66,33 @@ Query params: `post_id`.
 
 List crawl jobs with pagination.
 
-```
+Query params: `limit`, `offset`.
 
-### GET /api/admin/backups
+### Admin backups
+
+Requires `ADMIN_APITOKEN` if configured by the server.
+
+#### GET /api/admin/backups
 
 List available database backup files (read-only).
 
-Response JSON: [ { "name": string, "size": number, "modified": RFC3339 string } ]
+Response JSON:
+
+```
+[{ "name": string, "size": number, "modified": RFC3339 string }]
+```
 
 Notes:
+
 - Only files named like `reddit_cluster_YYYYMMDD_HHMMSS.sql` are returned.
 - Results are sorted by name (timestamp ascending).
 
-### GET /api/admin/backups/{name}
+#### GET /api/admin/backups/{name}
 
 Download a specific backup file by name.
 
 Path parameter:
-- name: Must match `reddit_cluster_*.sql` and refer to an existing file.
 
-Response: 200 OK with application/sql attachment. 404 if not found.
-```
+- `name`: Must match `reddit_cluster_*.sql` and refer to an existing file.
+
+Response: `200 OK` with `application/sql` attachment. `404` if not found.
