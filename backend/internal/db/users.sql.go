@@ -10,7 +10,7 @@ import (
 )
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, created_at, last_seen, first_seen FROM users WHERE username = $1
+SELECT id, username, created_at, last_seen FROM users WHERE username = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, username string) (User, error) {
@@ -21,13 +21,12 @@ func (q *Queries) GetUser(ctx context.Context, username string) (User, error) {
 		&i.Username,
 		&i.CreatedAt,
 		&i.LastSeen,
-		&i.FirstSeen,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, created_at, last_seen, first_seen FROM users ORDER BY last_seen DESC LIMIT $1 OFFSET $2
+SELECT id, username, created_at, last_seen FROM users ORDER BY last_seen DESC LIMIT $1 OFFSET $2
 `
 
 type ListUsersParams struct {
@@ -49,7 +48,6 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.Username,
 			&i.CreatedAt,
 			&i.LastSeen,
-			&i.FirstSeen,
 		); err != nil {
 			return nil, err
 		}

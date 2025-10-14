@@ -6,7 +6,7 @@ export
 DB_CONTAINER = backend-db-1
 API_CONTAINER = backend-api-1
 CRAWLER_CONTAINER = backend-crawler-1
-DB_USER = postgres
+DB_USER = $(POSTGRES_USER)
 DB_NAME = reddit_cluster
 
 .PHONY: reset migrate drop logs logs-api logs-db logs-crawler logs-all kickstart migrate-up migrate-up-local migrate-priority-fix start-crawler stop-crawler test-crawl precalculate test test-integration sqlc generate
@@ -65,6 +65,54 @@ stop-crawler:
 
 precalculate:
 	docker compose run --rm precalculate /app/precalculate
+
+# --- Backups helpers (precalculate service writes dumps to named volume 'backend_pgbackups') ---
+.PHONY: backup-now backups-ls backups-path backups-download-latest backups-tidy
+
+# Trigger a one-off backup (requires db to be running)
+backup-now:
+	@echo "Running backup via precalculate service..."
+	@docker compose run --rm --no-deps \
+		-e PGHOST=$${PGHOST:-db} \
+		-e POSTGRES_USER=$${POSTGRES_USER} \
+		-e POSTGRES_PASSWORD=$${POSTGRES_PASSWORD} \
+		-e POSTGRES_DB=$${POSTGRES_DB} \
+		precalculate /app/scripts/backup.sh
+
+# Show files in backup volume
+backups-ls:
+	@docker run --rm -v backend_pgbackups:/data busybox sh -c 'ls -lh /data | sort -k9'
+
+# Print host path to the backup volume
+backups-path:
+	@docker volume inspect backend_pgbackups --format '{{ .Mountpoint }}'
+
+# Copy latest backup to local ./backups (host) without starting any services
+backups-download-latest:
+	@mkdir -p backups
+		@docker run --rm -v backend_pgbackups:/data -v $$PWD/backups:/out busybox /bin/sh -lc \
+				"set -e; echo 'Listing backups in /data'; ls -lh /data 2>/dev/null || true; \
+				sel=; for f in $$(ls -1 /data 2>/dev/null | sort -r || true); do \
+					if [ -s \"/data/$$f\" ]; then sel=\"$$f\"; break; fi; \
+				done; \
+				if [ -n \"$$sel\" ]; then echo \"Copying: $$sel\"; cp -v /data/\"$$sel\" /out/; else echo 'No non-empty backups found in volume backend_pgbackups'; fi"
+
+	# Remove zero-byte files and keep only the last N non-empty backups (default 14)
+	backups-tidy:
+		@docker run --rm -e KEEP=$${KEEP:-14} -v backend_pgbackups:/data busybox /bin/sh -lc \
+			"set -e; echo 'Before tidy:'; ls -lh /data || true; \
+			find /data -type f -size 0 -print -delete || true; \
+			cnt=0; for f in $$(ls -1t /data 2>/dev/null || true); do \
+			  [ -s /data/$$f ] || continue; cnt=$$((cnt+1)); \
+			  if [ $$cnt -le $$KEEP ]; then continue; fi; echo Deleting /data/$$f; rm -f /data/$$f; \
+			done; echo 'After tidy:'; ls -lh /data || true"
+
+# Create a tar.gz snapshot of the raw Postgres data volume into the backups volume
+.PHONY: backups-snapshot-volume
+backups-snapshot-volume:
+	@echo "Snapshotting backend_postgres_data into backend_pgbackups..."
+	@docker run --rm -v backend_postgres_data:/pgdata:ro -v backend_pgbackups:/out alpine sh -c \
+		"apk add --no-cache tar >/dev/null 2>&1 || true; cd /pgdata && ts=$$(date +%Y%m%d_%H%M%S) && tar -czf /out/pgdata_$$ts.tar.gz . && echo Created /out/pgdata_$$ts.tar.gz"
 
 # Run all unit tests
 test:

@@ -14,7 +14,7 @@ const bulkInsertGraphLink = `-- name: BulkInsertGraphLink :exec
 INSERT INTO graph_links (source, target)
 SELECT $1, $2
 WHERE EXISTS (SELECT 1 FROM graph_nodes WHERE id = $1)
-  AND EXISTS (SELECT 1 FROM graph_nodes WHERE id = $2)
+    AND EXISTS (SELECT 1 FROM graph_nodes WHERE id = $2)
 ON CONFLICT (source, target) DO NOTHING
 `
 
@@ -25,33 +25,6 @@ type BulkInsertGraphLinkParams struct {
 
 func (q *Queries) BulkInsertGraphLink(ctx context.Context, arg BulkInsertGraphLinkParams) error {
 	_, err := q.db.ExecContext(ctx, bulkInsertGraphLink, arg.Source, arg.Target)
-	return err
-}
-
-const bulkInsertGraphNode = `-- name: BulkInsertGraphNode :exec
-INSERT INTO graph_nodes (id, name, val, type)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (id) DO UPDATE SET
-	name = EXCLUDED.name,
-	val = EXCLUDED.val,
-	type = EXCLUDED.type,
-	updated_at = now()
-`
-
-type BulkInsertGraphNodeParams struct {
-	ID   string
-	Name string
-	Val  sql.NullString
-	Type sql.NullString
-}
-
-func (q *Queries) BulkInsertGraphNode(ctx context.Context, arg BulkInsertGraphNodeParams) error {
-	_, err := q.db.ExecContext(ctx, bulkInsertGraphNode,
-		arg.ID,
-		arg.Name,
-		arg.Val,
-		arg.Type,
-	)
 	return err
 }
 
@@ -148,15 +121,15 @@ func (q *Queries) CreateGraphNode(ctx context.Context, arg CreateGraphNodeParams
 
 const createSubredditRelationship = `-- name: CreateSubredditRelationship :one
 INSERT INTO subreddit_relationships (
-	source_subreddit_id,
-	target_subreddit_id,
-	overlap_count
+    source_subreddit_id,
+    target_subreddit_id,
+    overlap_count
 ) VALUES (
-	$1, $2, $3
+    $1, $2, $3
 ) ON CONFLICT (source_subreddit_id, target_subreddit_id)
 DO UPDATE SET
-	overlap_count = EXCLUDED.overlap_count,
-	updated_at = now()
+    overlap_count = EXCLUDED.overlap_count,
+    updated_at = now()
 RETURNING id, source_subreddit_id, target_subreddit_id, overlap_count, created_at, updated_at
 `
 
@@ -424,7 +397,7 @@ SELECT
     'node' as data_type,
     id,
     name,
-    val::TEXT as val,
+    CAST(val AS TEXT) as val,
     type,
     NULL as source,
     NULL as target
@@ -432,9 +405,9 @@ FROM graph_nodes
 UNION ALL
 SELECT
     'link' as data_type,
-    id::text,
+    CAST(id AS TEXT),
     NULL as name,
-    NULL::TEXT as val,
+    CAST(NULL AS TEXT) as val,
     NULL as type,
     source,
     target
@@ -461,6 +434,95 @@ func (q *Queries) GetPrecalculatedGraphData(ctx context.Context) ([]GetPrecalcul
 	var items []GetPrecalculatedGraphDataRow
 	for rows.Next() {
 		var i GetPrecalculatedGraphDataRow
+		if err := rows.Scan(
+			&i.DataType,
+			&i.ID,
+			&i.Name,
+			&i.Val,
+			&i.Type,
+			&i.Source,
+			&i.Target,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPrecalculatedGraphDataCapped = `-- name: GetPrecalculatedGraphDataCapped :many
+WITH sel_nodes AS (
+    SELECT gn.id, gn.name, gn.val, gn.type
+    FROM graph_nodes gn
+    WHERE (
+        $1 IS NULL
+        OR array_length($1, 1) = 0
+        OR (gn.type IS NOT NULL AND gn.type = ANY($1))
+    )
+    ORDER BY (
+        CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
+    ) DESC NULLS LAST, gn.id
+        LIMIT $2
+), sel_links AS (
+    SELECT id, source, target
+    FROM graph_links gl
+    WHERE gl.source IN (SELECT id FROM sel_nodes)
+      AND gl.target IN (SELECT id FROM sel_nodes)
+        LIMIT $3
+)
+SELECT
+    'node' AS data_type,
+    n.id,
+    n.name,
+    CAST(n.val AS TEXT) AS val,
+    n.type,
+    NULL AS source,
+    NULL AS target
+FROM sel_nodes n
+UNION ALL
+SELECT
+    'link' AS data_type,
+    CAST(l.id AS TEXT),
+    NULL AS name,
+    CAST(NULL AS TEXT) AS val,
+    NULL AS type,
+    l.source,
+    l.target
+FROM sel_links l
+ORDER BY data_type, id
+`
+
+type GetPrecalculatedGraphDataCappedParams struct {
+	TypeFilter interface{}
+	NodeLimit  int32
+	LinkLimit  int32
+}
+
+type GetPrecalculatedGraphDataCappedRow struct {
+	DataType string
+	ID       string
+	Name     string
+	Val      string
+	Type     sql.NullString
+	Source   interface{}
+	Target   interface{}
+}
+
+func (q *Queries) GetPrecalculatedGraphDataCapped(ctx context.Context, arg GetPrecalculatedGraphDataCappedParams) ([]GetPrecalculatedGraphDataCappedRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPrecalculatedGraphDataCapped, arg.TypeFilter, arg.NodeLimit, arg.LinkLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPrecalculatedGraphDataCappedRow
+	for rows.Next() {
+		var i GetPrecalculatedGraphDataCappedRow
 		if err := rows.Scan(
 			&i.DataType,
 			&i.ID,
@@ -590,4 +652,52 @@ func (q *Queries) GetUserTotalActivity(ctx context.Context, authorID int32) (int
 	var total_activity int32
 	err := row.Scan(&total_activity)
 	return total_activity, err
+}
+
+const listUsersWithActivity = `-- name: ListUsersWithActivity :many
+SELECT
+    u.id,
+    u.username,
+    COALESCE(p.post_count, 0) + COALESCE(c.comment_count, 0) AS total_activity
+FROM users u
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS post_count
+    FROM posts
+    GROUP BY author_id
+) p ON p.author_id = u.id
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS comment_count
+    FROM comments
+    GROUP BY author_id
+) c ON c.author_id = u.id
+ORDER BY total_activity DESC, u.id
+`
+
+type ListUsersWithActivityRow struct {
+	ID            int32
+	Username      string
+	TotalActivity int32
+}
+
+func (q *Queries) ListUsersWithActivity(ctx context.Context) ([]ListUsersWithActivityRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUsersWithActivity)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUsersWithActivityRow
+	for rows.Next() {
+		var i ListUsersWithActivityRow
+		if err := rows.Scan(&i.ID, &i.Username, &i.TotalActivity); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

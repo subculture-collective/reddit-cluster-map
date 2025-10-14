@@ -11,6 +11,9 @@ services:
           - reddit-api
     env_file:
       - .env
+    volumes:
+      # Mount backups volume read-only to expose via HTTP endpoints
+      - pgbackups:/app/backups:ro
 
   crawler:
     build:
@@ -24,11 +27,13 @@ services:
       - .env
 
   db:
-    image: postgres:latest
+    image: postgres:17
     environment:
       - POSTGRES_INITDB_ARGS=--data-checksums
+      - PGDATA=/var/lib/postgresql/pgdata-volume
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Mount the named volume at an alternate path to avoid overlay mount issues
+      - postgres_data:/var/lib/postgresql/pgdata-volume
       # Mount only the base schema to ensure correct init order
       - ./migrations/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     networks:
@@ -61,7 +66,25 @@ services:
       - web
     volumes:
       - ./scripts:/app/scripts
-      - ./backups:/app/backups
+      # Persist backups on a named docker volume rather than a bind mount
+      - pgbackups:/app/backups
+
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile.precalculate
+    command: ["/bin/sh", "-lc", "/app/scripts/backup-runner.sh"]
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      - BACKUP_INTERVAL=24h
+    networks:
+      - web
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - pgbackups:/app/backups
 
   reddit_frontend:
     build:
@@ -78,6 +101,7 @@ services:
 
 volumes:
   postgres_data:
+  pgbackups:
 
 networks:
   web:

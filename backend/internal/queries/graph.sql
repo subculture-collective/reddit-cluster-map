@@ -3,7 +3,7 @@ SELECT
     'node' as data_type,
     id,
     name,
-    val::TEXT as val,
+    CAST(val AS TEXT) as val,
     type,
     NULL as source,
     NULL as target
@@ -11,9 +11,9 @@ FROM graph_nodes
 UNION ALL
 SELECT
     'link' as data_type,
-    id::text,
+    CAST(id AS TEXT),
     NULL as name,
-    NULL::TEXT as val,
+    CAST(NULL AS TEXT) as val,
     NULL as type,
     source,
     target
@@ -22,24 +22,29 @@ ORDER BY data_type, id;
 
 -- name: GetPrecalculatedGraphDataCapped :many
 WITH sel_nodes AS (
-    SELECT id, name, val, type
-    FROM graph_nodes
+    SELECT gn.id, gn.name, gn.val, gn.type
+    FROM graph_nodes gn
+    WHERE (
+        sqlc.narg(type_filter) IS NULL
+        OR array_length(sqlc.narg(type_filter), 1) = 0
+        OR (gn.type IS NOT NULL AND gn.type = ANY(sqlc.narg(type_filter)))
+    )
     ORDER BY (
-        CASE WHEN val ~ '^[0-9]+$' THEN val::BIGINT ELSE 0 END
-    ) DESC NULLS LAST, id
-    LIMIT $1
+        CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
+    ) DESC NULLS LAST, gn.id
+        LIMIT sqlc.arg(node_limit)
 ), sel_links AS (
     SELECT id, source, target
     FROM graph_links gl
     WHERE gl.source IN (SELECT id FROM sel_nodes)
       AND gl.target IN (SELECT id FROM sel_nodes)
-    LIMIT $2
+        LIMIT sqlc.arg(link_limit)
 )
 SELECT
     'node' AS data_type,
     n.id,
     n.name,
-    n.val::TEXT AS val,
+    CAST(n.val AS TEXT) AS val,
     n.type,
     NULL AS source,
     NULL AS target
@@ -47,9 +52,9 @@ FROM sel_nodes n
 UNION ALL
 SELECT
     'link' AS data_type,
-    l.id::TEXT,
+    CAST(l.id AS TEXT),
     NULL AS name,
-    NULL::TEXT AS val,
+    CAST(NULL AS TEXT) AS val,
     NULL AS type,
     l.source,
     l.target
@@ -85,10 +90,10 @@ INSERT INTO graph_links (
 -- name: ClearGraphTables :exec
 TRUNCATE TABLE graph_nodes, graph_links;
 
--- name: BulkInsertGraphNode :exec
 INSERT INTO graph_nodes (id, name, val, type)
 VALUES ($1, $2, $3, $4);
 
+-- name: BulkInsertGraphLink :exec
 INSERT INTO graph_links (source, target)
 SELECT $1, $2
 WHERE EXISTS (SELECT 1 FROM graph_nodes WHERE id = $1)
@@ -126,6 +131,7 @@ SELECT COUNT(*)
 FROM user_activity ua
 JOIN other_activity oa ON ua.author_id = oa.author_id;
 
+-- name: CreateSubredditRelationship :one
 INSERT INTO subreddit_relationships (
     source_subreddit_id,
     target_subreddit_id,
@@ -182,4 +188,22 @@ FROM user_subreddit_activity;
 SELECT (
     (SELECT COUNT(*) FROM posts p WHERE p.author_id = $1) +
     (SELECT COUNT(*) FROM comments c WHERE c.author_id = $1)
-) as total_activity; 
+) as total_activity;
+
+-- name: ListUsersWithActivity :many
+SELECT
+    u.id,
+    u.username,
+    COALESCE(p.post_count, 0) + COALESCE(c.comment_count, 0) AS total_activity
+FROM users u
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS post_count
+    FROM posts
+    GROUP BY author_id
+) p ON p.author_id = u.id
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS comment_count
+    FROM comments
+    GROUP BY author_id
+) c ON c.author_id = u.id
+ORDER BY total_activity DESC, u.id;

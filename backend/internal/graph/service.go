@@ -41,6 +41,7 @@ type GraphStore interface {
 	// Graph data
 	BulkInsertGraphNode(ctx context.Context, arg db.BulkInsertGraphNodeParams) error
 	BulkInsertGraphLink(ctx context.Context, arg db.BulkInsertGraphLinkParams) error
+	ListUsersWithActivity(ctx context.Context) ([]db.ListUsersWithActivityRow, error)
 	// Detailed content
 	ListPostsBySubreddit(ctx context.Context, arg db.ListPostsBySubredditParams) ([]db.Post, error)
 	ListCommentsByPost(ctx context.Context, postID string) ([]db.Comment, error)
@@ -228,20 +229,17 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	postsPerSub := int32(cfg.PostsPerSubInGraph)
 	commentsPerPost := int(cfg.CommentsPerPost)
 
-	// Users -> nodes
-	users, err := s.store.GetAllUsers(ctx)
+	// Users -> nodes (aggregate totals in a single query to avoid per-user COUNTs)
+	usersWithActivity, err := s.store.ListUsersWithActivity(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to fetch users: %w", err)
+		return fmt.Errorf("failed to fetch user activity totals: %w", err)
 	}
-	log.Printf("👥 Creating nodes for %d users", len(users))
+	log.Printf("👥 Creating nodes for %d users", len(usersWithActivity))
 	userNodeCount := 0
-	for _, u := range users {
-		total, err := s.store.GetUserTotalActivity(ctx, u.ID)
-		if err != nil {
-			log.Printf("⚠️ total activity %s: %v", u.Username, err)
-			continue
-		}
-		if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("user_%d", u.ID), Name: u.Username, Val: sql.NullString{String: strconv.FormatInt(int64(total), 10), Valid: true}, Type: sql.NullString{String: "user", Valid: true}}); err != nil {
+	for _, u := range usersWithActivity {
+		total := int64(u.TotalActivity)
+		val := sql.NullString{Valid: true, String: strconv.FormatInt(total, 10)}
+		if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("user_%d", u.ID), Name: u.Username, Val: val, Type: sql.NullString{String: "user", Valid: true}}); err != nil {
 			log.Printf("⚠️ insert user node %s: %v", u.Username, err)
 			continue
 		}
@@ -278,8 +276,15 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	}
 
 	// Detailed content graph (optional)
-	type authoredPost struct{ postID string; authorID int32 }
-	type authoredComment struct{ commentID string; authorID int32; postID string }
+	type authoredPost struct {
+		postID   string
+		authorID int32
+	}
+	type authoredComment struct {
+		commentID string
+		authorID  int32
+		postID    string
+	}
 	var authoredPosts []authoredPost
 	var authoredComments []authoredComment
 	postToSub := map[string]int32{}
@@ -294,13 +299,13 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 				continue
 			}
 			for _, p := range posts {
-					title := strings.TrimSpace(p.Title.String)
-					if title == "" {
-						title = fmt.Sprintf("post %s", p.ID)
-					}
-					if utf8.RuneCountInString(title) > 256 {
-						title = truncateUTF8(title, 256)
-					}
+				title := strings.TrimSpace(p.Title.String)
+				if title == "" {
+					title = fmt.Sprintf("post %s", p.ID)
+				}
+				if utf8.RuneCountInString(title) > 256 {
+					title = truncateUTF8(title, 256)
+				}
 				var score sql.NullString
 				if p.Score.Valid {
 					score = sql.NullString{String: strconv.FormatInt(int64(p.Score.Int32), 10), Valid: true}
@@ -362,7 +367,10 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 		// Cross-links among content by same author across different subreddits
 		maxLinks := cfg.MaxAuthorLinks
 		if maxLinks > 0 {
-			type item struct{ id, kind string; subreddit int32 }
+			type item struct {
+				id, kind  string
+				subreddit int32
+			}
 			byAuthor := map[int32][]item{}
 			for _, ap := range authoredPosts {
 				if subID, ok := postToSub[ap.postID]; ok {

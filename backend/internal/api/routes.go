@@ -1,8 +1,11 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/gorilla/mux"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/api/handlers"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
@@ -17,6 +20,11 @@ func NewRouter(q *db.Queries) *mux.Router {
 	auth := handlers.NewAuthHandlers(q)
 	r.HandleFunc("/auth/login", auth.Login).Methods("GET")
 	r.HandleFunc("/auth/callback", auth.Callback).Methods("GET")
+
+	// Alternate paths to support externally configured redirect URIs
+	// e.g., https://<host>/oauth/reddit/callback used in production
+	r.HandleFunc("/oauth/reddit/login", auth.Login).Methods("GET")
+	r.HandleFunc("/oauth/reddit/callback", auth.Callback).Methods("GET")
 
 	// REST-style resources (no /api prefix) for internal/admin queries
 	// Subreddits list: GET /subreddits?limit=&offset=
@@ -42,13 +50,37 @@ func NewRouter(q *db.Queries) *mux.Router {
 	graphHandler := handlers.NewHandler(q)
 	r.HandleFunc("/api/graph", graphHandler.GetGraphData).Methods("GET")
 
-	// Admin: toggle background services
+	// Admin: toggle background services (gated)
 	admin := handlers.NewAdminHandler(q)
-	r.HandleFunc("/api/admin/services", admin.GetServices).Methods("GET")
-	r.HandleFunc("/api/admin/services", admin.UpdateServices).Methods("POST")
+	// We'll define adminOnly below, so temporarily register after it's declared.
 	// precalc is handled in its own service; no run-now route
 	// Crawl status
 	r.HandleFunc("/api/crawl/status", handlers.GetCrawlStatus(q)).Methods("GET")
+
+	// Admin auth middleware using a static bearer token from env
+	cfg := config.Load()
+	adminOnly := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if cfg.AdminAPIToken == "" {
+				http.Error(w, "admin token not configured", http.StatusServiceUnavailable)
+				return
+			}
+			auth := r.Header.Get("Authorization")
+			const prefix = "Bearer "
+			if len(auth) <= len(prefix) || auth[:len(prefix)] != prefix || auth[len(prefix):] != cfg.AdminAPIToken {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	// Backups (read-only): list and download files from mounted volume, gated by adminOnly
+	r.Handle("/api/admin/backups", adminOnly(http.HandlerFunc(handlers.ListBackups))).Methods("GET")
+	r.Handle("/api/admin/backups/{name}", adminOnly(http.HandlerFunc(handlers.DownloadBackup))).Methods("GET")
+	// Services endpoints gated by adminOnly
+	r.Handle("/api/admin/services", adminOnly(http.HandlerFunc(admin.GetServices))).Methods("GET")
+	r.Handle("/api/admin/services", adminOnly(http.HandlerFunc(admin.UpdateServices))).Methods("POST")
 	
 	return r
 }

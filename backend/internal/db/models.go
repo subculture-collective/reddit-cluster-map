@@ -6,6 +6,7 @@ package db
 
 import (
 	"database/sql"
+	"time"
 )
 
 type Comment struct {
@@ -25,6 +26,7 @@ type CrawlJob struct {
 	ID          int32
 	SubredditID int32
 	Status      string
+	Priority    sql.NullInt32
 	Retries     sql.NullInt32
 	LastAttempt sql.NullTime
 	DurationMs  sql.NullInt32
@@ -62,6 +64,18 @@ type GraphNode struct {
 	UpdatedAt sql.NullTime
 }
 
+type OauthAccount struct {
+	ID             int32
+	RedditUserID   string
+	RedditUsername string
+	AccessToken    string
+	RefreshToken   string
+	ExpiresAt      time.Time
+	Scopes         string
+	CreatedAt      sql.NullTime
+	UpdatedAt      sql.NullTime
+}
+
 type Post struct {
 	ID          string
 	SubredditID int32
@@ -75,6 +89,11 @@ type Post struct {
 	Url         sql.NullString
 	IsSelf      sql.NullBool
 	LastSeen    sql.NullTime
+}
+
+type ServiceSetting struct {
+	Key   string
+	Value string
 }
 
 type Subreddit struct {
@@ -101,7 +120,6 @@ type User struct {
 	Username  string
 	CreatedAt sql.NullTime
 	LastSeen  sql.NullTime
-	FirstSeen sql.NullTime
 }
 
 type UserSubredditActivity struct {

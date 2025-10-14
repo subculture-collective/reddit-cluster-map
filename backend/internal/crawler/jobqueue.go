@@ -3,6 +3,7 @@ package crawler
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/lib/pq"
@@ -61,19 +62,17 @@ func RequeueStaleSubreddits(ctx context.Context, q *db.Queries, ttl time.Duratio
 func BumpPriority(ctx context.Context, q *db.Queries, subredditID int32, delta int) error {
     const stmt = `UPDATE crawl_jobs SET priority = priority + $2, updated_at=now() WHERE subreddit_id = $1`
     _, err := q.DB().ExecContext(ctx, stmt, subredditID, delta)
-    if err != nil {
-        // If priority column doesn't exist yet, ignore
-        if pqErr, ok := err.(*pq.Error); ok && string(pqErr.Code) == "42703" {
-            _, _ = q.DB().ExecContext(ctx, `UPDATE crawl_jobs SET updated_at=now() WHERE subreddit_id = $1`, subredditID)
-            return nil
-        }
-    }
     return err
 }
 
 // ClaimNextJob selects the highest-priority queued job and marks it crawling atomically.
 func ClaimNextJob(ctx context.Context, q *db.Queries) (db.CrawlJob, error) {
-    tx, err := q.DB().(*sql.DB).BeginTx(ctx, &sql.TxOptions{})
+    rawDB := q.DB()
+    sqlDB, ok := rawDB.(*sql.DB)
+    if !ok {
+        return db.CrawlJob{}, fmt.Errorf("underlying DB does not support transactions")
+    }
+    tx, err := sqlDB.BeginTx(ctx, &sql.TxOptions{})
     if err != nil { return db.CrawlJob{}, err }
     defer func() { if err != nil { _ = tx.Rollback() } }()
     var j db.CrawlJob

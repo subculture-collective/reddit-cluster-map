@@ -32,6 +32,8 @@ type Config struct {
 	ResetCrawlingAfterMin    int
 	// API background graph job control
 	DisableAPIGraphJob bool
+	// Admin API token for gating admin endpoints (Bearer token)
+	AdminAPIToken      string
 }
 
 var cached *Config
@@ -65,6 +67,7 @@ func Load() *Config {
 	StaleDays:           utils.GetEnvAsInt("STALE_DAYS", 30),
 	ResetCrawlingAfterMin: utils.GetEnvAsInt("RESET_CRAWLING_AFTER_MIN", 15),
 	DisableAPIGraphJob:    utils.GetEnvAsBool("DISABLE_API_GRAPH_JOB", false),
+	AdminAPIToken:         strings.TrimSpace(os.Getenv("ADMIN_API_TOKEN")),
 	}
 	if cached.PostsSort == "" { cached.PostsSort = "top" }
 	if cached.PostsTimeFilter == "" { cached.PostsTimeFilter = "day" }

@@ -8,22 +8,10 @@ import (
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
-// ensureTable creates the service_settings table if missing.
-func ensureTable(ctx context.Context, q *db.Queries) error {
-    _, err := q.DB().ExecContext(ctx, `
-        CREATE TABLE IF NOT EXISTS service_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        )`)
-    return err
-}
-
 // Get returns the value for a key or empty string if not set.
 func Get(ctx context.Context, q *db.Queries, key string) (string, error) {
-    if err := ensureTable(ctx, q); err != nil { return "", err }
-    row := q.DB().QueryRowContext(ctx, `SELECT value FROM service_settings WHERE key=$1`, key)
-    var v string
-    if err := row.Scan(&v); err != nil {
+    v, err := q.GetServiceSetting(ctx, key)
+    if err != nil {
         if err == sql.ErrNoRows { return "", nil }
         return "", err
     }
@@ -32,12 +20,7 @@ func Get(ctx context.Context, q *db.Queries, key string) (string, error) {
 
 // Set sets the value for a key.
 func Set(ctx context.Context, q *db.Queries, key, value string) error {
-    if err := ensureTable(ctx, q); err != nil { return err }
-    _, err := q.DB().ExecContext(ctx, `
-        INSERT INTO service_settings(key, value)
-        VALUES($1,$2)
-        ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`, key, strings.TrimSpace(value))
-    return err
+    return q.UpsertServiceSetting(ctx, db.UpsertServiceSettingParams{Key: key, Value: strings.TrimSpace(value)})
 }
 
 // GetBool reads a boolean with default if missing.

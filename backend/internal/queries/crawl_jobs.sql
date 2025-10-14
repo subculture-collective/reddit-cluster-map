@@ -22,3 +22,10 @@ JOIN subreddits s ON s.id = cj.subreddit_id
 WHERE cj.status IN ('queued','crawling')
 ORDER BY cj.priority DESC, cj.created_at ASC;
 
+-- name: CrawlJobExists :one
+SELECT EXISTS (
+	SELECT 1
+	FROM crawl_jobs
+	WHERE subreddit_id = $1
+);
+

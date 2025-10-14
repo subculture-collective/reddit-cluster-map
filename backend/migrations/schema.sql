@@ -140,3 +140,9 @@ CREATE INDEX idx_graph_data_data_type ON graph_data(data_type);
 CREATE INDEX idx_graph_data_node_id ON graph_data(node_id);
 CREATE INDEX idx_graph_data_source ON graph_data(source);
 CREATE INDEX idx_graph_data_target ON graph_data(target);
+
+-- Admin service settings key-value table
+CREATE TABLE IF NOT EXISTS service_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);

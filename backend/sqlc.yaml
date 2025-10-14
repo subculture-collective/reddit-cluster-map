@@ -2,7 +2,8 @@ version: "2"
 
 sql:
   - schema:
-      - migrations/*.sql
+      - migrations/schema.sql
+      - migrations/000*.sql
     queries:
       - internal/queries/
     engine: postgresql
