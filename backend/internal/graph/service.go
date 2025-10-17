@@ -607,20 +607,21 @@ func min(a, b int) int {
 // checkPositionColumnsExist verifies that graph_nodes has pos_x, pos_y, pos_z columns.
 // Returns nil if columns exist, or an error if they don't.
 func (s *Service) checkPositionColumnsExist(ctx context.Context, queries *db.Queries) error {
-	// Try to query a single row with position columns to verify they exist
+	// Query the table to verify position columns exist
 	// We use a limit 0 query to avoid data transfer
 	checkSQL := `SELECT pos_x, pos_y, pos_z FROM graph_nodes LIMIT 0`
-	_, err := queries.DB().ExecContext(ctx, checkSQL)
+	rows, err := queries.DB().QueryContext(ctx, checkSQL)
 	if err != nil {
-		// Check if it's a column doesn't exist error
+		// Check if it's a column doesn't exist error (PostgreSQL error code 42703)
 		if strings.Contains(err.Error(), "does not exist") && 
 		   (strings.Contains(err.Error(), "pos_x") || 
 		    strings.Contains(err.Error(), "pos_y") || 
 		    strings.Contains(err.Error(), "pos_z")) {
-			return fmt.Errorf("position columns (pos_x/pos_y/pos_z) do not exist in graph_nodes table - migration 000016 may not be applied")
+			return fmt.Errorf("position columns (pos_x/pos_y/pos_z) do not exist in graph_nodes table - please run database migrations")
 		}
 		return fmt.Errorf("failed to check position columns: %w", err)
 	}
+	defer rows.Close()
 	return nil
 }
 
