@@ -76,9 +76,9 @@ type GraphResponse struct {
 func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 	// Derive a bounded context to avoid very long queries
 	cfg := config.Load()
-	timeout := cfg.HTTPTimeout
+	timeout := cfg.GraphQueryTimeout
 	if timeout <= 0 {
-		timeout = 8 * time.Second
+		timeout = 30 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
@@ -115,7 +115,22 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 	graphCacheMu.Unlock()
 	// Try precalculated tables (capped) first
 	rows, err := fetchPrecalcCapped(ctx, h.queries, maxNodes, maxLinks, allowAll, allowedList)
-	if err == nil && len(rows) > 0 {
+	if err != nil {
+		// Check if this was a timeout/cancellation
+		if ctx.Err() == context.DeadlineExceeded || err == context.DeadlineExceeded {
+			log.Printf("⚠️ precalc query timed out after %v", timeout)
+			http.Error(w, `{"error":"Graph query timeout - dataset may be too large. Try reducing max_nodes or max_links parameters."}`, http.StatusRequestTimeout)
+			return
+		}
+		if ctx.Err() == context.Canceled || err == context.Canceled {
+			log.Printf("⚠️ precalc query was canceled")
+			http.Error(w, `{"error":"Request canceled"}`, http.StatusRequestTimeout)
+			return
+		}
+		log.Printf("⚠️ precalc capped query failed: %v (falling back)", err)
+		// Continue to fallback
+	}
+	if len(rows) > 0 {
 		// Build nodes/links then apply caps
 		nodes := make(map[string]GraphNode, len(rows))
 		links := make([]GraphLink, 0, len(rows))
@@ -126,9 +141,6 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 				t := ""
 				if (row.Type != sql.NullString{}) && row.Type.Valid {
 					t = strings.ToLower(row.Type.String)
-				}
-				if err != nil {
-					log.Printf("⚠️ precalc capped query failed: %v (falling back)", err)
 				}
 				if !allowAll {
 					if len(allowedTypes) == 0 {

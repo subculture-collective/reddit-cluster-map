@@ -115,3 +115,56 @@ func TestGraphHandler_UnwrapsSingleRow(t *testing.T) {
 		t.Fatalf("unexpected body: %s", rr.Body.String())
 	}
 }
+
+// fakeTimeoutQueries simulates a query that times out
+type fakeTimeoutQueries struct{}
+
+func (f *fakeTimeoutQueries) GetGraphData(ctx context.Context) ([]json.RawMessage, error) {
+	// Also timeout on legacy fallback
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error) {
+	// Simulate a timeout
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetPrecalculatedGraphDataCappedFiltered(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedFilteredParams) ([]db.GetPrecalculatedGraphDataCappedFilteredRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetPrecalculatedGraphDataNoPos(ctx context.Context) ([]db.GetPrecalculatedGraphDataNoPosRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func TestGraphHandler_TimeoutHandling(t *testing.T) {
+	// Clear the cache to avoid interference from other tests
+	graphCacheMu.Lock()
+	graphCache = make(map[string]graphCacheEntry)
+	graphCacheMu.Unlock()
+
+	h := &Handler{queries: &fakeTimeoutQueries{}}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/graph", nil)
+	h.GetGraphData(rr, req)
+	if rr.Code != http.StatusRequestTimeout {
+		t.Fatalf("expected 408, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if body == "" || (!contains(body, "timeout") && !contains(body, "Timeout")) {
+		t.Fatalf("expected timeout error message, got: %s", body)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstr(s, substr))
+}
+
+func findSubstr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
