@@ -57,7 +57,7 @@ jobs:
           
           echo "### Other Changes" >> changelog.md
           # Get all commits, then filter out the categorized ones
-          git log $PREVIOUS_TAG..$CURRENT_TAG --pretty=format:"- %s (%h)" | grep -v "^- \(feat\|feature\|fix\|bugfix\|docs\)" >> changelog.md || echo "No other changes" >> changelog.md
+          git log $PREVIOUS_TAG..$CURRENT_TAG --pretty=format:"- %s (%h)" | grep -vE "^- (feat|feature|fix|bugfix|docs)" >> changelog.md || echo "No other changes" >> changelog.md
           echo "" >> changelog.md
           echo "" >> changelog.md
           
