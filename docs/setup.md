@@ -49,8 +49,9 @@ From `backend/`:
 
 - Start DB, API, crawler, frontend:
   - `docker compose up -d --build`
-- Migrations (if needed):
-  - `make migrate-up` (or `make migrate-up-local`)
+- **Important**: Run migrations to ensure all database schema changes are applied:
+  - `make migrate-up` (or `make migrate-up-local` for local database)
+  - Migration 000016 adds position columns (`pos_x`, `pos_y`, `pos_z`) to `graph_nodes` required for layout computation
 
 The API listens on port 8000 inside the network. Frontend serves on port 80 (container) behind your reverse proxy.
 
@@ -88,3 +89,4 @@ Or wait for the API server’s graph job (every hour) to update automatically.
 - Double /api in URL: ensure `VITE_API_URL` has no trailing slash in `frontend/.env`.
 - `/api/graph` looks empty: ensure precalc has run and `DETAILED_GRAPH` settings are set as expected. The API falls back to legacy JSON only when precalculated tables are empty.
 - Precalc slow: adjust `GRAPH_NODE_BATCH_SIZE`, `GRAPH_LINK_BATCH_SIZE`, `GRAPH_PROGRESS_INTERVAL` and consider reducing `POSTS_PER_SUB_IN_GRAPH` or `COMMENTS_PER_POST_IN_GRAPH`.
+- **Position columns errors** (`pos_x/pos_y/pos_z does not exist`): Run `make migrate-up` or `make migrate-up-local` to apply migration 000016. New databases created via docker-compose already include these columns in schema.sql. For existing databases, the migration is idempotent and safe to run multiple times.
