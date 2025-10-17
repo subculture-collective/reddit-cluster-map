@@ -86,6 +86,9 @@ CREATE TABLE graph_nodes (
 -- CREATE INDEX idx_graph_nodes_name ON graph_nodes(name);
 CREATE INDEX idx_graph_nodes_name_hash ON graph_nodes (substring(name, 1, 10));
 CREATE INDEX idx_graph_nodes_type ON graph_nodes(type) WHERE type IS NOT NULL;
+-- Expression index matching the query pattern in GetPrecalculatedGraphDataCappedAll/Filtered
+-- This mirrors the ORDER BY clause: ORDER BY (CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END) DESC
+-- Performance note: regex check is necessary to avoid CAST errors on non-numeric strings
 CREATE INDEX idx_graph_nodes_val_numeric ON graph_nodes(
     (CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END) DESC NULLS LAST, id
 );

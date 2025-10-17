@@ -28,7 +28,8 @@ Two new optional configuration variables:
 GRAPH_QUERY_TIMEOUT_MS=30000
 
 # Database statement timeout (default: 25000ms / 25 seconds)
-# Note: Should be less than GRAPH_QUERY_TIMEOUT_MS to allow graceful handling
+# Note: Currently unused; reserved for future direct database timeout enforcement.
+# When implemented, should be less than GRAPH_QUERY_TIMEOUT_MS to allow graceful error handling.
 DB_STATEMENT_TIMEOUT_MS=25000
 ```
 
@@ -77,11 +78,16 @@ DB_STATEMENT_TIMEOUT_MS=25000
 ### For Existing Databases
 
 If you already have a populated database, the migration will:
-- Add indexes to existing tables (this may take a few seconds to minutes depending on table size)
+- Add indexes to existing tables
 - Not modify any existing data
 - Be idempotent (safe to run multiple times due to `IF NOT EXISTS` clauses)
 
-**Recommended:** Run the migration during a maintenance window or low-traffic period for large databases (>1M nodes/links).
+**Index creation time estimates:**
+- Small datasets (<100K nodes/links): Seconds
+- Medium datasets (100K-1M nodes/links): 10-60 seconds
+- Large datasets (>1M nodes/links): 1-5 minutes
+
+**Recommended:** For datasets with >500K nodes or >1M links, consider running the migration during a maintenance window or low-traffic period to avoid potential lock contention.
 
 ### Verification
 
