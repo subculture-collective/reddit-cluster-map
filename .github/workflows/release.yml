@@ -56,7 +56,7 @@ jobs:
           echo "" >> changelog.md
           
           echo "### Other Changes" >> changelog.md
-          git log $PREVIOUS_TAG..$CURRENT_TAG --pretty=format:"- %s (%h)" --invert-grep --grep="^feat" --grep="^feature" --grep="^fix" --grep="^bugfix" --grep="^docs" >> changelog.md || echo "No other changes" >> changelog.md
+          git log $PREVIOUS_TAG..$CURRENT_TAG --pretty=format:"- %s (%h)" --extended-regexp --invert-grep --grep="^(feat|feature|fix|bugfix|docs)" >> changelog.md || echo "No other changes" >> changelog.md
           echo "" >> changelog.md
           echo "" >> changelog.md
           
