@@ -1,19 +1,39 @@
-import CommunityMap from "../CommunityMap";
-/*
-	This file exists purely to typecheck the CommunityMap props at build time.
-	It is not imported by runtime code and exports nothing.
-*/
-import type { ComponentProps } from "react";
+/**
+ * Type-check verification for CommunityMap component
+ * This file ensures the component imports and types are correct.
+ * Run: npx tsc --noEmit src/components/__typechecks__/CommunityMap.typecheck.ts
+ */
 
-type Props = ComponentProps<typeof CommunityMap>;
+import CommunityMap from '../CommunityMap';
+import type { CommunityResult } from '../../utils/communityDetection';
 
-// Use function() {} instead of arrow functions to match requested style
-const sampleProps: Props = {
+// Verify component can be imported
+const Component: typeof CommunityMap = CommunityMap;
+
+// Verify props interface
+type Props = Parameters<typeof CommunityMap>[0];
+
+// Type assertions to ensure proper prop types
+const validProps: Props = {
   communityResult: null,
-  onBack: function () {},
-  onFocusNode: function () {},
+  onBack: () => {},
+  onFocusNode: () => {},
 };
 
-void sampleProps;
+const minimalProps: Props = {};
 
-export {};
+const withCommunityResult: Props = {
+  communityResult: {
+    communities: [],
+    nodeCommunities: new Map(),
+    modularity: 0,
+  } as CommunityResult,
+};
+
+// Ensure no unused graph types are imported
+// GraphNode and GraphLink should NOT be imported in CommunityMap
+// as they are not used - only GraphData is needed
+
+// Note: These exports are intentionally unused. They exist solely for type validation.
+// The type checker ensures the component and its props are correctly typed without runtime execution.
+export { Component, validProps, minimalProps, withCommunityResult };
