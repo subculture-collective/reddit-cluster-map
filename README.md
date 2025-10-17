@@ -1,5 +1,7 @@
 # Reddit Cluster Map
 
+[![CI](https://github.com/onnwee/reddit-cluster-map/actions/workflows/ci.yml/badge.svg)](https://github.com/onnwee/reddit-cluster-map/actions/workflows/ci.yml)
+
 Collect, analyze, and visualize relationships between Reddit communities and users as an interactive 3D network graph.
 
 ---
@@ -34,6 +36,7 @@ See `docs/overview.md` for the full system picture and data flow.
 ## 🚀 Quick start
 
 For full setup (Docker, env vars, seeding a crawl), see `docs/setup.md`.
+For CI/CD pipeline and Docker image publishing, see `docs/CI-CD.md`.
 
 Common dev tasks from `backend/`:
 

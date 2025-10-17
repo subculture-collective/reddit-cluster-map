@@ -1,29 +1,23 @@
-FROM golang:1.24.6-bookworm AS builder
+FROM golang:1.24.9-bookworm AS builder
 
 WORKDIR /app
 
-# Install PostgreSQL client
-RUN apt-get update && \
-    apt-get install -y curl gnupg2 && \
-    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
-    apt-get update && \
-    apt-get install -y postgresql-client-17 && \
-    rm -rf /var/lib/apt/lists/*
-
-# Copy go mod and sum files
+# Copy go mod and sum files first for better caching
 COPY go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
+# Download dependencies (cached unless go.mod/go.sum change)
+RUN go mod download && go mod verify
 
 # Copy source code
 COPY . .
-COPY migrations /app/migrations
-COPY migrations/*.sql /docker-entrypoint-initdb.d/
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
+# Build the application with version info
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_TIME
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}" \
+    -o server ./cmd/server
 
 # Use a smaller base image for the final container
 FROM debian:bookworm-slim
