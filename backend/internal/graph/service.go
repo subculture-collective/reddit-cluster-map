@@ -592,9 +592,7 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 
 	// Optional: compute and store a simple 2D layout for faster client rendering
 	if err := s.computeAndStoreLayout(ctx); err != nil {
-		log.Printf("⚠️ layout computation skipped/failed: %v", err)
-	} else {
-		log.Printf("🗺️ stored precomputed layout positions for a subset of nodes")
+		log.Printf("⚠️ layout computation failed: %v", err)
 	}
 	return nil
 }
@@ -606,10 +604,44 @@ func min(a, b int) int {
 	return b
 }
 
+// checkPositionColumnsExist verifies that graph_nodes has pos_x, pos_y, pos_z columns.
+// Returns nil if columns exist, or an error if they don't.
+func (s *Service) checkPositionColumnsExist(ctx context.Context, queries *db.Queries) error {
+	// Query the table to verify position columns exist
+	// We use a limit 0 query to avoid data transfer
+	checkSQL := `SELECT pos_x, pos_y, pos_z FROM graph_nodes LIMIT 0`
+	rows, err := queries.DB().QueryContext(ctx, checkSQL)
+	if err != nil {
+		// Check if it's a column doesn't exist error (PostgreSQL error code 42703)
+		if strings.Contains(err.Error(), "does not exist") && 
+		   (strings.Contains(err.Error(), "pos_x") || 
+		    strings.Contains(err.Error(), "pos_y") || 
+		    strings.Contains(err.Error(), "pos_z")) {
+			return fmt.Errorf("position columns (pos_x/pos_y/pos_z) do not exist in graph_nodes table - please run database migrations")
+		}
+		return fmt.Errorf("failed to check position columns: %w", err)
+	}
+	rows.Close()
+	return nil
+}
+
 // computeAndStoreLayout calculates a simple force-directed 2D layout for a capped set of nodes
 // and persists positions into graph_nodes.pos_x/pos_y (pos_z set to 0). It is best-effort and
 // bounded to avoid heavy CPU load.
 func (s *Service) computeAndStoreLayout(ctx context.Context) error {
+	// Only works with real db.Queries (not fakes/mocks)
+	queries, ok := s.store.(*db.Queries)
+	if !ok {
+		log.Println("⚠️ layout computation skipped: store is not *db.Queries")
+		return nil
+	}
+
+	// Check if position columns exist before attempting to use them
+	if err := s.checkPositionColumnsExist(ctx, queries); err != nil {
+		log.Printf("⚠️ layout computation skipped: %v", err)
+		return nil
+	}
+
 	// Caps and iteration counts via env to keep safe on servers
 	maxNodes := 5000
 	if v := os.Getenv("LAYOUT_MAX_NODES"); v != "" {
@@ -622,12 +654,12 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	if maxNodes <= 0 || iterations <= 0 { return nil }
 
 	// Fetch top-N nodes by weight and corresponding links subgraph
-	nodes, err := s.store.(*db.Queries).ListGraphNodesByWeight(ctx, int32(maxNodes))
+	nodes, err := queries.ListGraphNodesByWeight(ctx, int32(maxNodes))
 	if err != nil { return fmt.Errorf("list nodes for layout: %w", err) }
 	if len(nodes) == 0 { return nil }
 	ids := make([]string, len(nodes))
 	for i, n := range nodes { ids[i] = n.ID }
-	links, err := s.store.(*db.Queries).ListGraphLinksAmong(ctx, ids)
+	links, err := queries.ListGraphLinksAmong(ctx, ids)
 	if err != nil { return fmt.Errorf("list links for layout: %w", err) }
 
 	// Map node index
@@ -711,9 +743,10 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	}
 
 	// Persist positions (z=0)
-	if err := s.store.(*db.Queries).UpdateGraphNodePositions(ctx, db.UpdateGraphNodePositionsParams{Column1: ids, Column2: X, Column3: Y, Column4: Z}); err != nil {
+	if err := queries.UpdateGraphNodePositions(ctx, db.UpdateGraphNodePositionsParams{Column1: ids, Column2: X, Column3: Y, Column4: Z}); err != nil {
 		return fmt.Errorf("update positions: %w", err)
 	}
+	log.Printf("🗺️ stored precomputed layout positions for %d nodes", len(ids))
 	return nil
 }
 

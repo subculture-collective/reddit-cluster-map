@@ -82,16 +82,14 @@ func (f *fakeGraphQueries) GetGraphData(ctx context.Context) ([]json.RawMessage,
 	return out, nil
 }
 
-// Satisfy interface; return no precalculated rows so handler falls back to GetGraphData
-func (f *fakeGraphQueries) GetPrecalculatedGraphData(ctx context.Context) ([]db.GetPrecalculatedGraphDataRow, error) {
-	return nil, nil
-}
-
 // Satisfy new interface: always return nil to trigger fallback
 func (f *fakeGraphQueries) GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error) {
 	return nil, nil
 }
 func (f *fakeGraphQueries) GetPrecalculatedGraphDataCappedFiltered(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedFilteredParams) ([]db.GetPrecalculatedGraphDataCappedFilteredRow, error) {
+	return nil, nil
+}
+func (f *fakeGraphQueries) GetPrecalculatedGraphDataNoPos(ctx context.Context) ([]db.GetPrecalculatedGraphDataNoPosRow, error) {
 	return nil, nil
 }
 
