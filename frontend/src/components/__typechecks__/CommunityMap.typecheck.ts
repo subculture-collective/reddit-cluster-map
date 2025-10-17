@@ -34,4 +34,6 @@ const withCommunityResult: Props = {
 // GraphNode and GraphLink should NOT be imported in CommunityMap
 // as they are not used - only GraphData is needed
 
+// Note: These exports are intentionally unused. They exist solely for type validation.
+// The type checker ensures the component and its props are correctly typed without runtime execution.
 export { Component, validProps, minimalProps, withCommunityResult };
