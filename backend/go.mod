@@ -1,6 +1,6 @@
 module github.com/onnwee/reddit-cluster-map/backend
 
-go 1.24.6
+go 1.24.9
 
 require (
 	github.com/gorilla/mux v1.8.1
