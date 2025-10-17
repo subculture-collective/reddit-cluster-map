@@ -19,8 +19,21 @@ Notes:
 
 Query params:
 
+    - Optional: `max_nodes` (default 20000) - maximum number of nodes to return
+    - Optional: `max_links` (default 50000) - maximum number of links to return
     - Optional: `types=subreddit,user,post,comment` to filter node types
     - Optional: `with_positions=true` to include precomputed positions (when available) as `x,y,z` on nodes
+    - Optional: `fallback=true|false` (default true) - whether to fall back to legacy graph if precalculated data is unavailable
+
+Response codes:
+    - `200 OK` - successful response with graph data
+    - `408 Request Timeout` - query exceeded timeout (default 30s), try reducing max_nodes or max_links
+    - `500 Internal Server Error` - server error
+
+Performance notes:
+    - Results are cached for 60 seconds per parameter combination
+    - Large datasets may take longer to query; consider reducing max_nodes/max_links if timeouts occur
+    - The server enforces a configurable query timeout (GRAPH_QUERY_TIMEOUT_MS, default 30000ms)
 
 ### POST /api/crawl
 

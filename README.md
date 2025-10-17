@@ -69,6 +69,8 @@ Key environment variables (selected):
   - `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_REDIRECT_URI`, `REDDIT_SCOPES`, `REDDIT_USER_AGENT`
 - HTTP / retries
   - `HTTP_MAX_RETRIES` (default 3), `HTTP_RETRY_BASE_MS` (300), `HTTP_TIMEOUT_MS` (15000), `LOG_HTTP_RETRIES` (false)
+  - `GRAPH_QUERY_TIMEOUT_MS` (30000) — timeout for graph API queries
+  - `DB_STATEMENT_TIMEOUT_MS` (25000) — database statement timeout
 - Graph generation
   - `DETAILED_GRAPH` (false) — include posts/comments
   - `POSTS_PER_SUB_IN_GRAPH` (10), `COMMENTS_PER_POST_IN_GRAPH` (50)

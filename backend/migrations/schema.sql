@@ -85,6 +85,10 @@ CREATE TABLE graph_nodes (
 -- Avoid wide btree index on full name to prevent oversized index entries; keep a small prefix index instead
 -- CREATE INDEX idx_graph_nodes_name ON graph_nodes(name);
 CREATE INDEX idx_graph_nodes_name_hash ON graph_nodes (substring(name, 1, 10));
+CREATE INDEX idx_graph_nodes_type ON graph_nodes(type) WHERE type IS NOT NULL;
+CREATE INDEX idx_graph_nodes_val_numeric ON graph_nodes(
+    (CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END) DESC NULLS LAST, id
+);
 
 CREATE TABLE graph_links (
     id SERIAL PRIMARY KEY,
@@ -99,6 +103,7 @@ CREATE TABLE graph_links (
 
 CREATE INDEX idx_graph_links_source ON graph_links(source);
 CREATE INDEX idx_graph_links_target ON graph_links(target);
+CREATE INDEX idx_graph_links_target_source ON graph_links(target, source);
 
 CREATE TABLE subreddit_relationships (
     id SERIAL PRIMARY KEY,
