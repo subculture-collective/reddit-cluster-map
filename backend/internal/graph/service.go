@@ -621,7 +621,7 @@ func (s *Service) checkPositionColumnsExist(ctx context.Context, queries *db.Que
 		}
 		return fmt.Errorf("failed to check position columns: %w", err)
 	}
-	defer rows.Close()
+	rows.Close()
 	return nil
 }
 
