@@ -17,7 +17,7 @@ type Props = Parameters<typeof CommunityMap>[0];
 const validProps: Props = {
   communityResult: null,
   onBack: () => {},
-  onFocusNode: (_id: string) => {},
+  onFocusNode: () => {},
 };
 
 const minimalProps: Props = {};
