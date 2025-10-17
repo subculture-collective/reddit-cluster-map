@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"runtime"
 	"strconv"
@@ -488,6 +489,8 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 			}
 		}
 		// Cross-links among content by same author across different subreddits
+		// Ensure all content nodes are flushed before adding cross-links to satisfy FK/join checks.
+		flushNodes(true)
 		maxLinks := cfg.MaxAuthorLinks
 		if maxLinks > 0 {
 			type item struct {
@@ -586,6 +589,13 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	linkProg.Done("")
 
 	log.Printf("🎉 Graph data precalculation completed successfully")
+
+	// Optional: compute and store a simple 2D layout for faster client rendering
+	if err := s.computeAndStoreLayout(ctx); err != nil {
+		log.Printf("⚠️ layout computation skipped/failed: %v", err)
+	} else {
+		log.Printf("🗺️ stored precomputed layout positions for a subset of nodes")
+	}
 	return nil
 }
 
@@ -594,4 +604,125 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// computeAndStoreLayout calculates a simple force-directed 2D layout for a capped set of nodes
+// and persists positions into graph_nodes.pos_x/pos_y (pos_z set to 0). It is best-effort and
+// bounded to avoid heavy CPU load.
+func (s *Service) computeAndStoreLayout(ctx context.Context) error {
+	// Caps and iteration counts via env to keep safe on servers
+	maxNodes := 5000
+	if v := os.Getenv("LAYOUT_MAX_NODES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 100 { maxNodes = n }
+	}
+	iterations := 400
+	if v := os.Getenv("LAYOUT_ITERATIONS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 50 { iterations = n }
+	}
+	if maxNodes <= 0 || iterations <= 0 { return nil }
+
+	// Fetch top-N nodes by weight and corresponding links subgraph
+	nodes, err := s.store.(*db.Queries).ListGraphNodesByWeight(ctx, int32(maxNodes))
+	if err != nil { return fmt.Errorf("list nodes for layout: %w", err) }
+	if len(nodes) == 0 { return nil }
+	ids := make([]string, len(nodes))
+	for i, n := range nodes { ids[i] = n.ID }
+	links, err := s.store.(*db.Queries).ListGraphLinksAmong(ctx, ids)
+	if err != nil { return fmt.Errorf("list links for layout: %w", err) }
+
+	// Map node index
+	idx := make(map[string]int, len(nodes))
+	for i, n := range nodes { idx[n.ID] = i }
+
+	// Initialize positions in a circle to reduce initial clashes
+	N := len(nodes)
+	X := make([]float64, N)
+	Y := make([]float64, N)
+	Z := make([]float64, N)
+	R := 200.0 * math.Sqrt(float64(N)/1000.0+1)
+	for i := 0; i < N; i++ {
+		a := 2 * math.Pi * float64(i) / float64(N)
+		X[i] = R * math.Cos(a)
+		Y[i] = R * math.Sin(a)
+		Z[i] = 0
+	}
+	// Build adjacency
+	type edge struct{ a, b int }
+	E := make([]edge, 0, len(links))
+	seen := make(map[[2]int]struct{}, len(links))
+	for _, l := range links {
+		ia, okA := idx[l.Source]; ib, okB := idx[l.Target]
+		if !okA || !okB || ia == ib { continue }
+		key := [2]int{min(ia, ib), max(ia, ib)}
+		if _, ok := seen[key]; ok { continue }
+		seen[key] = struct{}{}
+		E = append(E, edge{a: ia, b: ib})
+	}
+	if len(E) == 0 { return nil }
+
+	// Simple FR-like dynamics
+	area := R * R
+	k := math.Sqrt(area / float64(N))
+	cool := R / float64(iterations)
+	dispX := make([]float64, N)
+	dispY := make([]float64, N)
+	var rep = func(dist float64) float64 { return (k*k)/dist }
+	var attr = func(dist float64) float64 { return (dist*dist)/k }
+	for it := 0; it < iterations; it++ {
+		for i := 0; i < N; i++ { dispX[i], dispY[i] = 0, 0 }
+		for v := 0; v < N; v++ {
+			for u := v + 1; u < N; u++ {
+				dx := X[v] - X[u]
+				dy := Y[v] - Y[u]
+				dist := math.Hypot(dx, dy)
+				if dist < 1e-6 { dx, dy, dist = (randFloat()-0.5), (randFloat()-0.5), 1 }
+				force := rep(dist)
+				rx := dx / dist * force
+				ry := dy / dist * force
+				dispX[v] += rx; dispY[v] += ry
+				dispX[u] -= rx; dispY[u] -= ry
+			}
+		}
+		for _, e := range E {
+			dx := X[e.a] - X[e.b]
+			dy := Y[e.a] - Y[e.b]
+			dist := math.Hypot(dx, dy)
+			if dist < 1e-6 { dx, dy, dist = (randFloat()-0.5), (randFloat()-0.5), 1 }
+			force := attr(dist)
+			ax := dx / dist * force
+			ay := dy / dist * force
+			dispX[e.a] -= ax; dispY[e.a] -= ay
+			dispX[e.b] += ax; dispY[e.b] += ay
+		}
+		// limit max displacement (temperature)
+		temp := R - float64(it)*cool
+		for v := 0; v < N; v++ {
+			dx := dispX[v]
+			dy := dispY[v]
+			disp := math.Hypot(dx, dy)
+			if disp > 0 {
+				X[v] += dx / disp * math.Min(disp, temp)
+				Y[v] += dy / disp * math.Min(disp, temp)
+			}
+			// prevent blow-up
+			if X[v] > 1e6 { X[v] = 1e6 } else if X[v] < -1e6 { X[v] = -1e6 }
+			if Y[v] > 1e6 { Y[v] = 1e6 } else if Y[v] < -1e6 { Y[v] = -1e6 }
+		}
+	}
+
+	// Persist positions (z=0)
+	if err := s.store.(*db.Queries).UpdateGraphNodePositions(ctx, db.UpdateGraphNodePositionsParams{Column1: ids, Column2: X, Column3: Y, Column4: Z}); err != nil {
+		return fmt.Errorf("update positions: %w", err)
+	}
+	return nil
+}
+
+func max(a, b int) int { if a > b { return a } ; return b }
+
+// simple random float in [0,1); no global rng dependency to avoid races
+func randFloat() float64 {
+	// Xorshift-based tiny RNG
+	var x uint64 = uint64(time.Now().UnixNano())
+	x ^= x << 13; x ^= x >> 7; x ^= x << 17
+	return float64(x%1_000_000) / 1_000_000.0
 }

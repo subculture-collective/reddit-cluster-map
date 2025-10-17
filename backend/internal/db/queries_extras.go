@@ -60,7 +60,7 @@ func (q *Queries) BatchInsertGraphLinks(ctx context.Context, links []BulkInsertG
     for _, v := range uniq {
         dedup = append(dedup, v)
     }
-    // Batch insert
+    // Batch insert using a VALUES table joined against graph_nodes to satisfy FKs
     for start := 0; start < len(dedup); start += batchSize {
         end := start + batchSize
         if end > len(dedup) {
@@ -68,7 +68,7 @@ func (q *Queries) BatchInsertGraphLinks(ctx context.Context, links []BulkInsertG
         }
         batch := dedup[start:end]
         var sb strings.Builder
-        sb.WriteString("INSERT INTO graph_links (source,target) VALUES ")
+        sb.WriteString("WITH vals(source, target) AS (VALUES ")
         args := make([]any, 0, len(batch)*2)
         for i, l := range batch {
             if i > 0 { sb.WriteByte(',') }
@@ -76,7 +76,11 @@ func (q *Queries) BatchInsertGraphLinks(ctx context.Context, links []BulkInsertG
             sb.WriteString(fmt.Sprintf("($%d,$%d)", idx, idx+1))
             args = append(args, l.Source, l.Target)
         }
-        sb.WriteString(" ON CONFLICT (source,target) DO NOTHING")
+        sb.WriteString(") INSERT INTO graph_links (source, target) ")
+        sb.WriteString("SELECT v.source, v.target FROM vals v ")
+        sb.WriteString("JOIN graph_nodes s ON s.id = v.source ")
+        sb.WriteString("JOIN graph_nodes t ON t.id = v.target ")
+        sb.WriteString("ON CONFLICT (source, target) DO NOTHING")
         if _, err := q.db.ExecContext(ctx, sb.String(), args...); err != nil {
             return err
         }

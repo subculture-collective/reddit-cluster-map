@@ -74,6 +74,10 @@ CREATE TABLE graph_nodes (
     name TEXT NOT NULL,
     val TEXT,
     type TEXT,
+    -- Optional precomputed positions for layout
+    pos_x DOUBLE PRECISION,
+    pos_y DOUBLE PRECISION,
+    pos_z DOUBLE PRECISION,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

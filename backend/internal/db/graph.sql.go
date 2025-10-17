@@ -391,7 +391,199 @@ func (q *Queries) GetAllUsers(ctx context.Context) ([]GetAllUsersRow, error) {
 	return items, nil
 }
 
-const getPrecalculatedGraphData = `-- name: GetPrecalculatedGraphData :many
+const getPrecalculatedGraphDataCappedAll = `-- name: GetPrecalculatedGraphDataCappedAll :many
+WITH sel_nodes AS (
+    SELECT gn.id, gn.name, gn.val, gn.type, gn.pos_x, gn.pos_y, gn.pos_z
+    FROM graph_nodes gn
+    ORDER BY (
+        CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
+    ) DESC NULLS LAST, gn.id
+    LIMIT $1
+), sel_links AS (
+    SELECT id, source, target
+    FROM graph_links gl
+    WHERE gl.source IN (SELECT id FROM sel_nodes)
+        AND gl.target IN (SELECT id FROM sel_nodes)
+    LIMIT $2
+)
+SELECT
+        'node' AS data_type,
+        n.id,
+        n.name,
+        CAST(n.val AS TEXT) AS val,
+    n.type,
+    n.pos_x,
+    n.pos_y,
+    n.pos_z,
+        NULL AS source,
+        NULL AS target
+FROM sel_nodes n
+UNION ALL
+SELECT
+        'link' AS data_type,
+        CAST(l.id AS TEXT),
+        NULL AS name,
+        CAST(NULL AS TEXT) AS val,
+        NULL AS type,
+    NULL as pos_x,
+    NULL as pos_y,
+    NULL as pos_z,
+        l.source,
+        l.target
+FROM sel_links l
+ORDER BY data_type, id
+`
+
+type GetPrecalculatedGraphDataCappedAllParams struct {
+	Limit   int32
+	Limit_2 int32
+}
+
+type GetPrecalculatedGraphDataCappedAllRow struct {
+	DataType string
+	ID       string
+	Name     string
+	Val      string
+	Type     sql.NullString
+	PosX     sql.NullFloat64
+	PosY     sql.NullFloat64
+	PosZ     sql.NullFloat64
+	Source   interface{}
+	Target   interface{}
+}
+
+func (q *Queries) GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg GetPrecalculatedGraphDataCappedAllParams) ([]GetPrecalculatedGraphDataCappedAllRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPrecalculatedGraphDataCappedAll, arg.Limit, arg.Limit_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPrecalculatedGraphDataCappedAllRow
+	for rows.Next() {
+		var i GetPrecalculatedGraphDataCappedAllRow
+		if err := rows.Scan(
+			&i.DataType,
+			&i.ID,
+			&i.Name,
+			&i.Val,
+			&i.Type,
+			&i.PosX,
+			&i.PosY,
+			&i.PosZ,
+			&i.Source,
+			&i.Target,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPrecalculatedGraphDataCappedFiltered = `-- name: GetPrecalculatedGraphDataCappedFiltered :many
+WITH sel_nodes AS (
+    SELECT gn.id, gn.name, gn.val, gn.type, gn.pos_x, gn.pos_y, gn.pos_z
+    FROM graph_nodes gn
+    WHERE gn.type IS NOT NULL AND gn.type = ANY($1::text[])
+    ORDER BY (
+        CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
+    ) DESC NULLS LAST, gn.id
+    LIMIT $2
+), sel_links AS (
+    SELECT id, source, target
+    FROM graph_links gl
+    WHERE gl.source IN (SELECT id FROM sel_nodes)
+        AND gl.target IN (SELECT id FROM sel_nodes)
+    LIMIT $3
+)
+SELECT
+        'node' AS data_type,
+        n.id,
+        n.name,
+        CAST(n.val AS TEXT) AS val,
+    n.type,
+    n.pos_x,
+    n.pos_y,
+    n.pos_z,
+        NULL AS source,
+        NULL AS target
+FROM sel_nodes n
+UNION ALL
+SELECT
+        'link' AS data_type,
+        CAST(l.id AS TEXT),
+        NULL AS name,
+        CAST(NULL AS TEXT) AS val,
+        NULL AS type,
+    NULL as pos_x,
+    NULL as pos_y,
+    NULL as pos_z,
+        l.source,
+        l.target
+FROM sel_links l
+ORDER BY data_type, id
+`
+
+type GetPrecalculatedGraphDataCappedFilteredParams struct {
+	Column1 []string
+	Limit   int32
+	Limit_2 int32
+}
+
+type GetPrecalculatedGraphDataCappedFilteredRow struct {
+	DataType string
+	ID       string
+	Name     string
+	Val      string
+	Type     sql.NullString
+	PosX     sql.NullFloat64
+	PosY     sql.NullFloat64
+	PosZ     sql.NullFloat64
+	Source   interface{}
+	Target   interface{}
+}
+
+func (q *Queries) GetPrecalculatedGraphDataCappedFiltered(ctx context.Context, arg GetPrecalculatedGraphDataCappedFilteredParams) ([]GetPrecalculatedGraphDataCappedFilteredRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPrecalculatedGraphDataCappedFiltered, pq.Array(arg.Column1), arg.Limit, arg.Limit_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPrecalculatedGraphDataCappedFilteredRow
+	for rows.Next() {
+		var i GetPrecalculatedGraphDataCappedFilteredRow
+		if err := rows.Scan(
+			&i.DataType,
+			&i.ID,
+			&i.Name,
+			&i.Val,
+			&i.Type,
+			&i.PosX,
+			&i.PosY,
+			&i.PosZ,
+			&i.Source,
+			&i.Target,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPrecalculatedGraphDataNoPos = `-- name: GetPrecalculatedGraphDataNoPos :many
 SELECT
     'node' as data_type,
     id,
@@ -414,7 +606,7 @@ FROM graph_links
 ORDER BY data_type, id
 `
 
-type GetPrecalculatedGraphDataRow struct {
+type GetPrecalculatedGraphDataNoPosRow struct {
 	DataType string
 	ID       string
 	Name     string
@@ -424,183 +616,15 @@ type GetPrecalculatedGraphDataRow struct {
 	Target   interface{}
 }
 
-func (q *Queries) GetPrecalculatedGraphData(ctx context.Context) ([]GetPrecalculatedGraphDataRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPrecalculatedGraphData)
+func (q *Queries) GetPrecalculatedGraphDataNoPos(ctx context.Context) ([]GetPrecalculatedGraphDataNoPosRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPrecalculatedGraphDataNoPos)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetPrecalculatedGraphDataRow
+	var items []GetPrecalculatedGraphDataNoPosRow
 	for rows.Next() {
-		var i GetPrecalculatedGraphDataRow
-		if err := rows.Scan(
-			&i.DataType,
-			&i.ID,
-			&i.Name,
-			&i.Val,
-			&i.Type,
-			&i.Source,
-			&i.Target,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getPrecalculatedGraphDataCappedAll = `-- name: GetPrecalculatedGraphDataCappedAll :many
-WITH sel_nodes AS (
-    SELECT gn.id, gn.name, gn.val, gn.type
-    FROM graph_nodes gn
-    ORDER BY (
-        CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
-    ) DESC NULLS LAST, gn.id
-    LIMIT $1
-), sel_links AS (
-    SELECT id, source, target
-    FROM graph_links gl
-    WHERE gl.source IN (SELECT id FROM sel_nodes)
-        AND gl.target IN (SELECT id FROM sel_nodes)
-    LIMIT $2
-)
-SELECT
-        'node' AS data_type,
-        n.id,
-        n.name,
-        CAST(n.val AS TEXT) AS val,
-        n.type,
-        NULL AS source,
-        NULL AS target
-FROM sel_nodes n
-UNION ALL
-SELECT
-        'link' AS data_type,
-        CAST(l.id AS TEXT),
-        NULL AS name,
-        CAST(NULL AS TEXT) AS val,
-        NULL AS type,
-        l.source,
-        l.target
-FROM sel_links l
-ORDER BY data_type, id
-`
-
-type GetPrecalculatedGraphDataCappedAllParams struct {
-	Limit   int32
-	Limit_2 int32
-}
-
-type GetPrecalculatedGraphDataCappedAllRow struct {
-	DataType string
-	ID       string
-	Name     string
-	Val      string
-	Type     sql.NullString
-	Source   interface{}
-	Target   interface{}
-}
-
-func (q *Queries) GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg GetPrecalculatedGraphDataCappedAllParams) ([]GetPrecalculatedGraphDataCappedAllRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPrecalculatedGraphDataCappedAll, arg.Limit, arg.Limit_2)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetPrecalculatedGraphDataCappedAllRow
-	for rows.Next() {
-		var i GetPrecalculatedGraphDataCappedAllRow
-		if err := rows.Scan(
-			&i.DataType,
-			&i.ID,
-			&i.Name,
-			&i.Val,
-			&i.Type,
-			&i.Source,
-			&i.Target,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getPrecalculatedGraphDataCappedFiltered = `-- name: GetPrecalculatedGraphDataCappedFiltered :many
-WITH sel_nodes AS (
-    SELECT gn.id, gn.name, gn.val, gn.type
-    FROM graph_nodes gn
-    WHERE gn.type IS NOT NULL AND gn.type = ANY($1::text[])
-    ORDER BY (
-        CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
-    ) DESC NULLS LAST, gn.id
-    LIMIT $2
-), sel_links AS (
-    SELECT id, source, target
-    FROM graph_links gl
-    WHERE gl.source IN (SELECT id FROM sel_nodes)
-        AND gl.target IN (SELECT id FROM sel_nodes)
-    LIMIT $3
-)
-SELECT
-        'node' AS data_type,
-        n.id,
-        n.name,
-        CAST(n.val AS TEXT) AS val,
-        n.type,
-        NULL AS source,
-        NULL AS target
-FROM sel_nodes n
-UNION ALL
-SELECT
-        'link' AS data_type,
-        CAST(l.id AS TEXT),
-        NULL AS name,
-        CAST(NULL AS TEXT) AS val,
-        NULL AS type,
-        l.source,
-        l.target
-FROM sel_links l
-ORDER BY data_type, id
-`
-
-type GetPrecalculatedGraphDataCappedFilteredParams struct {
-	Column1 []string
-	Limit   int32
-	Limit_2 int32
-}
-
-type GetPrecalculatedGraphDataCappedFilteredRow struct {
-	DataType string
-	ID       string
-	Name     string
-	Val      string
-	Type     sql.NullString
-	Source   interface{}
-	Target   interface{}
-}
-
-func (q *Queries) GetPrecalculatedGraphDataCappedFiltered(ctx context.Context, arg GetPrecalculatedGraphDataCappedFilteredParams) ([]GetPrecalculatedGraphDataCappedFilteredRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPrecalculatedGraphDataCappedFiltered, pq.Array(arg.Column1), arg.Limit, arg.Limit_2)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetPrecalculatedGraphDataCappedFilteredRow
-	for rows.Next() {
-		var i GetPrecalculatedGraphDataCappedFilteredRow
+		var i GetPrecalculatedGraphDataNoPosRow
 		if err := rows.Scan(
 			&i.DataType,
 			&i.ID,
@@ -732,6 +756,84 @@ func (q *Queries) GetUserTotalActivity(ctx context.Context, authorID int32) (int
 	return total_activity, err
 }
 
+const listGraphLinksAmong = `-- name: ListGraphLinksAmong :many
+SELECT source, target
+FROM graph_links
+WHERE source = ANY($1::text[]) AND target = ANY($1::text[])
+`
+
+type ListGraphLinksAmongRow struct {
+	Source string
+	Target string
+}
+
+func (q *Queries) ListGraphLinksAmong(ctx context.Context, dollar_1 []string) ([]ListGraphLinksAmongRow, error) {
+	rows, err := q.db.QueryContext(ctx, listGraphLinksAmong, pq.Array(dollar_1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGraphLinksAmongRow
+	for rows.Next() {
+		var i ListGraphLinksAmongRow
+		if err := rows.Scan(&i.Source, &i.Target); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGraphNodesByWeight = `-- name: ListGraphNodesByWeight :many
+SELECT id, name, val, type
+FROM graph_nodes gn
+ORDER BY (
+    CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, gn.id
+LIMIT $1
+`
+
+type ListGraphNodesByWeightRow struct {
+	ID   string
+	Name string
+	Val  sql.NullString
+	Type sql.NullString
+}
+
+func (q *Queries) ListGraphNodesByWeight(ctx context.Context, limit int32) ([]ListGraphNodesByWeightRow, error) {
+	rows, err := q.db.QueryContext(ctx, listGraphNodesByWeight, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGraphNodesByWeightRow
+	for rows.Next() {
+		var i ListGraphNodesByWeightRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Val,
+			&i.Type,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsersWithActivity = `-- name: ListUsersWithActivity :many
 SELECT
     u.id,
@@ -778,4 +880,33 @@ func (q *Queries) ListUsersWithActivity(ctx context.Context) ([]ListUsersWithAct
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateGraphNodePositions = `-- name: UpdateGraphNodePositions :exec
+UPDATE graph_nodes g
+SET pos_x = u.x, pos_y = u.y, pos_z = u.z, updated_at = now()
+FROM (
+    SELECT unnest($1::text[]) AS id,
+           unnest($2::double precision[]) AS x,
+           unnest($3::double precision[]) AS y,
+           unnest($4::double precision[]) AS z
+) AS u
+WHERE g.id = u.id
+`
+
+type UpdateGraphNodePositionsParams struct {
+	Column1 []string
+	Column2 []float64
+	Column3 []float64
+	Column4 []float64
+}
+
+func (q *Queries) UpdateGraphNodePositions(ctx context.Context, arg UpdateGraphNodePositionsParams) error {
+	_, err := q.db.ExecContext(ctx, updateGraphNodePositions,
+		pq.Array(arg.Column1),
+		pq.Array(arg.Column2),
+		pq.Array(arg.Column3),
+		pq.Array(arg.Column4),
+	)
+	return err
 }

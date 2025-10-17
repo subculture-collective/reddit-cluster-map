@@ -47,18 +47,14 @@ Retries honor Retry-After headers and also pass through the limiter.
 
 ## Graph precalculation
 
-- Subreddit relationships by shared authors (co-occurrence across users).
-- User activity counts per subreddit.
-- Optional detailed content graph (posts/comments). Node `val` reflects score or counts when available.
-- Links created:
-  - subreddit↔subreddit (overlap)
-  - user→subreddit (activity)
-  - post→comment and comment→comment (reply chains)
-  - user→post and user→comment (authorship)
-- Performance: precalc batches node upserts and link inserts with configurable batch sizes and periodic progress logs.
-  - Node batch size: `GRAPH_NODE_BATCH_SIZE` (default 1000)
-  - Link batch size: `GRAPH_LINK_BATCH_SIZE` (default 2000)
-  - Progress interval: `GRAPH_PROGRESS_INTERVAL` (default 10000)
+- subreddit↔subreddit (overlap)
+- user→subreddit (activity)
+- post→comment and comment→comment (reply chains)
+- user→post and user→comment (authorship)
+- Node batch size: `GRAPH_NODE_BATCH_SIZE` (default 1000)
+- Link batch size: `GRAPH_LINK_BATCH_SIZE` (default 2000)
+- Progress interval: `GRAPH_PROGRESS_INTERVAL` (default 10000)
+- Optional columns on `graph_nodes`: `pos_x,pos_y,pos_z` allow storing precomputed layouts. API can include them using `with_positions=true`.
 
 ## API surface
 

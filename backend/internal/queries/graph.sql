@@ -1,4 +1,116 @@
--- name: GetPrecalculatedGraphData :many
+SELECT
+    'node' as data_type,
+    id,
+    name,
+    CAST(val AS TEXT) as val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z,
+    NULL as source,
+    NULL as target
+FROM graph_nodes
+UNION ALL
+SELECT
+    'link' as data_type,
+    CAST(id AS TEXT),
+    NULL as name,
+    CAST(NULL AS TEXT) as val,
+    NULL as type,
+    NULL as pos_x,
+    NULL as pos_y,
+    NULL as pos_z,
+    source,
+    target
+FROM graph_links
+ORDER BY data_type, id;
+
+-- name: GetPrecalculatedGraphDataCappedAll :many
+WITH sel_nodes AS (
+    SELECT gn.id, gn.name, gn.val, gn.type, gn.pos_x, gn.pos_y, gn.pos_z
+    FROM graph_nodes gn
+    ORDER BY (
+        CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
+    ) DESC NULLS LAST, gn.id
+    LIMIT $1
+), sel_links AS (
+    SELECT id, source, target
+    FROM graph_links gl
+    WHERE gl.source IN (SELECT id FROM sel_nodes)
+        AND gl.target IN (SELECT id FROM sel_nodes)
+    LIMIT $2
+)
+SELECT
+        'node' AS data_type,
+        n.id,
+        n.name,
+        CAST(n.val AS TEXT) AS val,
+    n.type,
+    n.pos_x,
+    n.pos_y,
+    n.pos_z,
+        NULL AS source,
+        NULL AS target
+FROM sel_nodes n
+UNION ALL
+SELECT
+        'link' AS data_type,
+        CAST(l.id AS TEXT),
+        NULL AS name,
+        CAST(NULL AS TEXT) AS val,
+        NULL AS type,
+    NULL as pos_x,
+    NULL as pos_y,
+    NULL as pos_z,
+        l.source,
+        l.target
+FROM sel_links l
+ORDER BY data_type, id;
+
+-- name: GetPrecalculatedGraphDataCappedFiltered :many
+WITH sel_nodes AS (
+    SELECT gn.id, gn.name, gn.val, gn.type, gn.pos_x, gn.pos_y, gn.pos_z
+    FROM graph_nodes gn
+    WHERE gn.type IS NOT NULL AND gn.type = ANY($1::text[])
+    ORDER BY (
+        CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
+    ) DESC NULLS LAST, gn.id
+    LIMIT $2
+), sel_links AS (
+    SELECT id, source, target
+    FROM graph_links gl
+    WHERE gl.source IN (SELECT id FROM sel_nodes)
+        AND gl.target IN (SELECT id FROM sel_nodes)
+    LIMIT $3
+)
+SELECT
+        'node' AS data_type,
+        n.id,
+        n.name,
+        CAST(n.val AS TEXT) AS val,
+    n.type,
+    n.pos_x,
+    n.pos_y,
+    n.pos_z,
+        NULL AS source,
+        NULL AS target
+FROM sel_nodes n
+UNION ALL
+SELECT
+        'link' AS data_type,
+        CAST(l.id AS TEXT),
+        NULL AS name,
+        CAST(NULL AS TEXT) AS val,
+        NULL AS type,
+    NULL as pos_x,
+    NULL as pos_y,
+    NULL as pos_z,
+        l.source,
+        l.target
+FROM sel_links l
+ORDER BY data_type, id;
+
+-- name: GetPrecalculatedGraphDataNoPos :many
 SELECT
     'node' as data_type,
     id,
@@ -20,78 +132,6 @@ SELECT
 FROM graph_links
 ORDER BY data_type, id;
 
--- name: GetPrecalculatedGraphDataCappedAll :many
-WITH sel_nodes AS (
-    SELECT gn.id, gn.name, gn.val, gn.type
-    FROM graph_nodes gn
-    ORDER BY (
-        CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
-    ) DESC NULLS LAST, gn.id
-    LIMIT $1
-), sel_links AS (
-    SELECT id, source, target
-    FROM graph_links gl
-    WHERE gl.source IN (SELECT id FROM sel_nodes)
-        AND gl.target IN (SELECT id FROM sel_nodes)
-    LIMIT $2
-)
-SELECT
-        'node' AS data_type,
-        n.id,
-        n.name,
-        CAST(n.val AS TEXT) AS val,
-        n.type,
-        NULL AS source,
-        NULL AS target
-FROM sel_nodes n
-UNION ALL
-SELECT
-        'link' AS data_type,
-        CAST(l.id AS TEXT),
-        NULL AS name,
-        CAST(NULL AS TEXT) AS val,
-        NULL AS type,
-        l.source,
-        l.target
-FROM sel_links l
-ORDER BY data_type, id;
-
--- name: GetPrecalculatedGraphDataCappedFiltered :many
-WITH sel_nodes AS (
-    SELECT gn.id, gn.name, gn.val, gn.type
-    FROM graph_nodes gn
-    WHERE gn.type IS NOT NULL AND gn.type = ANY($1::text[])
-    ORDER BY (
-        CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
-    ) DESC NULLS LAST, gn.id
-    LIMIT $2
-), sel_links AS (
-    SELECT id, source, target
-    FROM graph_links gl
-    WHERE gl.source IN (SELECT id FROM sel_nodes)
-        AND gl.target IN (SELECT id FROM sel_nodes)
-    LIMIT $3
-)
-SELECT
-        'node' AS data_type,
-        n.id,
-        n.name,
-        CAST(n.val AS TEXT) AS val,
-        n.type,
-        NULL AS source,
-        NULL AS target
-FROM sel_nodes n
-UNION ALL
-SELECT
-        'link' AS data_type,
-        CAST(l.id AS TEXT),
-        NULL AS name,
-        CAST(NULL AS TEXT) AS val,
-        NULL AS type,
-        l.source,
-        l.target
-FROM sel_links l
-ORDER BY data_type, id;
 
 -- name: GetAllPosts :many
 SELECT id, title, score
@@ -245,3 +285,27 @@ LEFT JOIN (
     GROUP BY author_id
 ) c ON c.author_id = u.id
 ORDER BY total_activity DESC, u.id;
+
+-- name: ListGraphNodesByWeight :many
+SELECT id, name, val, type
+FROM graph_nodes gn
+ORDER BY (
+    CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, gn.id
+LIMIT $1;
+
+-- name: ListGraphLinksAmong :many
+SELECT source, target
+FROM graph_links
+WHERE source = ANY($1::text[]) AND target = ANY($1::text[]);
+
+-- name: UpdateGraphNodePositions :exec
+UPDATE graph_nodes g
+SET pos_x = u.x, pos_y = u.y, pos_z = u.z, updated_at = now()
+FROM (
+    SELECT unnest($1::text[]) AS id,
+           unnest($2::double precision[]) AS x,
+           unnest($3::double precision[]) AS y,
+           unnest($4::double precision[]) AS z
+) AS u
+WHERE g.id = u.id;

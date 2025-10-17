@@ -60,6 +60,9 @@ type GraphNode struct {
 	Name      string
 	Val       sql.NullString
 	Type      sql.NullString
+	PosX      sql.NullFloat64
+	PosY      sql.NullFloat64
+	PosZ      sql.NullFloat64
 	CreatedAt sql.NullTime
 	UpdatedAt sql.NullTime
 }

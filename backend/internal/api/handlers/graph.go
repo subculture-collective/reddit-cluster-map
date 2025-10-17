@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -20,9 +21,9 @@ type GraphDataReader interface {
 	// Legacy aggregated JSON (users+subreddits only)
 	GetGraphData(ctx context.Context) ([]json.RawMessage, error)
 	// Precalculated graph tables (graph_nodes/graph_links)
-	GetPrecalculatedGraphData(ctx context.Context) ([]db.GetPrecalculatedGraphDataRow, error)
 	GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error)
 	GetPrecalculatedGraphDataCappedFiltered(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedFilteredParams) ([]db.GetPrecalculatedGraphDataCappedFilteredRow, error)
+	GetPrecalculatedGraphDataNoPos(ctx context.Context) ([]db.GetPrecalculatedGraphDataNoPosRow, error)
 }
 
 // graphCacheEntry holds a cached response and its expiry.
@@ -54,6 +55,9 @@ type GraphNode struct {
 	Name string `json:"name"`
 	Val  int    `json:"val"`
 	Type string `json:"type,omitempty"`
+	X    *float64 `json:"x,omitempty"`
+	Y    *float64 `json:"y,omitempty"`
+	Z    *float64 `json:"z,omitempty"`
 }
 
 type GraphLink struct {
@@ -85,6 +89,10 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 	fallback := r.URL.Query().Get("fallback")
 	allowFallback := fallback == "" || fallback == "1" || strings.EqualFold(fallback, "true")
 	allowedTypes, allowedList, typeKey, allowAll := parseTypes(r.URL.Query().Get("types"))
+	withPos := func() bool {
+		v := strings.TrimSpace(r.URL.Query().Get("with_positions"))
+		return v == "1" || strings.EqualFold(v, "true")
+	}()
 	if !allowAll && len(allowedTypes) == 0 {
 		writeCachedEmpty(w, maxNodes, maxLinks, typeKey)
 		return
@@ -92,6 +100,9 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 
 	// Check cache first
 	key := cacheKey(maxNodes, maxLinks, typeKey)
+	if withPos {
+		key += ":pos"
+	}
 	now := time.Now()
 	graphCacheMu.Lock()
 	entry, found := graphCache[key]
@@ -116,6 +127,9 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 				if (row.Type != sql.NullString{}) && row.Type.Valid {
 					t = strings.ToLower(row.Type.String)
 				}
+				if err != nil {
+					log.Printf("⚠️ precalc capped query failed: %v (falling back)", err)
+				}
 				if !allowAll {
 					if len(allowedTypes) == 0 {
 						continue
@@ -128,7 +142,22 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 				}
-				nodes[row.ID] = GraphNode{ID: row.ID, Name: row.Name, Val: v, Type: t}
+				gn := GraphNode{ID: row.ID, Name: row.Name, Val: v, Type: t}
+				if withPos {
+					if row.PosX.Valid {
+						x := row.PosX.Float64
+						gn.X = &x
+					}
+					if row.PosY.Valid {
+						y := row.PosY.Float64
+						gn.Y = &y
+					}
+					if row.PosZ.Valid {
+						z := row.PosZ.Float64
+						gn.Z = &z
+					}
+				}
+				nodes[row.ID] = gn
 			case "link":
 				src := toString(row.Source)
 				tgt := toString(row.Target)
@@ -312,61 +341,57 @@ func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, h *Handler, m
 	graphCacheMu.Unlock()
 }
 
+// preRow is an internal union row type for capped precalc results including optional positions
+type preRow struct {
+	DataType string
+	ID       string
+	Name     string
+	Val      string
+	Type     sql.NullString
+	PosX     sql.NullFloat64
+	PosY     sql.NullFloat64
+	PosZ     sql.NullFloat64
+	Source   interface{}
+	Target   interface{}
+}
+
 // fetchPrecalcCapped runs a DB-level capped selection of precalculated graph data.
-// It uses the underlying *db.Queries when available; otherwise falls back to the uncapped method.
-func fetchPrecalcCapped(ctx context.Context, q GraphDataReader, maxNodes, maxLinks int, allowAll bool, allowedTypes []string) ([]db.GetPrecalculatedGraphDataRow, error) {
-       if maxNodes <= 0 {
-	       maxNodes = 20000
-       }
-       if maxLinks <= 0 {
-	       maxLinks = 50000
-       }
-       if allowAll {
-	       allRows, err := q.GetPrecalculatedGraphDataCappedAll(ctx, db.GetPrecalculatedGraphDataCappedAllParams{
-		       Limit:   int32(maxNodes),
-		       Limit_2: int32(maxLinks),
-	       })
-	       if err != nil {
-		       return q.GetPrecalculatedGraphData(ctx)
-	       }
-	       converted := make([]db.GetPrecalculatedGraphDataRow, len(allRows))
-	       for i, r := range allRows {
-		       converted[i] = db.GetPrecalculatedGraphDataRow{
-			       DataType: r.DataType,
-			       ID:       r.ID,
-			       Name:     r.Name,
-			       Val:      r.Val,
-			       Type:     r.Type,
-			       Source:   r.Source,
-			       Target:   r.Target,
-		       }
-	       }
-	       return converted, nil
-       } else {
-	       arr := make([]string, len(allowedTypes))
-	       copy(arr, allowedTypes)
-	       filteredRows, err := q.GetPrecalculatedGraphDataCappedFiltered(ctx, db.GetPrecalculatedGraphDataCappedFilteredParams{
-		       Column1: arr,
-		       Limit:   int32(maxNodes),
-		       Limit_2: int32(maxLinks),
-	       })
-	       if err != nil {
-		       return q.GetPrecalculatedGraphData(ctx)
-	       }
-	       converted := make([]db.GetPrecalculatedGraphDataRow, len(filteredRows))
-	       for i, r := range filteredRows {
-		       converted[i] = db.GetPrecalculatedGraphDataRow{
-			       DataType: r.DataType,
-			       ID:       r.ID,
-			       Name:     r.Name,
-			       Val:      r.Val,
-			       Type:     r.Type,
-			       Source:   r.Source,
-			       Target:   r.Target,
-		       }
-	       }
-	       return converted, nil
-       }
+func fetchPrecalcCapped(ctx context.Context, q GraphDataReader, maxNodes, maxLinks int, allowAll bool, allowedTypes []string) ([]preRow, error) {
+	if maxNodes <= 0 {
+		maxNodes = 20000
+	}
+	if maxLinks <= 0 {
+		maxLinks = 50000
+	}
+	if allowAll {
+		allRows, err := q.GetPrecalculatedGraphDataCappedAll(ctx, db.GetPrecalculatedGraphDataCappedAllParams{
+			Limit:   int32(maxNodes),
+			Limit_2: int32(maxLinks),
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]preRow, len(allRows))
+		for i, r := range allRows {
+			out[i] = preRow{DataType: r.DataType, ID: r.ID, Name: r.Name, Val: r.Val, Type: r.Type, PosX: r.PosX, PosY: r.PosY, PosZ: r.PosZ, Source: r.Source, Target: r.Target}
+		}
+		return out, nil
+	}
+	arr := make([]string, len(allowedTypes))
+	copy(arr, allowedTypes)
+	filteredRows, err := q.GetPrecalculatedGraphDataCappedFiltered(ctx, db.GetPrecalculatedGraphDataCappedFilteredParams{
+		Column1: arr,
+		Limit:   int32(maxNodes),
+		Limit_2: int32(maxLinks),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]preRow, len(filteredRows))
+	for i, r := range filteredRows {
+		out[i] = preRow{DataType: r.DataType, ID: r.ID, Name: r.Name, Val: r.Val, Type: r.Type, PosX: r.PosX, PosY: r.PosY, PosZ: r.PosZ, Source: r.Source, Target: r.Target}
+	}
+	return out, nil
 }
 
 func parseTypes(raw string) (map[string]struct{}, []string, string, bool) {

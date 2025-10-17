@@ -7,6 +7,7 @@ import type {
 } from "react-force-graph-3d";
 import ForceGraph3D from "react-force-graph-3d";
 import type { GraphData, GraphNode } from "../types/graph";
+import SpriteText from "three-spritetext";
 
 type Filters = {
   subreddit: boolean;
@@ -254,7 +255,12 @@ interface Props {
   focusNodeId?: string;
   selectedId?: string;
   onNodeSelect?: (id?: string) => void;
-  showLabels?: boolean;
+  showLabels?: boolean; // when true, render always-on label sprites for key nodes
+  communityResult?: {
+    nodeCommunities: Map<string, number>;
+    communities: Array<{ id: number; color: string }>;
+  } | null;
+  usePrecomputedLayout?: boolean;
 }
 
 export default function Graph3D(props: Props) {
@@ -268,6 +274,8 @@ export default function Graph3D(props: Props) {
     selectedId,
     onNodeSelect,
     showLabels,
+    communityResult,
+    usePrecomputedLayout,
   } = props;
 
   const [onlyLinked, setOnlyLinked] = useState(true);
@@ -336,6 +344,8 @@ export default function Graph3D(props: Props) {
           max_nodes: String(MAX_RENDER_NODES),
           max_links: String(MAX_RENDER_LINKS),
         });
+        // Request precomputed positions only when enabled
+        if (usePrecomputedLayout) params.set("with_positions", "true");
         if (selected.length > 0) {
           params.set("types", selected.join(","));
         }
@@ -354,7 +364,7 @@ export default function Graph3D(props: Props) {
         }
       }
     },
-    [MAX_RENDER_LINKS, MAX_RENDER_NODES]
+    [MAX_RENDER_LINKS, MAX_RENDER_NODES, usePrecomputedLayout]
   );
 
   useEffect(() => {
@@ -396,7 +406,20 @@ export default function Graph3D(props: Props) {
   }, [physics]);
 
   const getColor = useMemo(
-    () => (type?: string) => {
+    () => (node: unknown) => {
+      const n = node as GraphNode;
+      // Use community color if available
+      if (communityResult) {
+        const commId = communityResult.nodeCommunities.get(n.id);
+        if (commId !== undefined) {
+          const community = communityResult.communities.find(
+            (c) => c.id === commId
+          );
+          if (community) return community.color;
+        }
+      }
+      // Fall back to type color
+      const type = n.type;
       switch (type) {
         case "subreddit":
           return "#4ade80";
@@ -410,7 +433,7 @@ export default function Graph3D(props: Props) {
           return "#a78bfa";
       }
     },
-    []
+    [communityResult]
   );
 
   // focus camera
@@ -605,6 +628,7 @@ export default function Graph3D(props: Props) {
   );
 
   const hasPrecomputedPositions = useMemo(() => {
+    if (!usePrecomputedLayout) return false;
     const n = filtered.nodes.length;
     if (n === 0) return false;
     let withPos = 0;
@@ -619,7 +643,30 @@ export default function Graph3D(props: Props) {
         withPos++;
     }
     return withPos / n > 0.7;
-  }, [filtered]);
+  }, [filtered, usePrecomputedLayout]);
+
+  // choose a set of nodes to label when always-on labels are enabled
+  const labelSet = useMemo(() => {
+    if (!showLabels) return new Set<string>();
+    const nodes = filtered.nodes as GraphNode[];
+    const weights = nodes.map((n) => {
+      const deg = degreeMap.get(n.id) || 0;
+      const val = typeof n.val === "number" ? n.val : 0;
+      const w = Math.max(val, deg);
+      return { id: n.id, type: n.type, name: n.name || n.id, w };
+    });
+    // Prefer subreddits/users; limit to top N by weight
+    const preferred = weights.filter(
+      (x) => x.type === "subreddit" || x.type === "user"
+    );
+    preferred.sort(
+      (a, b) => b.w - a.w || String(a.id).localeCompare(String(b.id))
+    );
+    const TOP = Math.min(200, preferred.length);
+    const set = new Set<string>();
+    for (let i = 0; i < TOP; i++) set.add(String(preferred[i].id));
+    return set;
+  }, [showLabels, filtered, degreeMap]);
 
   return (
     <div className="w-full h-screen relative">
@@ -654,6 +701,25 @@ export default function Graph3D(props: Props) {
           />
           <span className="opacity-80">Only show linked nodes</span>
         </label>
+        <span
+          title={
+            usePrecomputedLayout
+              ? hasPrecomputedPositions
+                ? "Using precomputed node positions from backend"
+                : "Precomputed layout enabled, but this dataset has no stored positions"
+              : "Using client-side simulation"
+          }
+          className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+            usePrecomputedLayout && hasPrecomputedPositions
+              ? "bg-emerald-700/70 text-emerald-100 border border-emerald-500/40"
+              : "bg-slate-700/70 text-slate-100 border border-slate-500/40"
+          }`}
+        >
+          Layout:{" "}
+          {usePrecomputedLayout && hasPrecomputedPositions
+            ? "Precomputed"
+            : "Simulated"}
+        </span>
       </div>
       <ForceGraph3D
         ref={fgRef}
@@ -661,10 +727,32 @@ export default function Graph3D(props: Props) {
           nodes: filtered.nodes as unknown as FGNode[],
           links: filtered.links as unknown as FGLink[],
         }}
-        nodeLabel={showLabels ? "name" : (undefined as unknown as string)}
-        nodeColor={(node) => getColor((node as unknown as GraphNode).type)}
+        // Always provide hover labels
+        nodeLabel={"name"}
+        nodeColor={getColor as unknown as (node: unknown) => string}
         nodeVal={nodeValFn as unknown as (n: unknown) => number}
         nodeRelSize={nodeRelSize}
+        nodeThreeObject={
+          showLabels
+            ? (node: unknown) => {
+                const n = node as GraphNode;
+                const id = String(n.id);
+                if (!labelSet.has(id)) return undefined as unknown as object;
+                const name = (n.name || id).toString();
+                const st = new SpriteText(
+                  name.length > 28 ? name.slice(0, 27) + "…" : name
+                );
+                st.color = "#ffffff";
+                // scale label size with node value moderately
+                const deg = degreeMap.get(id) || 1;
+                const base = Math.max(2, Math.pow(deg, 0.35));
+                st.textHeight = 6 + Math.min(10, base);
+                st.backgroundColor = "rgba(0,0,0,0.35)";
+                st.padding = 2;
+                return st as unknown as object;
+              }
+            : (undefined as unknown as (n: unknown) => object)
+        }
         linkWidth={1}
         linkColor={() => "#999"}
         linkOpacity={linkOpacity}
@@ -676,7 +764,7 @@ export default function Graph3D(props: Props) {
         linkDirectionalParticles={0}
         linkDirectionalArrowLength={0}
         linkVisibility={linkVisibilityFn as unknown as (l: unknown) => boolean}
-        cooldownTicks={1}
+        cooldownTicks={physics?.cooldownTicks ?? 1}
         cooldownTime={hasPrecomputedPositions ? 0 : undefined}
         warmupTicks={0}
         forceEngine="ngraph"

@@ -9,7 +9,11 @@ Collect, analyze, and visualize relationships between Reddit communities and use
 - Crawls subreddits for posts and comments (OAuth-authenticated; globally rate limited).
 - Stores normalized data in PostgreSQL.
 - Precomputes a graph (nodes + links) based on shared participation and activity, with an optional detailed content graph (posts/comments).
-- Serves the graph at `/api/graph` for the React frontend to render with `react-force-graph-3d`.
+- Serves the graph at `/api/graph` for the React frontend to render in multiple visualization modes:
+  - **3D Graph**: Interactive WebGL visualization
+  - **2D Graph**: SVG-based force-directed layout with drag & pan
+  - **Dashboard**: Statistical overview and analytics
+  - **Communities**: Automated community detection using the Louvain algorithm
 
 ---
 
@@ -79,8 +83,13 @@ Key environment variables (selected):
 
 ## 🖥 Frontend
 
-- Vite + React + `react-force-graph-3d`
+- Vite + React with multiple visualization modes:
+  - 3D graph with `react-force-graph-3d`
+  - 2D graph with D3.js force simulation
+  - Statistics dashboard
+  - **Community detection** view with Louvain algorithm
 - `VITE_API_URL` defaults to `/api`
 - Optional client caps: `VITE_MAX_RENDER_NODES`, `VITE_MAX_RENDER_LINKS`
 
+See `docs/visualization-modes.md` and `docs/community-detection.md` for feature details.
 See `frontend/README.md` for local dev and env hints.

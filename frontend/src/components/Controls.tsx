@@ -30,6 +30,14 @@ interface Props {
   onFocusNode: (id?: string) => void;
   showLabels?: boolean;
   onShowLabelsChange?: (v: boolean) => void;
+  graphMode?: "3d" | "2d";
+  onGraphModeChange?: (m: "3d" | "2d") => void;
+  onShowDashboard?: () => void;
+  onShowCommunities?: () => void;
+  useCommunityColors?: boolean;
+  onToggleCommunityColors?: (enabled: boolean) => void;
+  usePrecomputedLayout?: boolean;
+  onTogglePrecomputedLayout?: (enabled: boolean) => void;
 }
 
 export default function Controls(props: Props) {
@@ -47,6 +55,14 @@ export default function Controls(props: Props) {
     onFocusNode,
     showLabels,
     onShowLabelsChange,
+    graphMode,
+    onGraphModeChange,
+    onShowDashboard,
+    onShowCommunities,
+    useCommunityColors,
+    onToggleCommunityColors,
+    usePrecomputedLayout,
+    onTogglePrecomputedLayout,
   } = props;
   const [search, setSearch] = useState("");
   const [srv, setSrv] = useState<{
@@ -55,7 +71,7 @@ export default function Controls(props: Props) {
   } | null>(null);
   const [srvErr, setSrvErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-	console.log(saving)
+  console.log(saving);
   useEffect(() => {
     fetchServices();
   }, []);
@@ -109,6 +125,61 @@ export default function Controls(props: Props) {
 
   return (
     <div className="absolute z-20 top-2 right-2 bg-black/60 text-white p-3 rounded shadow flex flex-col gap-3">
+      <div className="flex gap-2 items-center">
+        <label className="text-xs">View:</label>
+        <button
+          className={`px-2 py-1 rounded border ${
+            graphMode === "3d"
+              ? "bg-blue-600 border-blue-400"
+              : "bg-gray-700 border-gray-500"
+          } text-white text-sm`}
+          onClick={() => onGraphModeChange?.("3d")}
+        >
+          3D
+        </button>
+        <button
+          className={`px-2 py-1 rounded border ${
+            graphMode === "2d"
+              ? "bg-blue-600 border-blue-400"
+              : "bg-gray-700 border-gray-500"
+          } text-white text-sm`}
+          onClick={() => onGraphModeChange?.("2d")}
+        >
+          2D
+        </button>
+        <button
+          className="px-2 py-1 rounded border bg-purple-600 border-purple-400 hover:bg-purple-700 text-white text-sm"
+          onClick={() => onShowDashboard?.()}
+        >
+          Dashboard
+        </button>
+        <button
+          className="px-2 py-1 rounded border bg-green-600 border-green-400 hover:bg-green-700 text-white text-sm"
+          onClick={() => onShowCommunities?.()}
+        >
+          Communities
+        </button>
+      </div>
+      {onToggleCommunityColors && (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={!!useCommunityColors}
+            onChange={(e) => onToggleCommunityColors?.(e.target.checked)}
+          />
+          Use community colors
+        </label>
+      )}
+      {onTogglePrecomputedLayout && (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={!!usePrecomputedLayout}
+            onChange={(e) => onTogglePrecomputedLayout?.(e.target.checked)}
+          />
+          Use precomputed layout
+        </label>
+      )}
       <div className="text-xs text-white/70">Admin</div>
       <div className="flex items-center gap-3 text-sm">
         <button

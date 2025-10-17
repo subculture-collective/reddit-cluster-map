@@ -17,20 +17,17 @@ Returns the consolidated graph JSON:
 
 Notes:
 
-- Prefers precalculated `graph_nodes`/`graph_links`; falls back to legacy JSON if empty.
-- Responses are cached for ~60s.
-- Results are capped using a consistent weighting: `max_nodes` and `max_links` query params.
-
 Query params:
 
-- `max_nodes` (number): cap nodes (default set by server; client may pass a lower cap)
-- `max_links` (number): cap links
+    - Optional: `types=subreddit,user,post,comment` to filter node types
+    - Optional: `with_positions=true` to include precomputed positions (when available) as `x,y,z` on nodes
 
 ### POST /api/crawl
 
 Enqueue a subreddit crawl job.
 
 Request body:
+{ "id": "subreddit_123", "name": "AskReddit", "val": 123456, "type": "subreddit", "x": 12.3, "y": -4.5, "z": 78.9 }
 
 ```
 { "subreddit": "AskReddit" }
