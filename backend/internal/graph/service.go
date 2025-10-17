@@ -605,8 +605,8 @@ func min(a, b int) int {
 }
 
 // checkPositionColumnsExist verifies that graph_nodes has pos_x, pos_y, pos_z columns.
-// Returns nil if columns exist, or an error if they don't.
-func (s *Service) checkPositionColumnsExist(ctx context.Context, queries *db.Queries) error {
+// Returns true if columns exist, false otherwise (with no error).
+func (s *Service) checkPositionColumnsExist(ctx context.Context, queries *db.Queries) bool {
 	// Query the table to verify position columns exist
 	// We use a limit 0 query to avoid data transfer
 	checkSQL := `SELECT pos_x, pos_y, pos_z FROM graph_nodes LIMIT 0`
@@ -617,30 +617,36 @@ func (s *Service) checkPositionColumnsExist(ctx context.Context, queries *db.Que
 		   (strings.Contains(err.Error(), "pos_x") || 
 		    strings.Contains(err.Error(), "pos_y") || 
 		    strings.Contains(err.Error(), "pos_z")) {
-			return fmt.Errorf("position columns (pos_x/pos_y/pos_z) do not exist in graph_nodes table - please run database migrations")
+			return false
 		}
-		return fmt.Errorf("failed to check position columns: %w", err)
+		// Other errors are unexpected but we'll treat as "not available"
+		log.Printf("⚠️ unexpected error checking position columns: %v", err)
+		return false
 	}
 	rows.Close()
-	return nil
+	return true
 }
 
 // computeAndStoreLayout calculates a simple force-directed 2D layout for a capped set of nodes
 // and persists positions into graph_nodes.pos_x/pos_y (pos_z set to 0). It is best-effort and
 // bounded to avoid heavy CPU load.
 func (s *Service) computeAndStoreLayout(ctx context.Context) error {
+	layoutStart := time.Now()
+	
 	// Only works with real db.Queries (not fakes/mocks)
 	queries, ok := s.store.(*db.Queries)
 	if !ok {
-		log.Println("⚠️ layout computation skipped: store is not *db.Queries")
+		log.Println("ℹ️ layout computation skipped: store is not *db.Queries")
 		return nil
 	}
 
 	// Check if position columns exist before attempting to use them
-	if err := s.checkPositionColumnsExist(ctx, queries); err != nil {
-		log.Printf("⚠️ layout computation skipped: %v", err)
+	posColumnsExist := s.checkPositionColumnsExist(ctx, queries)
+	if !posColumnsExist {
+		log.Printf("ℹ️ layout computation skipped: position columns (pos_x/pos_y/pos_z) not present in graph_nodes table (run migrations to enable)")
 		return nil
 	}
+	log.Printf("✅ position columns detected: layout computation enabled")
 
 	// Caps and iteration counts via env to keep safe on servers
 	maxNodes := 5000
@@ -651,16 +657,36 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	if v := os.Getenv("LAYOUT_ITERATIONS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 50 { iterations = n }
 	}
-	if maxNodes <= 0 || iterations <= 0 { return nil }
+	batchSize := 5000
+	if v := os.Getenv("LAYOUT_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 100 { batchSize = n }
+	}
+	epsilon := 0.0 // distance threshold for updates (0 = update all)
+	if v := os.Getenv("LAYOUT_EPSILON"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 { epsilon = f }
+	}
+	
+	log.Printf("⚙️ layout configuration: max_nodes=%d, iterations=%d, batch_size=%d, epsilon=%.2f", maxNodes, iterations, batchSize, epsilon)
+	
+	if maxNodes <= 0 || iterations <= 0 { 
+		log.Printf("ℹ️ layout computation disabled via configuration")
+		return nil 
+	}
 
 	// Fetch top-N nodes by weight and corresponding links subgraph
 	nodes, err := queries.ListGraphNodesByWeight(ctx, int32(maxNodes))
 	if err != nil { return fmt.Errorf("list nodes for layout: %w", err) }
-	if len(nodes) == 0 { return nil }
+	if len(nodes) == 0 { 
+		log.Printf("ℹ️ no nodes found for layout computation")
+		return nil 
+	}
+	log.Printf("📊 computing layout for %d nodes with %d iterations", len(nodes), iterations)
+	
 	ids := make([]string, len(nodes))
 	for i, n := range nodes { ids[i] = n.ID }
 	links, err := queries.ListGraphLinksAmong(ctx, ids)
 	if err != nil { return fmt.Errorf("list links for layout: %w", err) }
+	log.Printf("🔗 found %d links among selected nodes", len(links))
 
 	// Map node index
 	idx := make(map[string]int, len(nodes))
@@ -690,7 +716,11 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 		seen[key] = struct{}{}
 		E = append(E, edge{a: ia, b: ib})
 	}
-	if len(E) == 0 { return nil }
+	if len(E) == 0 { 
+		log.Printf("⚠️ no edges found; skipping force-directed layout")
+		return nil 
+	}
+	log.Printf("🌐 initialized layout: %d nodes, %d edges, radius=%.1f", N, len(E), R)
 
 	// Simple FR-like dynamics
 	area := R * R
@@ -700,6 +730,8 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	dispY := make([]float64, N)
 	var rep = func(dist float64) float64 { return (k*k)/dist }
 	var attr = func(dist float64) float64 { return (dist*dist)/k }
+	
+	layoutComputeStart := time.Now()
 	for it := 0; it < iterations; it++ {
 		for i := 0; i < N; i++ { dispX[i], dispY[i] = 0, 0 }
 		for v := 0; v < N; v++ {
@@ -741,12 +773,20 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 			if Y[v] > 1e6 { Y[v] = 1e6 } else if Y[v] < -1e6 { Y[v] = -1e6 }
 		}
 	}
+	layoutComputeDuration := time.Since(layoutComputeStart)
+	log.Printf("⏱️ layout computation completed in %s", layoutComputeDuration.Truncate(time.Millisecond))
 
-	// Persist positions (z=0)
-	if err := queries.UpdateGraphNodePositions(ctx, db.UpdateGraphNodePositionsParams{Column1: ids, Column2: X, Column3: Y, Column4: Z}); err != nil {
+	// Persist positions in batches
+	updateStart := time.Now()
+	updated, err := queries.BatchUpdateGraphNodePositions(ctx, ids, X, Y, Z, batchSize, epsilon)
+	if err != nil {
 		return fmt.Errorf("update positions: %w", err)
 	}
-	log.Printf("🗺️ stored precomputed layout positions for %d nodes", len(ids))
+	updateDuration := time.Since(updateStart)
+	
+	totalDuration := time.Since(layoutStart)
+	log.Printf("🗺️ layout complete: %d/%d positions updated in %s (total: %s)", updated, len(ids), updateDuration.Truncate(time.Millisecond), totalDuration.Truncate(time.Millisecond))
+	
 	return nil
 }
 
