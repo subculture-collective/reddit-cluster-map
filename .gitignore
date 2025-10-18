@@ -96,6 +96,11 @@ backend/backups
 *.prof
 *.pprof
 
+# Backend binaries
+backend/server
+backend/crawler
+backend/precalculate
+
 # Go coverage & profiling
 coverage.*
 *.coverprofile
