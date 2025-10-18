@@ -410,10 +410,10 @@ export default function Graph3D(props: Props) {
           
           // Update adaptive LOD settings based on camera distance
           const newOpacity = calculateLinkOpacity(dist, linkOpacity, DEFAULT_LOD_CONFIG);
-          setAdaptiveLinkOpacity(newOpacity);
+          setAdaptiveLinkOpacity(prev => (prev !== newOpacity ? newOpacity : prev));
           
           const newShowLabels = showLabels && shouldShowLabels(dist, DEFAULT_LOD_CONFIG);
-          setAdaptiveShowLabels(newShowLabels);
+          setAdaptiveShowLabels(prev => (prev !== newShowLabels ? newShowLabels : prev));
         }
       } catch {
         /* noop */
