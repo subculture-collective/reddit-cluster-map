@@ -121,9 +121,6 @@ func (q *Queries) BatchUpdateGraphNodePositions(ctx context.Context, ids []strin
                 existing[id] = [3]float64{*px, *py, *pz}
             }
         }
-        if err := rows.Close(); err != nil {
-            return 0, fmt.Errorf("failed to close rows: %w", err)
-        }
         
         // Filter based on epsilon threshold
         for i := range ids {
