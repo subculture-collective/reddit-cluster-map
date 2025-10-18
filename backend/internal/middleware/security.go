@@ -10,9 +10,6 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		// Prevent MIME type sniffing
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		
-		// Enable XSS protection in browsers
-		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		
 		// Prevent clickjacking
 		w.Header().Set("X-Frame-Options", "DENY")
 		
@@ -24,9 +21,9 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'")
 		
 		// Strict Transport Security - enforce HTTPS (only add if using HTTPS)
-		// Note: This should only be enabled in production with proper HTTPS setup
+		// Includes preload directive for browser HSTS preload lists
 		if r.TLS != nil {
-			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
 		}
 		
 		// Permissions Policy - restrict browser features

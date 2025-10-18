@@ -21,7 +21,6 @@ func TestSecurityHeaders(t *testing.T) {
 		expected string
 	}{
 		{"X-Content-Type-Options", "nosniff"},
-		{"X-XSS-Protection", "1; mode=block"},
 		{"X-Frame-Options", "DENY"},
 		{"Referrer-Policy", "strict-origin-when-cross-origin"},
 		{"Permissions-Policy", "geolocation=(), microphone=(), camera=()"},
@@ -40,6 +39,11 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 	if !contains(csp, "default-src 'self'") {
 		t.Errorf("Expected CSP to contain 'default-src self', got %s", csp)
+	}
+	
+	// X-XSS-Protection should NOT be set (deprecated)
+	if xss := rr.Header().Get("X-XSS-Protection"); xss != "" {
+		t.Errorf("X-XSS-Protection header should not be set (deprecated), got %s", xss)
 	}
 }
 

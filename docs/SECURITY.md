@@ -79,15 +79,18 @@ http://localhost:5173,http://localhost:3000
 # Development
 CORS_ALLOWED_ORIGINS="http://localhost:5173,http://localhost:3000"
 
-# Production
+# Production - exact origins
 CORS_ALLOWED_ORIGINS="https://example.com,https://app.example.com"
 
-# Wildcard subdomain
+# Wildcard subdomain (matches any subdomain ending in .example.com)
+# Note: *.example.com matches api.example.com, app.example.com, etc.
 CORS_ALLOWED_ORIGINS="*.example.com"
 
 # Allow all (NOT RECOMMENDED for production)
 CORS_ALLOWED_ORIGINS="*"
 ```
+
+**Note on Wildcard Subdomains**: The wildcard pattern `*.example.com` uses suffix matching. It will match any origin ending with `.example.com`, including `api.example.com`, `app.example.com`, etc. Use this carefully as it allows all subdomains.
 
 ### Supported Features
 
@@ -115,12 +118,13 @@ Automatically adds security headers to all responses to protect against common w
 | Header | Value | Purpose |
 |--------|-------|---------|
 | `X-Content-Type-Options` | `nosniff` | Prevents MIME type sniffing |
-| `X-XSS-Protection` | `1; mode=block` | Enables browser XSS protection |
 | `X-Frame-Options` | `DENY` | Prevents clickjacking |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | Controls referrer information |
 | `Content-Security-Policy` | (see below) | Restricts resource loading |
 | `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` | Disables browser features |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Enforces HTTPS (only with TLS) |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains; preload` | Enforces HTTPS (only with TLS) |
+
+**Note**: The deprecated `X-XSS-Protection` header is not set. Modern browsers rely on Content Security Policy for XSS protection.
 
 ### Content Security Policy (CSP)
 
