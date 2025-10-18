@@ -196,6 +196,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const simulationRef = useRef<d3.Simulation<D3Node, D3Link> | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const frameThrottlerRef = useRef<FrameThrottler | null>(null);
+  const needsRenderRef = useRef(false);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -640,17 +641,16 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     }
 
     const throttler = frameThrottlerRef.current;
-    let needsRender = false;
 
     // Update positions on tick with throttling
     simulation.on("tick", () => {
-      needsRender = true;
+      needsRenderRef.current = true;
     });
 
     // Throttled render loop
     throttler.start(() => {
-      if (!needsRender) return;
-      needsRender = false;
+      if (!needsRenderRef.current) return;
+      needsRenderRef.current = false;
       
       linkGroup
         .attr("x1", (d) => (d.source as D3Node).x ?? 0)
