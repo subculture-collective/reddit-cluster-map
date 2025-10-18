@@ -38,10 +38,6 @@ This guide gets you from zero to a running stack.
 
 If you prefer not to use `make setup`, manually copy the example files:
 
-### Manual Configuration (Alternative)
-
-If you prefer not to use `make setup`, manually copy the example files:
-
 ```bash
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
