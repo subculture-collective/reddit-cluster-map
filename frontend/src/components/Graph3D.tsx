@@ -8,6 +8,12 @@ import type {
 import ForceGraph3D from "react-force-graph-3d";
 import type { GraphData, GraphNode } from "../types/graph";
 import SpriteText from "three-spritetext";
+import { FrameThrottler } from "../utils/frameThrottle";
+import {
+  calculateLinkOpacity,
+  shouldShowLabels,
+  DEFAULT_LOD_CONFIG,
+} from "../utils/levelOfDetail";
 
 type Filters = {
   subreddit: boolean;
@@ -287,6 +293,9 @@ export default function Graph3D(props: Props) {
     ForceGraphMethods<RFNodeObject, RFLinkObject> | undefined
   >(undefined);
   const cameraDistRef = useRef<number>(Infinity);
+  const frameThrottlerRef = useRef<FrameThrottler | null>(null);
+  const [adaptiveLinkOpacity, setAdaptiveLinkOpacity] = useState(linkOpacity);
+  const [adaptiveShowLabels, setAdaptiveShowLabels] = useState(showLabels);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -380,22 +389,41 @@ export default function Graph3D(props: Props) {
   }, [activeTypes, load]);
 
   useEffect(() => {
-    let raf = 0;
-    const sample = () => {
+    // Initialize frame throttler
+    if (!frameThrottlerRef.current) {
+      frameThrottlerRef.current = new FrameThrottler({
+        activeFps: 60,
+        idleFps: 10,
+        idleTimeout: 2000,
+      });
+    }
+
+    const throttler = frameThrottlerRef.current;
+    
+    throttler.start(() => {
       try {
         const cam = (fgRef.current as unknown as FGApi | undefined)?.camera?.();
         if (cam?.position) {
           const { x, y, z } = cam.position;
-          cameraDistRef.current = Math.hypot(x, y, z);
+          const dist = Math.hypot(x, y, z);
+          cameraDistRef.current = dist;
+          
+          // Update adaptive LOD settings based on camera distance
+          const newOpacity = calculateLinkOpacity(dist, linkOpacity, DEFAULT_LOD_CONFIG);
+          setAdaptiveLinkOpacity(newOpacity);
+          
+          const newShowLabels = showLabels && shouldShowLabels(dist, DEFAULT_LOD_CONFIG);
+          setAdaptiveShowLabels(newShowLabels);
         }
       } catch {
         /* noop */
       }
-      raf = requestAnimationFrame(sample);
+    });
+
+    return () => {
+      throttler.stop();
     };
-    raf = requestAnimationFrame(sample);
-    return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [linkOpacity, showLabels]);
 
   useEffect(() => {
     try {
@@ -647,7 +675,7 @@ export default function Graph3D(props: Props) {
 
   // choose a set of nodes to label when always-on labels are enabled
   const labelSet = useMemo(() => {
-    if (!showLabels) return new Set<string>();
+    if (!adaptiveShowLabels) return new Set<string>();
     const nodes = filtered.nodes as GraphNode[];
     const weights = nodes.map((n) => {
       const deg = degreeMap.get(n.id) || 0;
@@ -662,14 +690,21 @@ export default function Graph3D(props: Props) {
     preferred.sort(
       (a, b) => b.w - a.w || String(a.id).localeCompare(String(b.id))
     );
-    const TOP = Math.min(200, preferred.length);
+    const TOP = Math.min(DEFAULT_LOD_CONFIG.maxLabels, preferred.length);
     const set = new Set<string>();
     for (let i = 0; i < TOP; i++) set.add(String(preferred[i].id));
     return set;
-  }, [showLabels, filtered, degreeMap]);
+  }, [adaptiveShowLabels, filtered, degreeMap]);
 
   return (
-    <div className="w-full h-screen relative">
+    <div 
+      className="w-full h-screen relative"
+      onMouseMove={() => frameThrottlerRef.current?.markActive()}
+      onWheel={() => frameThrottlerRef.current?.markActive()}
+      onMouseDown={() => frameThrottlerRef.current?.markActive()}
+      onTouchStart={() => frameThrottlerRef.current?.markActive()}
+      onTouchMove={() => frameThrottlerRef.current?.markActive()}
+    >
       {error && (
         <div className="absolute top-2 left-2 z-20 bg-red-900/70 text-red-100 rounded px-3 py-2 text-sm">
           Error: {error}
@@ -733,7 +768,7 @@ export default function Graph3D(props: Props) {
         nodeVal={nodeValFn as unknown as (n: unknown) => number}
         nodeRelSize={nodeRelSize}
         nodeThreeObject={
-          showLabels
+          adaptiveShowLabels
             ? (node: unknown) => {
                 const n = node as GraphNode;
                 const id = String(n.id);
@@ -755,7 +790,7 @@ export default function Graph3D(props: Props) {
         }
         linkWidth={1}
         linkColor={() => "#999"}
-        linkOpacity={linkOpacity}
+        linkOpacity={adaptiveLinkOpacity}
         onNodeClick={(node: unknown) =>
           onNodeSelect?.((node as { name?: string })?.name)
         }
