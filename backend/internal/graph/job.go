@@ -7,7 +7,7 @@ import (
 )
 
 type Job struct {
-	service *Service
+	service  *Service
 	interval time.Duration
 }
 
@@ -38,4 +38,4 @@ func (j *Job) Start(ctx context.Context) {
 			}
 		}
 	}
-} 
+}

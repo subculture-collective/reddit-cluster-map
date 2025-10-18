@@ -81,6 +81,6 @@ func NewRouter(q *db.Queries) *mux.Router {
 	// Services endpoints gated by adminOnly
 	r.Handle("/api/admin/services", adminOnly(http.HandlerFunc(admin.GetServices))).Methods("GET")
 	r.Handle("/api/admin/services", adminOnly(http.HandlerFunc(admin.UpdateServices))).Methods("POST")
-	
+
 	return r
 }

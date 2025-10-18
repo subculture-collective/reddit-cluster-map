@@ -52,4 +52,4 @@ func main() {
 	// Wait for context cancellation
 	<-ctx.Done()
 	log.Println("Shutting down crawler")
-} 
+}

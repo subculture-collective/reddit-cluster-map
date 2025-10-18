@@ -136,7 +136,10 @@ func TestDoWithRetry_ObserverAndBackoffOn5xx(t *testing.T) {
 	// Observer should have recorded at least the failed attempts with waits
 	hadWait := false
 	for _, oi := range observed {
-		if oi.Wait > 0 { hadWait = true; break }
+		if oi.Wait > 0 {
+			hadWait = true
+			break
+		}
 	}
 	if !hadWait {
 		t.Fatalf("expected observer to record at least one wait > 0")
