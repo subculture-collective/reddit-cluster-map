@@ -29,6 +29,16 @@ func GetEnvAsInt(name string, defaultVal int) int {
 	return defaultVal
 }
 
+// GetEnvAsFloat retrieves an environment variable as a float64 with a default fallback.
+func GetEnvAsFloat(name string, defaultVal float64) float64 {
+	if valStr := os.Getenv(name); valStr != "" {
+		if val, err := strconv.ParseFloat(valStr, 64); err == nil {
+			return val
+		}
+	}
+	return defaultVal
+}
+
 // GetEnvAsSlice retrieves an environment variable as a slice of strings, split by a separator.
 func GetEnvAsSlice(name string, defaultVal []string, sep string) []string {
 	if valStr := os.Getenv(name); valStr != "" {

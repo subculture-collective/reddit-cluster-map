@@ -36,6 +36,13 @@ type Config struct {
 	DisableAPIGraphJob bool
 	// Admin API token for gating admin endpoints (Bearer token)
 	AdminAPIToken      string
+	// Security settings
+	RateLimitGlobal    float64 // requests per second globally
+	RateLimitGlobalBurst int   // burst size for global rate limit
+	RateLimitPerIP     float64 // requests per second per IP
+	RateLimitPerIPBurst int    // burst size for per-IP rate limit
+	CORSAllowedOrigins []string // allowed CORS origins
+	EnableRateLimit    bool     // enable rate limiting middleware
 }
 
 var cached *Config
@@ -72,9 +79,28 @@ func Load() *Config {
 	ResetCrawlingAfterMin: utils.GetEnvAsInt("RESET_CRAWLING_AFTER_MIN", 15),
 	DisableAPIGraphJob:    utils.GetEnvAsBool("DISABLE_API_GRAPH_JOB", false),
 	AdminAPIToken:         strings.TrimSpace(os.Getenv("ADMIN_API_TOKEN")),
+	// Security settings with sensible defaults
+	RateLimitGlobal:      utils.GetEnvAsFloat("RATE_LIMIT_GLOBAL", 100.0),
+	RateLimitGlobalBurst: utils.GetEnvAsInt("RATE_LIMIT_GLOBAL_BURST", 200),
+	RateLimitPerIP:       utils.GetEnvAsFloat("RATE_LIMIT_PER_IP", 10.0),
+	RateLimitPerIPBurst:  utils.GetEnvAsInt("RATE_LIMIT_PER_IP_BURST", 20),
+	EnableRateLimit:      utils.GetEnvAsBool("ENABLE_RATE_LIMIT", true),
 	}
 	if cached.PostsSort == "" { cached.PostsSort = "top" }
 	if cached.PostsTimeFilter == "" { cached.PostsTimeFilter = "day" }
+	
+	// Parse CORS allowed origins
+	corsOrigins := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	if corsOrigins == "" {
+		// Default to common development origins
+		cached.CORSAllowedOrigins = []string{"http://localhost:5173", "http://localhost:3000"}
+	} else {
+		cached.CORSAllowedOrigins = strings.Split(corsOrigins, ",")
+		for i := range cached.CORSAllowedOrigins {
+			cached.CORSAllowedOrigins[i] = strings.TrimSpace(cached.CORSAllowedOrigins[i])
+		}
+	}
+	
 	return cached
 }
 

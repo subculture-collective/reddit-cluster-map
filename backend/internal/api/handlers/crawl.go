@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/crawler"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/middleware"
 )
 
 type CrawlRequest struct {
@@ -24,20 +24,31 @@ type CrawlQueue interface {
 }
 
 func PostCrawl(q CrawlQueue) http.HandlerFunc {
+	sanitizer := &middleware.SanitizeInput{}
+	
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[PostCrawl] Received request: %v", r)
+		
+		// Validate content type
+		if err := middleware.ValidateJSON(r); err != nil {
+			http.Error(w, `{"error":"Invalid request format"}`, http.StatusBadRequest)
+			return
+		}
+		
 		var req CrawlRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			http.Error(w, `{"error":"Invalid request body"}`, http.StatusBadRequest)
 			return
 		}
 
-		req.Subreddit = strings.TrimSpace(req.Subreddit)
+		// Sanitize and validate subreddit name
+		req.Subreddit = sanitizer.SanitizeString(req.Subreddit, 21)
 		if req.Subreddit == "" {
 			req.Subreddit = "AskReddit"
 		}
-		if strings.ContainsAny(req.Subreddit, "/\\ ") {
-			http.Error(w, "Invalid subreddit name", http.StatusBadRequest)
+		
+		if err := sanitizer.ValidateSubredditName(req.Subreddit); err != nil {
+			http.Error(w, `{"error":"Invalid subreddit name"}`, http.StatusBadRequest)
 			return
 		}
 
@@ -50,7 +61,7 @@ func PostCrawl(q CrawlQueue) http.HandlerFunc {
 		})
 		if err != nil {
 			log.Printf("❌ Failed to upsert subreddit %s: %v", req.Subreddit, err)
-			http.Error(w, "Failed to create subreddit", http.StatusInternalServerError)
+			http.Error(w, `{"error":"Failed to create subreddit"}`, http.StatusInternalServerError)
 			return
 		}
 
@@ -62,7 +73,7 @@ func PostCrawl(q CrawlQueue) http.HandlerFunc {
 					EnqueuedBy:  sql.NullString{String: "api", Valid: true},
 				}); err != nil {
 					log.Printf("❌ Failed to enqueue %s: %v", req.Subreddit, err)
-					http.Error(w, "Failed to enqueue job", http.StatusInternalServerError)
+					http.Error(w, `{"error":"Failed to enqueue job"}`, http.StatusInternalServerError)
 					return
 				}
 			} else {
