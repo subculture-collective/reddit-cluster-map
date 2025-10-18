@@ -140,3 +140,15 @@ func TestPrecalculateGraphData_AuthorCrossLinkCap(t *testing.T) {
 		t.Fatalf("expected at least one author cross-link between posts")
 	}
 }
+
+func TestCheckPositionColumnsExist_Fake(t *testing.T) {
+	// Test with fake store (should return false gracefully, not panic)
+	fs := newFakeStore()
+	svc := NewService(fs)
+	
+	// This should not panic even though fakeStore doesn't implement db.Queries
+	err := svc.computeAndStoreLayout(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error with fake store, got: %v", err)
+	}
+}
