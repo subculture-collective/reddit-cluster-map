@@ -35,18 +35,32 @@ The `VirtualList` component provides efficient rendering for large lists by only
 ```
 
 ### Example 3: When items don't have IDs
-If your items don't have a stable ID, consider adding one:
+If your items don't have a stable ID, use a combination of stable properties:
 ```tsx
-const itemsWithIds = items.map((item, idx) => ({
+<VirtualList
+  items={items}
+  itemHeight={48}
+  containerHeight={480}
+  itemKey={(item) => `${item.type}-${item.name}`} // Use stable properties
+  renderItem={(item, i) => (
+    <div>{item.name}</div>
+  )}
+/>
+```
+
+Or add a stable ID when loading data:
+```tsx
+// When fetching data, add stable IDs
+const itemsWithIds = rawItems.map((item) => ({
   ...item,
-  _virtualListId: `item-${idx}-${item.name}` // Use a combination that's stable
+  stableId: generateUniqueId(item) // Use a hash or UUID
 }));
 
 <VirtualList
   items={itemsWithIds}
   itemHeight={48}
   containerHeight={480}
-  itemKey={(item) => item._virtualListId}
+  itemKey={(item) => item.stableId}
   renderItem={(item, i) => (
     <div>{item.name}</div>
   )}
