@@ -51,7 +51,7 @@ If your items don't have a stable ID, use a combination of stable properties:
 Or add a stable ID when loading data:
 ```tsx
 // When fetching/loading data, add stable IDs once
-// ⚠️ Important: Do this during data loading, not in render!
+// ⚠️ Important: Do this during data loading, not during rendering!
 import { v4 as uuidv4 } from 'uuid';
 
 // Option 1: Generate UUID once when data is loaded
