@@ -50,15 +50,24 @@ If your items don't have a stable ID, use a combination of stable properties:
 
 Or add a stable ID when loading data:
 ```tsx
-// When fetching data, add stable IDs using a hash or UUID library
-import { v4 as uuidv4 } from 'uuid'; // or use crypto.randomUUID()
+// When fetching/loading data, add stable IDs ONCE
+// ⚠️ Important: Do this during data loading, not in render!
+import { v4 as uuidv4 } from 'uuid';
 
-const itemsWithIds = rawItems.map((item) => ({
-  ...item,
-  stableId: uuidv4() // Generate a unique ID for each item
-}));
+// Option 1: Generate UUID once when data is loaded
+useEffect(() => {
+  async function loadData() {
+    const rawItems = await fetchItems();
+    const itemsWithIds = rawItems.map((item) => ({
+      ...item,
+      stableId: uuidv4() // Generate once when loading
+    }));
+    setItems(itemsWithIds);
+  }
+  loadData();
+}, []);
 
-// Or if items have natural unique identifiers:
+// Option 2: If items have natural unique identifiers, combine them
 const itemsWithIds = rawItems.map((item) => ({
   ...item,
   stableId: `${item.type}-${item.timestamp}-${item.userId}` // Combine stable properties
@@ -75,8 +84,11 @@ const itemsWithIds = rawItems.map((item) => ({
 />
 ```
 
-## Bad Example (Do Not Use)
+**Note**: Never generate new UUIDs in the `itemKey` function itself - this would create different keys on each render and defeat the purpose of stable keys!
 
+## Bad Examples (Do Not Use)
+
+### Bad Example 1: Using index as key
 ```tsx
 // ❌ BAD: Using index as key
 // This defeats the purpose! Using index as key causes React to incorrectly 
@@ -86,6 +98,21 @@ const itemsWithIds = rawItems.map((item) => ({
   itemHeight={48}
   containerHeight={480}
   itemKey={(node, index) => index.toString()}
+  renderItem={(node, i) => (
+    <div>{node.name}</div>
+  )}
+/>
+```
+
+### Bad Example 2: Generating new UUIDs in itemKey
+```tsx
+// ❌ BAD: Generating new UUIDs on each render
+// This creates different keys every render, breaking React's reconciliation
+<VirtualList
+  items={nodes}
+  itemHeight={48}
+  containerHeight={480}
+  itemKey={(node) => uuidv4()} // New UUID every time!
   renderItem={(node, i) => (
     <div>{node.name}</div>
   )}
