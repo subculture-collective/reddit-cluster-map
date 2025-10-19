@@ -50,10 +50,18 @@ If your items don't have a stable ID, use a combination of stable properties:
 
 Or add a stable ID when loading data:
 ```tsx
-// When fetching data, add stable IDs
+// When fetching data, add stable IDs using a hash or UUID library
+import { v4 as uuidv4 } from 'uuid'; // or use crypto.randomUUID()
+
 const itemsWithIds = rawItems.map((item) => ({
   ...item,
-  stableId: generateUniqueId(item) // Use a hash or UUID
+  stableId: uuidv4() // Generate a unique ID for each item
+}));
+
+// Or if items have natural unique identifiers:
+const itemsWithIds = rawItems.map((item) => ({
+  ...item,
+  stableId: `${item.type}-${item.timestamp}-${item.userId}` // Combine stable properties
 }));
 
 <VirtualList
@@ -71,11 +79,13 @@ const itemsWithIds = rawItems.map((item) => ({
 
 ```tsx
 // ❌ BAD: Using index as key
+// This defeats the purpose! Using index as key causes React to incorrectly 
+// reuse DOM nodes when items are reordered, added, or removed.
 <VirtualList
   items={nodes}
   itemHeight={48}
   containerHeight={480}
-  itemKey={(node, index) => index.toString()} // This defeats the purpose!
+  itemKey={(node, index) => index.toString()}
   renderItem={(node, i) => (
     <div>{node.name}</div>
   )}
