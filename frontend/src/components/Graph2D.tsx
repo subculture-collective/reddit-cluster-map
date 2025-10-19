@@ -654,17 +654,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     const throttler = frameThrottlerRef.current;
 
     // Update positions on tick with throttling
-    simulation.on("tick", () => {
-      const currentLinkGroup = linkGroupRef.current;
-      const currentNodeGroup = nodeGroupRef.current;
-
-      if (currentLinkGroup) {
-        currentLinkGroup
-          .attr("x1", (d) => (d.source as D3Node).x ?? 0)
-          .attr("y1", (d) => (d.source as D3Node).y ?? 0)
-          .attr("x2", (d) => (d.target as D3Node).x ?? 0)
-          .attr("y2", (d) => (d.target as D3Node).y ?? 0);
-      }
+      // Only set needsRenderRef; all DOM updates are handled in the throttled callback
       needsRenderRef.current = true;
     });
 
