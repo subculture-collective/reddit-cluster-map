@@ -13,8 +13,40 @@ This guide gets you from zero to a running stack.
 1. Clone the repo.
 2. Backend env: From the `backend/` directory, run `make setup` to create `.env` from `.env.example`, then edit and fill:
 
+1. Clone the repo:
+   ```bash
+   git clone https://github.com/subculture-collective/reddit-cluster-map.git
+   cd reddit-cluster-map
+   ```
+
+2. **Quick setup** (recommended):
+   ```bash
+   cd backend
+   make setup
+   ```
+   This creates `.env` from `.env.example` and checks for required tools.
+
+3. Configure `backend/.env`:
+   - Set `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` (from https://www.reddit.com/prefs/apps)
+   - Set `POSTGRES_PASSWORD` to a strong password
+   - Optionally adjust other settings (see comments in `.env.example`)
+
+4. (Optional) Configure `frontend/.env`:
+   ```bash
+   cp frontend/.env.example frontend/.env
+   ```
+   For local dev, the defaults should work fine.
+
+### Manual Configuration (Alternative)
+
+If you prefer not to use `make setup`, manually copy the example files:
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
 ```
-REDDIT_CLIENT_ID=<from reddit app>
+
+Then edit `backend/.env` with:
 REDDIT_CLIENT_SECRET=<from reddit app>
 REDDIT_REDIRECT_URI=<your callback, e.g. https://your.domain/oauth/reddit/callback>
 REDDIT_SCOPES="identity read"
@@ -37,10 +69,29 @@ GRAPH_LINK_BATCH_SIZE=2000
 GRAPH_PROGRESS_INTERVAL=10000
 ```
 
-3. Frontend env: set `frontend/.env`:
+Then edit `frontend/.env` with:
 
 ```
 VITE_API_URL=/api
+```
+
+## Required Tools
+
+Before starting, ensure you have:
+
+- Docker and Docker Compose
+- Node.js 20+ (for local frontend builds)
+- Go 1.21+ (optional for local backend builds)
+
+Check installed tools:
+```bash
+cd backend
+make check-tools
+```
+
+Install Go development tools (sqlc and golang-migrate):
+```bash
+make install-tools
 ```
 
 ## Start services
@@ -57,13 +108,38 @@ The API listens on port 8000 inside the network. Frontend serves on port 80 (con
 
 ## Seed a crawl
 
-- POST to enqueue a subreddit:
+### Quick Seed (Automated)
+
+The fastest way to populate the database:
+
+```bash
+cd backend
+make seed
+```
+
+This will enqueue crawl jobs for several popular subreddits (AskReddit, programming, golang, webdev, dataisbeautiful).
+
+### Manual Seed
+
+Alternatively, POST to enqueue individual subreddits:
 
 ```
 curl -X POST https://<your-domain>/api/crawl -H 'Content-Type: application/json' -d '{"subreddit":"AskReddit"}'
 ```
 
 Crawler will pull posts/comments and populate the DB.
+
+Check job status:
+```bash
+curl http://localhost:8000/jobs | jq
+# Or for production:
+curl https://<your-domain>/jobs | jq
+```
+
+Monitor crawler progress:
+```bash
+make logs-crawler
+```
 
 ## Generate graph now
 
@@ -78,9 +154,60 @@ Or wait for the API server’s graph job (every hour) to update automatically.
 
 ## Local dev (optional)
 
-- Backend tests: `go test ./...`
-- Frontend dev: from `frontend/`, `npm ci && npm run dev` (proxy to `localhost:8000` is configured in `vite.config.ts`).
-- Regenerate sqlc after changing SQL: from `backend/`, `make sqlc` (alias `make generate`).
+### Smoke Tests
+
+Verify all API endpoints are working:
+```bash
+cd backend
+make smoke-test
+```
+
+This checks connectivity and basic functionality of all API endpoints.
+
+### Backend Development
+
+- Run tests:
+  ```bash
+  make test
+  ```
+
+- Check code formatting and quality:
+  ```bash
+  make lint
+  ```
+
+- Format code:
+  ```bash
+  make fmt
+  ```
+
+- Regenerate sqlc after changing SQL:
+  ```bash
+  make generate
+  ```
+
+Run `make help` for all available targets.
+
+### Frontend Development
+
+From `frontend/`:
+
+- Install dependencies: `npm ci`
+- Start dev server: `npm run dev` (proxy to `localhost:8000` is configured in `vite.config.ts`)
+- Lint: `npm run lint`
+- Type check: `npx tsc --noEmit`
+- Build: `npm run build`
+
+### Git Hooks (Recommended)
+
+Install pre-commit hooks for automatic formatting and type checking:
+```bash
+./scripts/install-hooks.sh
+```
+
+This will run checks before each commit to ensure code quality.
+
+See the **[Developer Guide](./developer-guide.md)** for comprehensive development workflows and best practices.
 
 ## Troubleshooting
 

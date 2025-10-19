@@ -55,10 +55,10 @@ func ShuffleStrings(input []string) []string {
 }
 
 func PickRandomString(list []string) string {
-    if len(list) == 0 {
-        return ""
-    }
-    return list[rand.Intn(len(list))]
+	if len(list) == 0 {
+		return ""
+	}
+	return list[rand.Intn(len(list))]
 }
 
 // OrderedPair returns a consistent tuple of two subreddit names (alphabetical order).
@@ -92,4 +92,3 @@ func StripPrefix(id string) string {
 	}
 	return id
 }
-

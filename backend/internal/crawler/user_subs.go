@@ -60,7 +60,6 @@ func FetchUserSubreddits(username string, limit int) ([]string, error) {
 	return results, nil
 }
 
-
 // FetchRecentUserSubreddits fetches the list of subreddits a user has recently posted or commented in.
 func FetchRecentUserSubreddits(username string, limit int) ([]string, error) {
 	uname := strings.TrimSpace(username)

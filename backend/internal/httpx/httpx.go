@@ -57,24 +57,32 @@ func DoWithRetryFactoryObs(client *http.Client, build func() (*http.Request, err
 				if cfg.LogHTTPRetries {
 					log.Printf("httpx: attempt=%d method=%s url=%s err=%v (no more retries)", attempt, req.Method, req.URL.String(), err)
 				}
-				if obs != nil { obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Err: err}) }
+				if obs != nil {
+					obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Err: err})
+				}
 				return nil, err
 			}
-			if obs != nil { obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Err: err}) }
+			if obs != nil {
+				obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Err: err})
+			}
 		} else {
 			// success unless 429/5xx
 			if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
 				if cfg.LogHTTPRetries && attempt > 1 {
 					log.Printf("httpx: attempt=%d method=%s url=%s status=%d (success)", attempt, req.Method, req.URL.String(), resp.StatusCode)
 				}
-				if obs != nil { obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Status: resp.StatusCode}) }
+				if obs != nil {
+					obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Status: resp.StatusCode})
+				}
 				return resp, nil
 			}
 			if attempt == maxAttempts {
 				if cfg.LogHTTPRetries {
 					log.Printf("httpx: attempt=%d method=%s url=%s status=%d (giving up)", attempt, req.Method, req.URL.String(), resp.StatusCode)
 				}
-				if obs != nil { obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Status: resp.StatusCode}) }
+				if obs != nil {
+					obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Status: resp.StatusCode})
+				}
 				return resp, nil
 			}
 			// Respect Retry-After header
@@ -82,8 +90,12 @@ func DoWithRetryFactoryObs(client *http.Client, build func() (*http.Request, err
 				if secs, err := strconv.Atoi(ra); err == nil {
 					resp.Body.Close()
 					wait := time.Duration(secs) * time.Second
-					if cfg.LogHTTPRetries { log.Printf("httpx: attempt=%d 429/5xx Retry-After=%s wait=%s method=%s url=%s", attempt, ra, wait, req.Method, req.URL.String()) }
-					if obs != nil { obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Status: resp.StatusCode, Wait: wait}) }
+					if cfg.LogHTTPRetries {
+						log.Printf("httpx: attempt=%d 429/5xx Retry-After=%s wait=%s method=%s url=%s", attempt, ra, wait, req.Method, req.URL.String())
+					}
+					if obs != nil {
+						obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Status: resp.StatusCode, Wait: wait})
+					}
 					time.Sleep(wait)
 					continue
 				}
@@ -91,8 +103,12 @@ func DoWithRetryFactoryObs(client *http.Client, build func() (*http.Request, err
 					delta := time.Until(t)
 					if delta > 0 {
 						resp.Body.Close()
-						if cfg.LogHTTPRetries { log.Printf("httpx: attempt=%d 429/5xx Retry-After=%s wait=%s method=%s url=%s", attempt, ra, delta, req.Method, req.URL.String()) }
-						if obs != nil { obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Status: resp.StatusCode, Wait: delta}) }
+						if cfg.LogHTTPRetries {
+							log.Printf("httpx: attempt=%d 429/5xx Retry-After=%s wait=%s method=%s url=%s", attempt, ra, delta, req.Method, req.URL.String())
+						}
+						if obs != nil {
+							obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Status: resp.StatusCode, Wait: delta})
+						}
 						time.Sleep(delta)
 						continue
 					}
@@ -103,8 +119,12 @@ func DoWithRetryFactoryObs(client *http.Client, build func() (*http.Request, err
 		// backoff with jitter
 		jitter := time.Duration(rand.Intn(200)) * time.Millisecond
 		delay := baseDelay*time.Duration(attempt) + jitter
-		if cfg.LogHTTPRetries { log.Printf("httpx: attempt=%d backing off=%s method=%s url=%s", attempt, delay, req.Method, req.URL.String()) }
-		if obs != nil { obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Wait: delay}) }
+		if cfg.LogHTTPRetries {
+			log.Printf("httpx: attempt=%d backing off=%s method=%s url=%s", attempt, delay, req.Method, req.URL.String())
+		}
+		if obs != nil {
+			obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Wait: delay})
+		}
 		time.Sleep(delay)
 	}
 	return nil, errors.New("exhausted retries")

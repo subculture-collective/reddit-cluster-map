@@ -41,7 +41,7 @@ type Post struct {
 	Selftext   string    `json:"selftext"`
 }
 
-var subredditMentionRegex = regexp.MustCompile(`(?i)/r/([a-zA-Z0-9_]+)`) 
+var subredditMentionRegex = regexp.MustCompile(`(?i)/r/([a-zA-Z0-9_]+)`)
 
 func CrawlSubreddit(subreddit string) (*SubredditInfo, []Post, error) {
 	subreddit = strings.ToLower(strings.TrimSpace(subreddit))
@@ -70,7 +70,7 @@ func CrawlSubreddit(subreddit string) (*SubredditInfo, []Post, error) {
 	// Get targets and filters from centralized config
 	cfg := config.Load()
 	targetPosts := cfg.MaxPostsPerSub
-	sortMode := cfg.PostsSort // top, hot, new, rising
+	sortMode := cfg.PostsSort         // top, hot, new, rising
 	timeFilter := cfg.PostsTimeFilter // hour, day, week, month, year, all (for top)
 	var allPosts []Post
 	var after string

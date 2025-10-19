@@ -11,7 +11,7 @@ import (
 
 // SubredditsLister abstracts listing with pagination for testability.
 type SubredditsLister interface {
-    ListSubreddits(ctx context.Context, params db.ListSubredditsParams) ([]db.Subreddit, error)
+	ListSubreddits(ctx context.Context, params db.ListSubredditsParams) ([]db.Subreddit, error)
 }
 
 func GetSubreddits(q SubredditsLister) http.HandlerFunc {

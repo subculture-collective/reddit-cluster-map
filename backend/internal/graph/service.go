@@ -44,7 +44,9 @@ func (p *progressLogger) Inc(n int) {
 func (p *progressLogger) Done(totalLabel string) {
 	elapsed := time.Since(p.start)
 	rate := float64(p.count) / elapsed.Seconds()
-	if totalLabel == "" { totalLabel = fmt.Sprintf("%d", p.count) }
+	if totalLabel == "" {
+		totalLabel = fmt.Sprintf("%d", p.count)
+	}
 	log.Printf("✅ %s complete: %s items in %s (%.0f/sec)", p.name, totalLabel, elapsed.Truncate(time.Millisecond), rate)
 }
 
@@ -274,11 +276,15 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	// Configurable node batch size / progress interval via env
 	nodeBatchSize := 1000
 	if v := os.Getenv("GRAPH_NODE_BATCH_SIZE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 { nodeBatchSize = n }
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			nodeBatchSize = n
+		}
 	}
 	progressInterval := 10000
 	if v := os.Getenv("GRAPH_PROGRESS_INTERVAL"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 { progressInterval = n }
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			progressInterval = n
+		}
 	}
 	userProg := newProgressLogger("user-nodes", progressInterval)
 	subProg := newProgressLogger("subreddit-nodes", progressInterval)
@@ -286,70 +292,74 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	// Attempt to unwrap underlying *db.Queries for transaction usage
 	// If store is *db.Queries we can optimize; otherwise fallback to existing per-row behavior
 	q, ok := s.store.(*db.Queries)
-    if !ok {
-        log.Printf("ℹ️ store is not *db.Queries; falling back to row-by-row inserts")
-        userNodeCount := 0
-        for _, u := range usersWithActivity {
-            total := int64(u.TotalActivity)
-            val := sql.NullString{Valid: true, String: strconv.FormatInt(total, 10)}
-            if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("user_%d", u.ID), Name: u.Username, Val: val, Type: sql.NullString{String: "user", Valid: true}}); err == nil {
-                userNodeCount++
-                userProg.Inc(1)
-            }
-        }
-        subNodeCount := 0
-        for _, sr := range subreddits {
-            var subs sql.NullString
-            if sr.Subscribers.Valid {
-                subs = sql.NullString{String: strconv.FormatInt(int64(sr.Subscribers.Int32), 10), Valid: true}
-            }
-            if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("subreddit_%d", sr.ID), Name: sr.Name, Val: subs, Type: sql.NullString{String: "subreddit", Valid: true}}); err == nil {
-                subNodeCount++
-                subProg.Inc(1)
-            }
-        }
-        log.Printf("✅ Created %d user nodes, %d subreddit nodes (fallback mode)", userNodeCount, subNodeCount)
-        userProg.Done("")
-        subProg.Done("")
-    } else {
-        start := time.Now()
-        nodeParams := make([]db.BulkInsertGraphNodeParams, 0, len(usersWithActivity)+len(subreddits))
-        for _, u := range usersWithActivity {
-            total := int64(u.TotalActivity)
-            val := sql.NullString{Valid: true, String: strconv.FormatInt(total, 10)}
-            nodeParams = append(nodeParams, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("user_%d", u.ID), Name: u.Username, Val: val, Type: sql.NullString{String: "user", Valid: true}})
-            userProg.Inc(1)
-        }
-        for _, sr := range subreddits {
-            var subs sql.NullString
-            if sr.Subscribers.Valid {
-                subs = sql.NullString{String: strconv.FormatInt(int64(sr.Subscribers.Int32), 10), Valid: true}
-            }
-            nodeParams = append(nodeParams, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("subreddit_%d", sr.ID), Name: sr.Name, Val: subs, Type: sql.NullString{String: "subreddit", Valid: true}})
-            subProg.Inc(1)
-        }
-        rawDBTX := q.DB()
-        if sqldb, ok2 := rawDBTX.(*sql.DB); ok2 {
-            tx, err := sqldb.BeginTx(ctx, &sql.TxOptions{})
-            if err != nil { return fmt.Errorf("begin tx: %w", err) }
-            txQueries := q.WithTx(tx)
-            if err := txQueries.BatchUpsertGraphNodes(ctx, nodeParams, nodeBatchSize); err != nil {
-                _ = tx.Rollback()
-                return fmt.Errorf("batch upsert nodes: %w", err)
-            }
-            if err := tx.Commit(); err != nil { return fmt.Errorf("commit node tx: %w", err) }
-        } else {
-            if err := q.BatchUpsertGraphNodes(ctx, nodeParams, nodeBatchSize); err != nil {
-                return fmt.Errorf("batch upsert nodes: %w", err)
-            }
-        }
-        dur := time.Since(start)
-        log.Printf("✅ Upserted %d graph nodes (users+subreddits) in %s", len(nodeParams), dur.Truncate(time.Millisecond))
-        userProg.Done("")
-        subProg.Done("")
-    }
+	if !ok {
+		log.Printf("ℹ️ store is not *db.Queries; falling back to row-by-row inserts")
+		userNodeCount := 0
+		for _, u := range usersWithActivity {
+			total := int64(u.TotalActivity)
+			val := sql.NullString{Valid: true, String: strconv.FormatInt(total, 10)}
+			if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("user_%d", u.ID), Name: u.Username, Val: val, Type: sql.NullString{String: "user", Valid: true}}); err == nil {
+				userNodeCount++
+				userProg.Inc(1)
+			}
+		}
+		subNodeCount := 0
+		for _, sr := range subreddits {
+			var subs sql.NullString
+			if sr.Subscribers.Valid {
+				subs = sql.NullString{String: strconv.FormatInt(int64(sr.Subscribers.Int32), 10), Valid: true}
+			}
+			if err := s.store.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("subreddit_%d", sr.ID), Name: sr.Name, Val: subs, Type: sql.NullString{String: "subreddit", Valid: true}}); err == nil {
+				subNodeCount++
+				subProg.Inc(1)
+			}
+		}
+		log.Printf("✅ Created %d user nodes, %d subreddit nodes (fallback mode)", userNodeCount, subNodeCount)
+		userProg.Done("")
+		subProg.Done("")
+	} else {
+		start := time.Now()
+		nodeParams := make([]db.BulkInsertGraphNodeParams, 0, len(usersWithActivity)+len(subreddits))
+		for _, u := range usersWithActivity {
+			total := int64(u.TotalActivity)
+			val := sql.NullString{Valid: true, String: strconv.FormatInt(total, 10)}
+			nodeParams = append(nodeParams, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("user_%d", u.ID), Name: u.Username, Val: val, Type: sql.NullString{String: "user", Valid: true}})
+			userProg.Inc(1)
+		}
+		for _, sr := range subreddits {
+			var subs sql.NullString
+			if sr.Subscribers.Valid {
+				subs = sql.NullString{String: strconv.FormatInt(int64(sr.Subscribers.Int32), 10), Valid: true}
+			}
+			nodeParams = append(nodeParams, db.BulkInsertGraphNodeParams{ID: fmt.Sprintf("subreddit_%d", sr.ID), Name: sr.Name, Val: subs, Type: sql.NullString{String: "subreddit", Valid: true}})
+			subProg.Inc(1)
+		}
+		rawDBTX := q.DB()
+		if sqldb, ok2 := rawDBTX.(*sql.DB); ok2 {
+			tx, err := sqldb.BeginTx(ctx, &sql.TxOptions{})
+			if err != nil {
+				return fmt.Errorf("begin tx: %w", err)
+			}
+			txQueries := q.WithTx(tx)
+			if err := txQueries.BatchUpsertGraphNodes(ctx, nodeParams, nodeBatchSize); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("batch upsert nodes: %w", err)
+			}
+			if err := tx.Commit(); err != nil {
+				return fmt.Errorf("commit node tx: %w", err)
+			}
+		} else {
+			if err := q.BatchUpsertGraphNodes(ctx, nodeParams, nodeBatchSize); err != nil {
+				return fmt.Errorf("batch upsert nodes: %w", err)
+			}
+		}
+		dur := time.Since(start)
+		log.Printf("✅ Upserted %d graph nodes (users+subreddits) in %s", len(nodeParams), dur.Truncate(time.Millisecond))
+		userProg.Done("")
+		subProg.Done("")
+	}
 
-    if err := s.CalculateUserActivity(ctx); err != nil {
+	if err := s.CalculateUserActivity(ctx); err != nil {
 		return fmt.Errorf("failed to calculate user activity: %w", err)
 	}
 	if err := s.CalculateSubredditRelationships(ctx); err != nil {
@@ -357,10 +367,10 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	}
 
 	// Detailed content graph (optional)
-    type authoredPost struct {
-        postID   string
-        authorID int32
-    }
+	type authoredPost struct {
+		postID   string
+		authorID int32
+	}
 	type authoredComment struct {
 		commentID string
 		authorID  int32
@@ -375,38 +385,59 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	var pendingNodes []db.BulkInsertGraphNodeParams
 	linkBatchSize := 2000
 	if v := os.Getenv("GRAPH_LINK_BATCH_SIZE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 { linkBatchSize = n }
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			linkBatchSize = n
+		}
 	}
 	linkProg := newProgressLogger("graph-links", progressInterval)
 	flushLinks := func(force bool) {
-		if len(pendingLinks) == 0 { return }
-		if !force && len(pendingLinks) < linkBatchSize { return }
+		if len(pendingLinks) == 0 {
+			return
+		}
+		if !force && len(pendingLinks) < linkBatchSize {
+			return
+		}
 		if q2, ok2 := s.store.(*db.Queries); ok2 {
 			if err := q2.BatchInsertGraphLinks(ctx, pendingLinks, linkBatchSize); err != nil {
 				log.Printf("⚠️ batched link insert error: %v (fallback row-by-row)", err)
-				for _, l := range pendingLinks { _ = s.store.BulkInsertGraphLink(ctx, l) }
+				for _, l := range pendingLinks {
+					_ = s.store.BulkInsertGraphLink(ctx, l)
+				}
 			} else {
 				linkProg.Inc(len(pendingLinks))
 			}
 		} else {
-			for _, l := range pendingLinks { _ = s.store.BulkInsertGraphLink(ctx, l); linkProg.Inc(1) }
+			for _, l := range pendingLinks {
+				_ = s.store.BulkInsertGraphLink(ctx, l)
+				linkProg.Inc(1)
+			}
 		}
 		pendingLinks = pendingLinks[:0]
 	}
 
 	contentProg := newProgressLogger("content-nodes", progressInterval)
 	flushNodes := func(force bool) {
-		if len(pendingNodes) == 0 { return }
-		if !force && len(pendingNodes) < nodeBatchSize { return }
+		if len(pendingNodes) == 0 {
+			return
+		}
+		if !force && len(pendingNodes) < nodeBatchSize {
+			return
+		}
 		if q2, ok2 := s.store.(*db.Queries); ok2 {
 			if err := q2.BatchUpsertGraphNodes(ctx, pendingNodes, nodeBatchSize); err != nil {
 				log.Printf("⚠️ batched node upsert error: %v (fallback row-by-row)", err)
-				for _, n := range pendingNodes { _ = s.store.BulkInsertGraphNode(ctx, n); contentProg.Inc(1) }
+				for _, n := range pendingNodes {
+					_ = s.store.BulkInsertGraphNode(ctx, n)
+					contentProg.Inc(1)
+				}
 			} else {
 				contentProg.Inc(len(pendingNodes))
 			}
 		} else {
-			for _, n := range pendingNodes { _ = s.store.BulkInsertGraphNode(ctx, n); contentProg.Inc(1) }
+			for _, n := range pendingNodes {
+				_ = s.store.BulkInsertGraphNode(ctx, n)
+				contentProg.Inc(1)
+			}
 		}
 		pendingNodes = pendingNodes[:0]
 	}
@@ -551,7 +582,9 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	for _, rel := range relationships {
 		pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("subreddit_%d", rel.SourceSubredditID), Target: fmt.Sprintf("subreddit_%d", rel.TargetSubredditID)})
 		relLinks++
-		if len(pendingLinks)%5000 == 0 { flushLinks(false) }
+		if len(pendingLinks)%5000 == 0 {
+			flushLinks(false)
+		}
 	}
 	flushLinks(true)
 	log.Printf("✅ Queued %d subreddit relationship links", relLinks)
@@ -565,7 +598,9 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	for _, a := range acts {
 		pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", a.UserID), Target: fmt.Sprintf("subreddit_%d", a.SubredditID)})
 		actLinks++
-		if len(pendingLinks)%10000 == 0 { flushLinks(false) }
+		if len(pendingLinks)%10000 == 0 {
+			flushLinks(false)
+		}
 	}
 	flushLinks(true)
 	log.Printf("✅ Queued %d user activity links", actLinks)
@@ -575,13 +610,17 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 		for _, ap := range authoredPosts {
 			pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", ap.authorID), Target: fmt.Sprintf("post_%s", ap.postID)})
 			upost++
-			if len(pendingLinks)%10000 == 0 { flushLinks(false) }
+			if len(pendingLinks)%10000 == 0 {
+				flushLinks(false)
+			}
 		}
 		ucom := 0
 		for _, ac := range authoredComments {
 			pendingLinks = append(pendingLinks, db.BulkInsertGraphLinkParams{Source: fmt.Sprintf("user_%d", ac.authorID), Target: fmt.Sprintf("comment_%s", ac.commentID)})
 			ucom++
-			if len(pendingLinks)%10000 == 0 { flushLinks(false) }
+			if len(pendingLinks)%10000 == 0 {
+				flushLinks(false)
+			}
 		}
 		flushLinks(true)
 		log.Printf("🔗 Added %d user→post and %d user→comment links", upost, ucom)
@@ -613,10 +652,10 @@ func (s *Service) checkPositionColumnsExist(ctx context.Context, queries *db.Que
 	rows, err := queries.DB().QueryContext(ctx, checkSQL)
 	if err != nil {
 		// Check if it's a column doesn't exist error (PostgreSQL error code 42703)
-		if strings.Contains(err.Error(), "does not exist") && 
-		   (strings.Contains(err.Error(), "pos_x") || 
-		    strings.Contains(err.Error(), "pos_y") || 
-		    strings.Contains(err.Error(), "pos_z")) {
+		if strings.Contains(err.Error(), "does not exist") &&
+			(strings.Contains(err.Error(), "pos_x") ||
+				strings.Contains(err.Error(), "pos_y") ||
+				strings.Contains(err.Error(), "pos_z")) {
 			return false
 		}
 		// Other errors are unexpected but we'll treat as "not available"
@@ -632,7 +671,7 @@ func (s *Service) checkPositionColumnsExist(ctx context.Context, queries *db.Que
 // bounded to avoid heavy CPU load.
 func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	layoutStart := time.Now()
-	
+
 	// Only works with real db.Queries (not fakes/mocks)
 	queries, ok := s.store.(*db.Queries)
 	if !ok {
@@ -651,46 +690,62 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	// Caps and iteration counts via env to keep safe on servers
 	maxNodes := 5000
 	if v := os.Getenv("LAYOUT_MAX_NODES"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 100 { maxNodes = n }
+		if n, err := strconv.Atoi(v); err == nil && n > 100 {
+			maxNodes = n
+		}
 	}
 	iterations := 400
 	if v := os.Getenv("LAYOUT_ITERATIONS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 50 { iterations = n }
+		if n, err := strconv.Atoi(v); err == nil && n > 50 {
+			iterations = n
+		}
 	}
 	batchSize := 5000
 	if v := os.Getenv("LAYOUT_BATCH_SIZE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 100 { batchSize = n }
+		if n, err := strconv.Atoi(v); err == nil && n > 100 {
+			batchSize = n
+		}
 	}
 	epsilon := 0.0 // distance threshold for updates (0 = update all)
 	if v := os.Getenv("LAYOUT_EPSILON"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 { epsilon = f }
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
+			epsilon = f
+		}
 	}
-	
+
 	log.Printf("⚙️ layout configuration: max_nodes=%d, iterations=%d, batch_size=%d, epsilon=%.2f", maxNodes, iterations, batchSize, epsilon)
-	
-	if maxNodes <= 0 || iterations <= 0 { 
+
+	if maxNodes <= 0 || iterations <= 0 {
 		log.Printf("ℹ️ layout computation disabled via configuration")
-		return nil 
+		return nil
 	}
 
 	// Fetch top-N nodes by weight and corresponding links subgraph
 	nodes, err := queries.ListGraphNodesByWeight(ctx, int32(maxNodes))
-	if err != nil { return fmt.Errorf("list nodes for layout: %w", err) }
-	if len(nodes) == 0 { 
+	if err != nil {
+		return fmt.Errorf("list nodes for layout: %w", err)
+	}
+	if len(nodes) == 0 {
 		log.Printf("ℹ️ no nodes found for layout computation")
-		return nil 
+		return nil
 	}
 	log.Printf("📊 computing layout for %d nodes with %d iterations", len(nodes), iterations)
-	
+
 	ids := make([]string, len(nodes))
-	for i, n := range nodes { ids[i] = n.ID }
+	for i, n := range nodes {
+		ids[i] = n.ID
+	}
 	links, err := queries.ListGraphLinksAmong(ctx, ids)
-	if err != nil { return fmt.Errorf("list links for layout: %w", err) }
+	if err != nil {
+		return fmt.Errorf("list links for layout: %w", err)
+	}
 	log.Printf("🔗 found %d links among selected nodes", len(links))
 
 	// Map node index
 	idx := make(map[string]int, len(nodes))
-	for i, n := range nodes { idx[n.ID] = i }
+	for i, n := range nodes {
+		idx[n.ID] = i
+	}
 
 	// Initialize positions in a circle to reduce initial clashes
 	N := len(nodes)
@@ -709,16 +764,21 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	E := make([]edge, 0, len(links))
 	seen := make(map[[2]int]struct{}, len(links))
 	for _, l := range links {
-		ia, okA := idx[l.Source]; ib, okB := idx[l.Target]
-		if !okA || !okB || ia == ib { continue }
+		ia, okA := idx[l.Source]
+		ib, okB := idx[l.Target]
+		if !okA || !okB || ia == ib {
+			continue
+		}
 		key := [2]int{min(ia, ib), max(ia, ib)}
-		if _, ok := seen[key]; ok { continue }
+		if _, ok := seen[key]; ok {
+			continue
+		}
 		seen[key] = struct{}{}
 		E = append(E, edge{a: ia, b: ib})
 	}
-	if len(E) == 0 { 
+	if len(E) == 0 {
 		log.Printf("⚠️ no edges found; skipping force-directed layout")
-		return nil 
+		return nil
 	}
 	log.Printf("🌐 initialized layout: %d nodes, %d edges, radius=%.1f", N, len(E), R)
 
@@ -728,35 +788,45 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	cool := R / float64(iterations)
 	dispX := make([]float64, N)
 	dispY := make([]float64, N)
-	var rep = func(dist float64) float64 { return (k*k)/dist }
-	var attr = func(dist float64) float64 { return (dist*dist)/k }
-	
+	var rep = func(dist float64) float64 { return (k * k) / dist }
+	var attr = func(dist float64) float64 { return (dist * dist) / k }
+
 	layoutComputeStart := time.Now()
 	for it := 0; it < iterations; it++ {
-		for i := 0; i < N; i++ { dispX[i], dispY[i] = 0, 0 }
+		for i := 0; i < N; i++ {
+			dispX[i], dispY[i] = 0, 0
+		}
 		for v := 0; v < N; v++ {
 			for u := v + 1; u < N; u++ {
 				dx := X[v] - X[u]
 				dy := Y[v] - Y[u]
 				dist := math.Hypot(dx, dy)
-				if dist < 1e-6 { dx, dy, dist = (randFloat()-0.5), (randFloat()-0.5), 1 }
+				if dist < 1e-6 {
+					dx, dy, dist = (randFloat() - 0.5), (randFloat() - 0.5), 1
+				}
 				force := rep(dist)
 				rx := dx / dist * force
 				ry := dy / dist * force
-				dispX[v] += rx; dispY[v] += ry
-				dispX[u] -= rx; dispY[u] -= ry
+				dispX[v] += rx
+				dispY[v] += ry
+				dispX[u] -= rx
+				dispY[u] -= ry
 			}
 		}
 		for _, e := range E {
 			dx := X[e.a] - X[e.b]
 			dy := Y[e.a] - Y[e.b]
 			dist := math.Hypot(dx, dy)
-			if dist < 1e-6 { dx, dy, dist = (randFloat()-0.5), (randFloat()-0.5), 1 }
+			if dist < 1e-6 {
+				dx, dy, dist = (randFloat() - 0.5), (randFloat() - 0.5), 1
+			}
 			force := attr(dist)
 			ax := dx / dist * force
 			ay := dy / dist * force
-			dispX[e.a] -= ax; dispY[e.a] -= ay
-			dispX[e.b] += ax; dispY[e.b] += ay
+			dispX[e.a] -= ax
+			dispY[e.a] -= ay
+			dispX[e.b] += ax
+			dispY[e.b] += ay
 		}
 		// limit max displacement (temperature)
 		temp := R - float64(it)*cool
@@ -769,8 +839,16 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 				Y[v] += dy / disp * math.Min(disp, temp)
 			}
 			// prevent blow-up
-			if X[v] > 1e6 { X[v] = 1e6 } else if X[v] < -1e6 { X[v] = -1e6 }
-			if Y[v] > 1e6 { Y[v] = 1e6 } else if Y[v] < -1e6 { Y[v] = -1e6 }
+			if X[v] > 1e6 {
+				X[v] = 1e6
+			} else if X[v] < -1e6 {
+				X[v] = -1e6
+			}
+			if Y[v] > 1e6 {
+				Y[v] = 1e6
+			} else if Y[v] < -1e6 {
+				Y[v] = -1e6
+			}
 		}
 	}
 	layoutComputeDuration := time.Since(layoutComputeStart)
@@ -783,19 +861,26 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 		return fmt.Errorf("update positions: %w", err)
 	}
 	updateDuration := time.Since(updateStart)
-	
+
 	totalDuration := time.Since(layoutStart)
 	log.Printf("🗺️ layout complete: %d/%d positions updated in %s (total: %s)", updated, len(ids), updateDuration.Truncate(time.Millisecond), totalDuration.Truncate(time.Millisecond))
-	
+
 	return nil
 }
 
-func max(a, b int) int { if a > b { return a } ; return b }
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
 
 // simple random float in [0,1); no global rng dependency to avoid races
 func randFloat() float64 {
 	// Xorshift-based tiny RNG
 	var x uint64 = uint64(time.Now().UnixNano())
-	x ^= x << 13; x ^= x >> 7; x ^= x << 17
+	x ^= x << 13
+	x ^= x >> 7
+	x ^= x << 17
 	return float64(x%1_000_000) / 1_000_000.0
 }
