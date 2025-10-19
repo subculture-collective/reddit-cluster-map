@@ -22,6 +22,7 @@ export interface FrameThrottleOptions {
 
 export class FrameThrottler {
   private isIdle = false;
+  /** Tracks whether the throttler is currently active (started and not stopped) */
   private isActive = false;
   private lastInteraction = Date.now();
   private lastFrame = 0;
