@@ -79,6 +79,7 @@ backend/build/
 backend/coverage/
 backend/.env
 backend/.env.*
+!backend/.env.example
 backend/sqlc.json
 backend/sqlc.gen.go
 backend/**/sqlc.json

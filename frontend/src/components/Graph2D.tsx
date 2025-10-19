@@ -2,6 +2,7 @@ import * as d3 from "d3";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GraphData, GraphNode, GraphLink } from "../types/graph";
 import type { TypeFilters } from "../types/ui";
+import { FrameThrottler } from "../utils/frameThrottle";
 
 type SubSizeMode =
   | "subscribers"
@@ -201,6 +202,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const linkGroupRef = useRef<LinkSelection | null>(null);
   const nodeGroupRef = useRef<NodeSelection | null>(null);
   const labelGroupRef = useRef<LabelSelection | null>(null);
+  const frameThrottlerRef = useRef<FrameThrottler | null>(null);
+  const needsRenderRef = useRef(false);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -639,7 +642,18 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       }
     }
 
-    // Update positions on tick
+    // Initialize frame throttler for render updates
+    if (!frameThrottlerRef.current) {
+      frameThrottlerRef.current = new FrameThrottler({
+        activeFps: 60,
+        idleFps: 15,
+        idleTimeout: 2000,
+      });
+    }
+
+    const throttler = frameThrottlerRef.current;
+
+    // Update positions on tick with throttling
     simulation.on("tick", () => {
       const currentLinkGroup = linkGroupRef.current;
       const currentNodeGroup = nodeGroupRef.current;
@@ -652,6 +666,19 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
           .attr("x2", (d) => (d.target as D3Node).x ?? 0)
           .attr("y2", (d) => (d.target as D3Node).y ?? 0);
       }
+      needsRenderRef.current = true;
+    });
+
+    // Throttled render loop
+    throttler.start(() => {
+      if (!needsRenderRef.current) return;
+      needsRenderRef.current = false;
+      
+      linkGroup
+        .attr("x1", (d) => (d.source as D3Node).x ?? 0)
+        .attr("y1", (d) => (d.source as D3Node).y ?? 0)
+        .attr("x2", (d) => (d.target as D3Node).x ?? 0)
+        .attr("y2", (d) => (d.target as D3Node).y ?? 0);
 
       if (currentNodeGroup) {
         currentNodeGroup.attr("cx", (d) => d.x ?? 0).attr("cy", (d) => d.y ?? 0);
@@ -676,6 +703,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       linkGroupRef.current = null;
       nodeGroupRef.current = null;
       labelGroupRef.current = null;
+      throttler.stop();
     };
   }, [
     filtered,
@@ -723,7 +751,15 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const isLoading = loading;
 
   return (
-    <div ref={containerRef} className="w-full h-screen relative bg-black">
+    <div 
+      ref={containerRef} 
+      className="w-full h-screen relative bg-black"
+      onMouseMove={() => frameThrottlerRef.current?.markActive()}
+      onWheel={() => frameThrottlerRef.current?.markActive()}
+      onMouseDown={() => frameThrottlerRef.current?.markActive()}
+      onTouchStart={() => frameThrottlerRef.current?.markActive()}
+      onTouchMove={() => frameThrottlerRef.current?.markActive()}
+    >
       {error && (
         <div className="absolute top-2 left-2 z-20 bg-red-900/70 text-red-100 rounded px-3 py-2 text-sm">
           Error: {error}
