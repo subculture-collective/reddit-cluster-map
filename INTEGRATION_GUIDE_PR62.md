@@ -77,7 +77,7 @@ If there are VirtualList usages, add similar `itemKey` props:
   items={communityResult.communities}
   itemHeight={...}
   containerHeight={...}
-  itemKey={(community) => community.id.toString()}  // ADD THIS LINE
+  itemKey={(community) => community.id}  // ADD THIS LINE
   renderItem={(community, i) => (
     // ... existing render code
   )}
