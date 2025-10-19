@@ -673,6 +673,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     }
 
     return () => {
+      simulation.on('tick', null);
       simulation.stop();
       simulationRef.current = null;
       linkGroupRef.current = null;

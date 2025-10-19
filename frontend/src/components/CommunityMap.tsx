@@ -257,7 +257,10 @@ export default function CommunityMap({
     });
 
     sim.alpha(0.9).restart();
-    return () => void sim.stop();
+    return () => {
+      sim.on('tick', null);
+      sim.stop();
+    };
   }, [aggregated, onFocusNode]);
 
   return (
