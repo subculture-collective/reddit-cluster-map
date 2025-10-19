@@ -304,6 +304,14 @@ export default function Graph3D(props: Props) {
     const n = typeof raw === "string" ? parseInt(raw) : Number(raw);
     return Number.isFinite(n) && (n as number) > 0 ? (n as number) : 50000;
   }, []);
+  const CAMERA_ANIMATION_DURATION_MS = useMemo(() => {
+    const raw = import.meta.env?.VITE_CAMERA_ANIMATION_DURATION_MS as unknown as
+      | string
+      | number
+      | undefined;
+    const n = typeof raw === "string" ? parseInt(raw) : Number(raw);
+    return Number.isFinite(n) && (n as number) > 0 ? (n as number) : 1500;
+  }, []);
 
   const activeTypes = useMemo(() => {
     const enabled = Object.entries(filters)
@@ -456,9 +464,9 @@ export default function Graph3D(props: Props) {
     (fgRef.current as unknown as FGApi | undefined)?.cameraPosition?.(
       { x: x * distRatio, y: y * distRatio, z: z * distRatio },
       { x, y, z },
-      1500
+      CAMERA_ANIMATION_DURATION_MS
     );
-  }, [focusNodeId, graphData]);
+  }, [focusNodeId, graphData, CAMERA_ANIMATION_DURATION_MS]);
 
   // filters and links
   const allowed = useMemo(
