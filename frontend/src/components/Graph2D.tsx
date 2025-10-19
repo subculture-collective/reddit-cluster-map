@@ -631,8 +631,6 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       }
     }
 
-    // Update positions on tick
-    const tickHandler = () => {
     // Initialize frame throttler for render updates
     if (!frameThrottlerRef.current) {
       frameThrottlerRef.current = new FrameThrottler({
@@ -644,10 +642,13 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     const throttler = frameThrottlerRef.current;
 
-    // Update positions on tick with throttling
-    simulation.on("tick.graph2d", () => {
+    // Define tick handler to mark render as needed
+    const tickHandler = () => {
       needsRenderRef.current = true;
-    });
+    };
+
+    // Register single tick listener
+    simulation.on("tick.graph2d", tickHandler);
 
     // Throttled render loop
     throttler.start(() => {
@@ -665,8 +666,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       if (labelGroup) {
         labelGroup.attr("x", (d) => d.x ?? 0).attr("y", (d) => (d.y ?? 0) - 10);
       }
-    };
-    simulation.on("tick.graph2d", tickHandler);
+    });
 
     // Run for initial layout
     if (hasPrecomputedPositions) {
