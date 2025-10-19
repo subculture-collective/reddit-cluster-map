@@ -22,6 +22,7 @@ export interface FrameThrottleOptions {
 
 export class FrameThrottler {
   private isIdle = false;
+  private isActive = false;
   private lastInteraction = Date.now();
   private lastFrame = 0;
   private rafId: number | null = null;
@@ -61,10 +62,14 @@ export class FrameThrottler {
    */
   start(callback: (time: number) => void): void {
     this.stop();
+    this.isActive = true;
     
     // Check idle state periodically
     this.idleCheckInterval = window.setInterval(() => {
-      this.checkIdle();
+      // Only check idle state if throttler is still active
+      if (this.isActive) {
+        this.checkIdle();
+      }
     }, 500);
     
     const loop = (time: number) => {
@@ -86,6 +91,7 @@ export class FrameThrottler {
    * Stop the frame loop
    */
   stop(): void {
+    this.isActive = false;
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
