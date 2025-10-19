@@ -26,7 +26,7 @@ export default function Communities({
     null
   );
   const [computing, setComputing] = useState(false);
-  const timeoutRef = useRef<number | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const computeCommunities = useCallback(
     (data: GraphData) => {
@@ -42,7 +42,6 @@ export default function Communities({
         const result = detectCommunities(data);
         setCommunityResult(result);
         setComputing(false);
-        timeoutRef.current = null;
 
         // Notify parent to apply colors
         onApplyCommunityColors?.(result);
