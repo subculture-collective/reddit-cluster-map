@@ -204,6 +204,9 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const labelGroupRef = useRef<LabelSelection | null>(null);
   const frameThrottlerRef = useRef<FrameThrottler | null>(null);
   const needsRenderRef = useRef(false);
+  const linkGroupRef = useRef<d3.Selection<SVGLineElement, D3Link, SVGGElement, unknown> | null>(null);
+  const nodeGroupRef = useRef<d3.Selection<SVGCircleElement, D3Node, SVGGElement, unknown> | null>(null);
+  const labelGroupRef = useRef<d3.Selection<SVGTextElement, D3Node, SVGGElement, unknown> | null>(null);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -516,6 +519,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       .attr("stroke", "#999")
       .attr("stroke-opacity", linkOpacity)
       .attr("stroke-width", 1);
+    
+    linkGroupRef.current = linkGroup;
 
     // Store in ref for tick callback
     linkGroupRef.current = linkGroup;
@@ -570,6 +575,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     // Add titles (tooltips)
     nodeGroup.append("title").text((d) => d.name || d.id);
+    
+    nodeGroupRef.current = nodeGroup;
 
     // Add labels if enabled
     if (showLabels) {
@@ -665,6 +672,9 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       needsRenderRef.current = false;
       
       const currentLinkGroup = linkGroupRef.current;
+      const currentNodeGroup = nodeGroupRef.current;
+      const currentLabelGroup = labelGroupRef.current;
+      
       if (currentLinkGroup) {
         currentLinkGroup
           .attr("x1", (d) => (d.source as D3Node).x ?? 0)
