@@ -17,6 +17,7 @@ services:
     healthcheck:
       # Use jq to properly validate JSON structure instead of grep for '[' character
       # This ensures we get valid JSON with the expected status field, not just any response containing '['
+      # Alternative: test: ["CMD", "curl", "-f", "http://localhost:8000/health"] (checks HTTP status only)
       test: ["CMD", "sh", "-c", "curl -f http://localhost:8000/health | jq -e '.status == \"ok\"' > /dev/null"]
       interval: 30s
       timeout: 5s
