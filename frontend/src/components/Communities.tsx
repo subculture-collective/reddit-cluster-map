@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import type { GraphData } from "../types/graph";
 import {
   detectCommunities,
@@ -26,12 +26,19 @@ export default function Communities({
     null
   );
   const [computing, setComputing] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const computeCommunities = useCallback(
     (data: GraphData) => {
       setComputing(true);
+      
+      // Clear any existing timeout to prevent state updates from previous calls
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current);
+      }
+      
       // Use setTimeout to allow UI to update
-      setTimeout(() => {
+      timeoutRef.current = setTimeout(() => {
         const result = detectCommunities(data);
         setCommunityResult(result);
         setComputing(false);
@@ -69,6 +76,15 @@ export default function Communities({
   useEffect(() => {
     loadGraph();
   }, [loadGraph]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleRecompute = () => {
     if (graphData) {
