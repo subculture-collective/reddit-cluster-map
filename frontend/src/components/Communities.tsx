@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import type { GraphData } from "../types/graph";
 import { detectCommunities, type CommunityResult } from "../utils/communityDetection";
+import VirtualList from "./VirtualList";
 
 type CommunitiesProps = {
   onViewMode?: (mode: "3d" | "2d") => void;
@@ -216,11 +217,13 @@ export default function Communities({
           <h2 className="text-xl font-semibold mb-4">
             All Communities ({communityResult.communities.length})
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {communityResult.communities.map((community) => (
+          <VirtualList
+            items={communityResult.communities}
+            itemHeight={160}
+            containerHeight={600}
+            renderItem={(community) => (
               <div
-                key={community.id}
-                className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                className={`p-4 rounded-lg border-2 cursor-pointer transition-all mb-4 ${
                   selectedCommunity === community.id
                     ? "border-white bg-gray-700"
                     : "border-gray-700 bg-gray-750 hover:border-gray-600"
@@ -265,8 +268,8 @@ export default function Communities({
                   </div>
                 )}
               </div>
-            ))}
-          </div>
+            )}
+          />
         </div>
 
         {/* Selected Community Details */}
@@ -311,11 +314,13 @@ export default function Communities({
               <h3 className="text-lg font-semibold mb-3">
                 Top Nodes ({selectedCommunityData.topNodes?.length || 0})
               </h3>
-              <div className="space-y-2">
-                {selectedCommunityData.topNodes?.map((node, i) => (
+              <VirtualList
+                items={selectedCommunityData.topNodes || []}
+                itemHeight={64}
+                containerHeight={400}
+                renderItem={(node, i) => (
                   <div
-                    key={node.id}
-                    className="flex items-center justify-between p-3 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
+                    className="flex items-center justify-between p-3 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer mb-2"
                     onClick={() => {
                       onFocusNode?.(node.name);
                       onViewMode?.("3d");
@@ -330,8 +335,8 @@ export default function Communities({
                       <div className="text-xs text-gray-400">connections</div>
                     </div>
                   </div>
-                ))}
-              </div>
+                )}
+              />
             </div>
 
             <div className="mt-6 flex gap-2">

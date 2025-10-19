@@ -35,6 +35,19 @@ See `docs/overview.md` for the full system picture and data flow.
 
 ## 🚀 Quick start
 
+For full setup (Docker, env vars, seeding a crawl), see `docs/setup.md`.
+For CI/CD pipeline and Docker image publishing, see `docs/CI-CD.md`.
+
+Common dev tasks from `backend/`:
+
+- Setup environment file:
+  - `make setup` (creates `.env` from `.env.example`)
+- Regenerate sqlc after editing SQL in `backend/internal/queries/*.sql`:
+  - `make sqlc` (alias: `make generate`)
+- Run the one-shot graph precalc:
+  - `make precalculate`
+- Run tests:
+  - `go test ./...`
 ### For New Developers
 
 1. Clone and setup:

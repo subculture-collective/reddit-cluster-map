@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { GraphData } from "../types/graph";
+import VirtualList from "./VirtualList";
 
 interface Stats {
   totalNodes: number;
@@ -261,10 +262,13 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
           {/* Top Nodes */}
           <div className="bg-gray-800 rounded-lg p-6">
             <h2 className="text-xl font-semibold mb-4">Top Nodes by Connections</h2>
-            <div className="space-y-2">
-              {stats.topNodes.map((node, i) => (
+            <VirtualList
+              items={stats.topNodes}
+              itemHeight={48}
+              containerHeight={480}
+              className="space-y-2"
+              renderItem={(node, i) => (
                 <div
-                  key={node.id}
                   className="flex items-center justify-between p-2 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
                   onClick={() => {
                     onFocusNode?.(node.name || node.id);
@@ -283,17 +287,20 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
                     <div className="text-xs text-gray-400">connections</div>
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+            />
           </div>
 
           {/* Top Subreddits */}
           <div className="bg-gray-800 rounded-lg p-6">
             <h2 className="text-xl font-semibold mb-4">Top Subreddits</h2>
-            <div className="space-y-2">
-              {stats.topSubreddits.map((sub, i) => (
+            <VirtualList
+              items={stats.topSubreddits}
+              itemHeight={48}
+              containerHeight={480}
+              className="space-y-2"
+              renderItem={(sub, i) => (
                 <div
-                  key={sub.id}
                   className="flex items-center justify-between p-2 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
                   onClick={() => {
                     onFocusNode?.(sub.name || sub.id);
@@ -318,17 +325,20 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+            />
           </div>
 
           {/* Most Active Users */}
           <div className="bg-gray-800 rounded-lg p-6">
             <h2 className="text-xl font-semibold mb-4">Most Active Users</h2>
-            <div className="space-y-2">
-              {stats.mostActiveUsers.map((user, i) => (
+            <VirtualList
+              items={stats.mostActiveUsers}
+              itemHeight={48}
+              containerHeight={480}
+              className="space-y-2"
+              renderItem={(user, i) => (
                 <div
-                  key={user.id}
                   className="flex items-center justify-between p-2 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
                   onClick={() => {
                     onFocusNode?.(user.name || user.id);
@@ -348,8 +358,8 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+            />
           </div>
 
           {/* Graph Density */}
