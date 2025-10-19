@@ -43,13 +43,17 @@ for sub in "${SUBREDDITS[@]}"; do
     echo -n "  - ${sub}... "
     RESPONSE=$(curl -s --max-time ${TIMEOUT} -X POST "${API_URL}/api/crawl" \
         -H "Content-Type: application/json" \
-        -d "{\"subreddit\": \"${sub}\"}" 2>&1)
+        -d "{\"subreddit\": \"${sub}\"}" -w "\n%{http_code}" 2>&1)
     
-    # Check if request was successful (status 200-299 or contains expected fields)
-    if echo "$RESPONSE" | grep -q '"subreddit"' || echo "$RESPONSE" | grep -q '"status"'; then
+    # Separate response body and status code
+    HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
+    HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+    
+    # Check if request was successful (status 200-299)
+    if [[ "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]]; then
         echo -e "${GREEN}✓${NC}"
     else
-        echo -e "${YELLOW}⚠${NC} (Response: ${RESPONSE})"
+        echo -e "${YELLOW}⚠${NC} (HTTP $HTTP_CODE, Response: ${HTTP_BODY})"
     fi
 done
 
