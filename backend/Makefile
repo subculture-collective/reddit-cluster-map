@@ -180,7 +180,7 @@ test-crawl: check-env ## Test crawl endpoint (requires SUB=subreddit_name)
 		echo "Usage: make test-crawl SUB=AskReddit"; \
 		exit 1; \
 	fi
-	curl -v -X POST https://reddit-cluster-map.onnwee.me/api/crawl \
+	curl -v -X POST $${API_URL:-http://localhost:8000}/api/crawl \
 	  -H "Content-Type: application/json" \
 	  -d '{"subreddit": "$(SUB)"}'
 
