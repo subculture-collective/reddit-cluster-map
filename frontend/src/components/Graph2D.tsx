@@ -654,6 +654,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     const throttler = frameThrottlerRef.current;
 
     // Update positions on tick with throttling
+    simulation.on('tick', () => {
       // Only set needsRenderRef; all DOM updates are handled in the throttled callback
       needsRenderRef.current = true;
     });
@@ -663,16 +664,21 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       if (!needsRenderRef.current) return;
       needsRenderRef.current = false;
       
-      linkGroup
-        .attr("x1", (d) => (d.source as D3Node).x ?? 0)
-        .attr("y1", (d) => (d.source as D3Node).y ?? 0)
-        .attr("x2", (d) => (d.target as D3Node).x ?? 0)
-        .attr("y2", (d) => (d.target as D3Node).y ?? 0);
+      const currentLinkGroup = linkGroupRef.current;
+      if (currentLinkGroup) {
+        currentLinkGroup
+          .attr("x1", (d) => (d.source as D3Node).x ?? 0)
+          .attr("y1", (d) => (d.source as D3Node).y ?? 0)
+          .attr("x2", (d) => (d.target as D3Node).x ?? 0)
+          .attr("y2", (d) => (d.target as D3Node).y ?? 0);
+      }
 
+      const currentNodeGroup = nodeGroupRef.current;
       if (currentNodeGroup) {
         currentNodeGroup.attr("cx", (d) => d.x ?? 0).attr("cy", (d) => d.y ?? 0);
       }
 
+      const currentLabelGroup = labelGroupRef.current;
       if (currentLabelGroup) {
         currentLabelGroup.attr("x", (d) => d.x ?? 0).attr("y", (d) => (d.y ?? 0) - 10);
       }
