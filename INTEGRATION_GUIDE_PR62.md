@@ -11,7 +11,7 @@ PR #62 introduced a VirtualList component that uses array index as React key:
 ))}
 ```
 
-This was identified as problematic in review comment #r2442683366 because using array indices as keys causes rendering issues when items are added/removed.
+This was identified as problematic in review comment #r2442683366 because using array indices as keys causes rendering issues when items are added, removed, or reordered.
 
 ## The Fix
 
