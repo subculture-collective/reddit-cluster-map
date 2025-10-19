@@ -1,0 +1,114 @@
+# VirtualList Component Usage
+
+The `VirtualList` component provides efficient rendering for large lists by only rendering visible items.
+
+## Key Prop Requirement
+
+**Important**: The `itemKey` prop is required and must return a stable unique identifier for each item. Do not use array indices as keys.
+
+## Good Examples
+
+### Example 1: Using item ID
+```tsx
+<VirtualList
+  items={nodes}
+  itemHeight={48}
+  containerHeight={480}
+  itemKey={(node) => node.id}
+  renderItem={(node, i) => (
+    <div>{node.name}</div>
+  )}
+/>
+```
+
+### Example 2: Using composite key
+```tsx
+<VirtualList
+  items={users}
+  itemHeight={48}
+  containerHeight={480}
+  itemKey={(user) => `user-${user.id}`}
+  renderItem={(user, i) => (
+    <div>#{i + 1} {user.name}</div>
+  )}
+/>
+```
+
+### Example 3: When items don't have IDs
+If your items don't have a stable ID, consider adding one:
+```tsx
+const itemsWithIds = items.map((item, idx) => ({
+  ...item,
+  _virtualListId: `item-${idx}-${item.name}` // Use a combination that's stable
+}));
+
+<VirtualList
+  items={itemsWithIds}
+  itemHeight={48}
+  containerHeight={480}
+  itemKey={(item) => item._virtualListId}
+  renderItem={(item, i) => (
+    <div>{item.name}</div>
+  )}
+/>
+```
+
+## Bad Example (Do Not Use)
+
+```tsx
+// ❌ BAD: Using index as key
+<VirtualList
+  items={nodes}
+  itemHeight={48}
+  containerHeight={480}
+  itemKey={(node, index) => index.toString()} // This defeats the purpose!
+  renderItem={(node, i) => (
+    <div>{node.name}</div>
+  )}
+/>
+```
+
+## Why Stable Keys Matter
+
+When items are added, removed, or reordered:
+- **With stable keys**: React can efficiently reuse DOM nodes and maintain component state
+- **With index keys**: React may incorrectly reuse DOM nodes, causing:
+  - Wrong data displayed in components
+  - Loss of local component state (e.g., expanded/collapsed state)
+  - Incorrect animations
+  - Focus issues
+
+## Integration with Dashboard Component
+
+For the Dashboard component in PR #62, use the item's `id` field:
+
+```tsx
+<VirtualList
+  items={stats.topNodes}
+  itemHeight={48}
+  containerHeight={480}
+  className="space-y-2"
+  itemKey={(node) => node.id}
+  renderItem={(node, i) => (
+    <div
+      className="flex items-center justify-between p-2 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
+      onClick={() => {
+        onFocusNode?.(node.name || node.id);
+        onViewMode?.("3d");
+      }}
+    >
+      <div className="flex items-center gap-3">
+        <div className="text-gray-400 w-6">{i + 1}</div>
+        <div>
+          <div className="font-medium">{node.name}</div>
+          <div className="text-xs text-gray-400 capitalize">{node.type}</div>
+        </div>
+      </div>
+      <div className="text-right">
+        <div className="font-semibold">{node.degree}</div>
+        <div className="text-xs text-gray-400">connections</div>
+      </div>
+    </div>
+  )}
+/>
+```

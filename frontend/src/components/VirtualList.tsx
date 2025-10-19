@@ -73,7 +73,7 @@ export default function VirtualList<T>({
           {visibleItems.map((item, i) => {
             const actualIndex = startIndex + i;
             return (
-              <div key={itemKey(items[actualIndex], actualIndex)}>
+              <div key={itemKey(item, actualIndex)}>
                 {renderItem(item, actualIndex)}
               </div>
             );
