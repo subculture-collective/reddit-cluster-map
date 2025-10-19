@@ -25,10 +25,10 @@ func GetCrawlJobs(q *db.Queries) http.HandlerFunc {
 			}
 		}
 
-	       jobs, err := q.ListCrawlJobs(r.Context(), db.ListCrawlJobsParams{
-		       Column1: int32(limit),
-		       Column2: int32(offset),
-	       })
+		jobs, err := q.ListCrawlJobs(r.Context(), db.ListCrawlJobsParams{
+			Column1: int32(limit),
+			Column2: int32(offset),
+		})
 		if err != nil {
 			http.Error(w, "Failed to fetch crawl jobs", http.StatusInternalServerError)
 			return

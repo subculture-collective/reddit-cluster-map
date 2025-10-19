@@ -51,10 +51,10 @@ type Handler struct{ queries GraphDataReader }
 func NewHandler(q GraphDataReader) *Handler { return &Handler{queries: q} }
 
 type GraphNode struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Val  int    `json:"val"`
-	Type string `json:"type,omitempty"`
+	ID   string   `json:"id"`
+	Name string   `json:"name"`
+	Val  int      `json:"val"`
+	Type string   `json:"type,omitempty"`
 	X    *float64 `json:"x,omitempty"`
 	Y    *float64 `json:"y,omitempty"`
 	Z    *float64 `json:"z,omitempty"`

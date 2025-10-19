@@ -82,7 +82,7 @@ func main() {
 			runOnce(ctx, dbConn, queries, graphService)
 		}
 	}
-} 
+}
 
 // hasMinSubredditsWithPosts returns true if at least `min` distinct subreddits have posts stored
 func hasMinSubredditsWithPosts(ctx context.Context, dbc *sql.DB, min int) (bool, int, error) {

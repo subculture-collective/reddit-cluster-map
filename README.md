@@ -35,17 +35,50 @@ See `docs/overview.md` for the full system picture and data flow.
 
 ## 🚀 Quick start
 
-For full setup (Docker, env vars, seeding a crawl), see `docs/setup.md`.
-For CI/CD pipeline and Docker image publishing, see `docs/CI-CD.md`.
+### For New Developers
 
-Common dev tasks from `backend/`:
+1. Clone and setup:
+   ```bash
+   git clone https://github.com/subculture-collective/reddit-cluster-map.git
+   cd reddit-cluster-map/backend
+   make setup  # Creates .env and checks tools
+   ```
 
-- Regenerate sqlc after editing SQL in `backend/internal/queries/*.sql`:
-  - `make sqlc` (alias: `make generate`)
-- Run the one-shot graph precalc:
-  - `make precalculate`
-- Run tests:
-  - `go test ./...`
+2. Configure `backend/.env` with your Reddit OAuth credentials and database password
+
+3. Start services:
+   ```bash
+   docker compose up -d --build
+   make migrate-up-local
+   ```
+
+4. (Optional) Seed sample data and run smoke tests:
+   ```bash
+   make seed
+   make smoke-test
+   ```
+
+See the **[Developer Guide](docs/developer-guide.md)** for detailed workflows, testing, and best practices.
+
+### Documentation
+
+- **[Developer Guide](docs/developer-guide.md)** - Comprehensive dev workflows, Makefile targets, testing, and troubleshooting
+- **[Setup Guide](docs/setup.md)** - Full setup instructions for Docker, env vars, and seeding
+- **[API Documentation](docs/api.md)** - API endpoints and usage
+- **[Architecture Overview](docs/overview.md)** - System design and data flow
+- **[CI/CD Pipeline](docs/CI-CD.md)** - Continuous integration and deployment
+
+### Common Development Tasks
+
+From `backend/`, run `make help` to see all available targets. Key ones:
+
+- `make generate` - Regenerate sqlc code after editing SQL
+- `make precalculate` - Run graph precalculation
+- `make test` - Run all tests
+- `make lint` - Check code formatting and run go vet
+- `make fmt` - Auto-format Go code
+- `make smoke-test` - Run API health checks
+- `make seed` - Populate database with sample data
 
 ---
 

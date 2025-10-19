@@ -30,8 +30,8 @@ type Config struct {
 	RedditRedirectURI  string
 	RedditScopes       string
 	// Crawler scheduling
-	StaleDays                int
-	ResetCrawlingAfterMin    int
+	StaleDays             int
+	ResetCrawlingAfterMin int
 	// API background graph job control
 	DisableAPIGraphJob bool
 	// Admin API token for gating admin endpoints (Bearer token)
