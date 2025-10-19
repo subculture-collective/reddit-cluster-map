@@ -28,7 +28,16 @@ if [ -n "$GO_FILES" ]; then
     # Run gofmt check
     echo -n "  - Running gofmt... "
     cd "$REPO_ROOT/backend"
-    UNFORMATTED=$(echo "$GO_FILES" | xargs gofmt -l 2>/dev/null || true)
+    UNFORMATTED=""
+    while IFS= read -r file; do
+        # Only check files that exist (in case of deleted files staged for removal)
+        if [ -f "$file" ]; then
+            fmt_out=$(gofmt -l "$file" 2>/dev/null || true)
+            if [ -n "$fmt_out" ]; then
+                UNFORMATTED="${UNFORMATTED}${fmt_out}"$'\n'
+            fi
+        fi
+    done <<< "$GO_FILES"
     if [ -n "$UNFORMATTED" ]; then
         echo -e "${RED}✗${NC}"
         echo -e "${RED}The following files need formatting:${NC}"
