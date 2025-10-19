@@ -645,7 +645,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     const throttler = frameThrottlerRef.current;
 
     // Update positions on tick with throttling
-    simulation.on("tick", () => {
+    simulation.on("tick.graph2d", () => {
       needsRenderRef.current = true;
     });
 
@@ -666,7 +666,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         labelGroup.attr("x", (d) => d.x ?? 0).attr("y", (d) => (d.y ?? 0) - 10);
       }
     };
-    simulation.on("tick", tickHandler);
+    simulation.on("tick.graph2d", tickHandler);
 
     // Run for initial layout
     if (hasPrecomputedPositions) {
@@ -678,7 +678,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     return () => {
       // Stop simulation first, then clear tick handler to prevent memory leaks
-      simulation.stop().on("tick", null);
+      simulation.stop().on("tick.graph2d", null);
       simulationRef.current = null;
       throttler.stop();
     };
