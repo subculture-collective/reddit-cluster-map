@@ -14,6 +14,15 @@ services:
     volumes:
       # Mount backups volume read-only to expose via HTTP endpoints
       - pgbackups:/app/backups:ro
+    healthcheck:
+      # Use jq to properly validate JSON structure instead of grep for '[' character
+      # This ensures we get valid JSON with the expected status field, not just any response containing '['
+      # Alternative: test: ["CMD", "curl", "-f", "http://localhost:8000/health"] (checks HTTP status only)
+      test: ["CMD", "bash", "-c", "set -eo pipefail; curl -f http://localhost:8000/health | jq -e '.status == \"ok\"' > /dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   crawler:
     build:

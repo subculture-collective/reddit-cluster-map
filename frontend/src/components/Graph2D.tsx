@@ -197,6 +197,24 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const frameThrottlerRef = useRef<FrameThrottler | null>(null);
   const needsRenderRef = useRef(false);
+  const linkGroupRef = useRef<d3.Selection<
+    SVGLineElement,
+    D3Link,
+    SVGGElement,
+    unknown
+  > | null>(null);
+  const nodeGroupRef = useRef<d3.Selection<
+    SVGCircleElement,
+    D3Node,
+    SVGGElement,
+    unknown
+  > | null>(null);
+  const labelGroupRef = useRef<d3.Selection<
+    SVGTextElement,
+    D3Node,
+    SVGGElement,
+    unknown
+  > | null>(null);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -510,6 +528,9 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       .attr("stroke-opacity", linkOpacity)
       .attr("stroke-width", 1);
 
+    // Store in ref for tick callback
+    linkGroupRef.current = linkGroup;
+
     // Draw nodes
     const nodeGroup = g
       .append("g")
@@ -555,17 +576,13 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         }
       });
 
+    // Store in ref for tick callback
+    nodeGroupRef.current = nodeGroup;
+
     // Add titles (tooltips)
     nodeGroup.append("title").text((d) => d.name || d.id);
 
     // Add labels if enabled
-    let labelGroup: d3.Selection<
-      SVGTextElement,
-      D3Node,
-      SVGGElement,
-      unknown
-    > | null = null;
-
     if (showLabels) {
       // Select top nodes by weight
       const weights = nodes.map((n) => {
@@ -581,7 +598,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       const TOP = Math.min(200, preferred.length);
       const labelNodes = preferred.slice(0, TOP).map((x) => x.node);
 
-      labelGroup = g
+      const labelGroup = g
         .append("g")
         .attr("class", "labels")
         .selectAll("text")
@@ -601,6 +618,11 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         .attr("text-anchor", "middle")
         .attr("pointer-events", "none")
         .style("user-select", "none");
+
+      // Store in ref for tick callback
+      labelGroupRef.current = labelGroup;
+    } else {
+      labelGroupRef.current = null;
     }
 
     // If we have precomputed positions, fit the initial view to the layout bounds
@@ -648,24 +670,36 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     };
 
     // Register single tick listener
-    const TICK_EVT = 'tick.graph2d';
+    const TICK_EVT = "tick.graph2d";
     simulation.on(TICK_EVT, tickHandler);
 
     // Throttled render loop
     throttler.start(() => {
       if (!needsRenderRef.current) return;
       needsRenderRef.current = false;
-      
-      linkGroup
-        .attr("x1", (d) => (d.source as D3Node).x ?? 0)
-        .attr("y1", (d) => (d.source as D3Node).y ?? 0)
-        .attr("x2", (d) => (d.target as D3Node).x ?? 0)
-        .attr("y2", (d) => (d.target as D3Node).y ?? 0);
 
-      nodeGroup.attr("cx", (d) => d.x ?? 0).attr("cy", (d) => d.y ?? 0);
+      const currentLinkGroup = linkGroupRef.current;
 
-      if (labelGroup) {
-        labelGroup.attr("x", (d) => d.x ?? 0).attr("y", (d) => (d.y ?? 0) - 10);
+      if (currentLinkGroup) {
+        currentLinkGroup
+          .attr("x1", (d) => (d.source as D3Node).x ?? 0)
+          .attr("y1", (d) => (d.source as D3Node).y ?? 0)
+          .attr("x2", (d) => (d.target as D3Node).x ?? 0)
+          .attr("y2", (d) => (d.target as D3Node).y ?? 0);
+      }
+
+      const currentNodeGroup = nodeGroupRef.current;
+      if (currentNodeGroup) {
+        currentNodeGroup
+          .attr("cx", (d) => d.x ?? 0)
+          .attr("cy", (d) => d.y ?? 0);
+      }
+
+      const currentLabelGroup = labelGroupRef.current;
+      if (currentLabelGroup) {
+        currentLabelGroup
+          .attr("x", (d) => d.x ?? 0)
+          .attr("y", (d) => (d.y ?? 0) - 10);
       }
     });
 
@@ -681,6 +715,9 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       // Stop simulation first, then clear tick handler to prevent memory leaks
       simulation.stop().on(TICK_EVT, null);
       simulationRef.current = null;
+      linkGroupRef.current = null;
+      nodeGroupRef.current = null;
+      labelGroupRef.current = null;
       frameThrottlerRef.current?.stop();
     };
   }, [
@@ -729,8 +766,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const isLoading = loading;
 
   return (
-    <div 
-      ref={containerRef} 
+    <div
+      ref={containerRef}
       className="w-full h-screen relative bg-black"
       onMouseMove={() => frameThrottlerRef.current?.markActive()}
       onWheel={() => frameThrottlerRef.current?.markActive()}
