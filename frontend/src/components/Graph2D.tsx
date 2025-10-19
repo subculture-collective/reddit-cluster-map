@@ -47,6 +47,10 @@ type D3Link = {
   target: string | D3Node;
 };
 
+type LinkSelection = d3.Selection<SVGLineElement, D3Link, SVGGElement, unknown>;
+type NodeSelection = d3.Selection<SVGCircleElement, D3Node, SVGGElement, unknown>;
+type LabelSelection = d3.Selection<SVGTextElement, D3Node, SVGGElement, unknown>;
+
 // ---- Helper functions (same as 3D) ----
 
 const buildDegreeMap = (links: GraphLink[]) => {
@@ -512,7 +516,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       .attr("stroke", "#999")
       .attr("stroke-opacity", linkOpacity)
       .attr("stroke-width", 1);
-    
+
+    // Store in ref for tick callback
     linkGroupRef.current = linkGroup;
 
     // Draw nodes
@@ -560,19 +565,13 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         }
       });
 
-    // Add titles (tooltips)
-    nodeGroup.append("title").text((d) => d.name || d.id);
-    
+    // Store in ref for tick callback
     nodeGroupRef.current = nodeGroup;
 
-    // Add labels if enabled
-    let labelGroup: d3.Selection<
-      SVGTextElement,
-      D3Node,
-      SVGGElement,
-      unknown
-    > | null = null;
+    // Add titles (tooltips)
+    nodeGroup.append("title").text((d) => d.name || d.id);
 
+    // Add labels if enabled
     if (showLabels) {
       // Select top nodes by weight
       const weights = nodes.map((n) => {
@@ -588,7 +587,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       const TOP = Math.min(200, preferred.length);
       const labelNodes = preferred.slice(0, TOP).map((x) => x.node);
 
-      labelGroup = g
+      const labelGroup = g
         .append("g")
         .attr("class", "labels")
         .selectAll("text")
@@ -608,7 +607,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         .attr("text-anchor", "middle")
         .attr("pointer-events", "none")
         .style("user-select", "none");
-      
+
+      // Store in ref for tick callback
       labelGroupRef.current = labelGroup;
     } else {
       labelGroupRef.current = null;
@@ -654,7 +654,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     const throttler = frameThrottlerRef.current;
 
     // Update positions on tick with throttling
-    simulation.on("tick", () => {
+    simulation.on('tick', () => {
+      // Only set needsRenderRef; all DOM updates are handled in the throttled callback
       needsRenderRef.current = true;
     });
 
@@ -675,10 +676,12 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
           .attr("y2", (d) => (d.target as D3Node).y ?? 0);
       }
 
+      const currentNodeGroup = nodeGroupRef.current;
       if (currentNodeGroup) {
         currentNodeGroup.attr("cx", (d) => d.x ?? 0).attr("cy", (d) => d.y ?? 0);
       }
 
+      const currentLabelGroup = labelGroupRef.current;
       if (currentLabelGroup) {
         currentLabelGroup.attr("x", (d) => d.x ?? 0).attr("y", (d) => (d.y ?? 0) - 10);
       }
@@ -693,8 +696,12 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     }
 
     return () => {
+      simulation.on('tick', null);
       simulation.stop();
       simulationRef.current = null;
+      linkGroupRef.current = null;
+      nodeGroupRef.current = null;
+      labelGroupRef.current = null;
       throttler.stop();
     };
   }, [
