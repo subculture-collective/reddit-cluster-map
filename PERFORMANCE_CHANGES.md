@@ -1,7 +1,7 @@
 # Performance Optimization Implementation Summary
 
 ## Issue
-Performance improvements for client-side rendering and level-of-detail (Issue #XX, Milestone M1)
+Performance improvements for client-side rendering and level-of-detail (Issue #48, Milestone M1)
 
 ## Tasks Completed
 ✅ Level-of-detail rendering strategies (link thinning, sprite labels)
