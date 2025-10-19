@@ -648,7 +648,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     };
 
     // Register single tick listener
-    simulation.on("tick.graph2d", tickHandler);
+    const TICK_EVT = 'tick.graph2d';
+    simulation.on(TICK_EVT, tickHandler);
 
     // Throttled render loop
     throttler.start(() => {
@@ -678,7 +679,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     return () => {
       // Stop simulation first, then clear tick handler to prevent memory leaks
-      simulation.stop().on("tick.graph2d", null);
+      simulation.stop().on(TICK_EVT, null);
       simulationRef.current = null;
       frameThrottlerRef.current?.stop();
     };
