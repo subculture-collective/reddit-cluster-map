@@ -194,6 +194,24 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<d3.Simulation<D3Node, D3Link> | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  const linkGroupRef = useRef<d3.Selection<
+    SVGLineElement,
+    D3Link,
+    SVGGElement,
+    unknown
+  > | null>(null);
+  const nodeGroupRef = useRef<d3.Selection<
+    SVGCircleElement,
+    D3Node,
+    SVGGElement,
+    unknown
+  > | null>(null);
+  const labelGroupRef = useRef<d3.Selection<
+    SVGTextElement,
+    D3Node,
+    SVGGElement,
+    unknown
+  > | null>(null);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -507,6 +525,9 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       .attr("stroke-opacity", linkOpacity)
       .attr("stroke-width", 1);
 
+    // Store in ref for tick callback
+    linkGroupRef.current = linkGroup;
+
     // Draw nodes
     const nodeGroup = g
       .append("g")
@@ -551,6 +572,9 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
           d3.select(this).attr("stroke", "none");
         }
       });
+
+    // Store in ref for tick callback
+    nodeGroupRef.current = nodeGroup;
 
     // Add titles (tooltips)
     nodeGroup.append("title").text((d) => d.name || d.id);
@@ -598,6 +622,11 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         .attr("text-anchor", "middle")
         .attr("pointer-events", "none")
         .style("user-select", "none");
+
+      // Store in ref for tick callback
+      labelGroupRef.current = labelGroup;
+    } else {
+      labelGroupRef.current = null;
     }
 
     // If we have precomputed positions, fit the initial view to the layout bounds
@@ -630,16 +659,24 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     // Update positions on tick
     simulation.on("tick", () => {
-      linkGroup
-        .attr("x1", (d) => (d.source as D3Node).x ?? 0)
-        .attr("y1", (d) => (d.source as D3Node).y ?? 0)
-        .attr("x2", (d) => (d.target as D3Node).x ?? 0)
-        .attr("y2", (d) => (d.target as D3Node).y ?? 0);
+      const currentLinkGroup = linkGroupRef.current;
+      const currentNodeGroup = nodeGroupRef.current;
+      const currentLabelGroup = labelGroupRef.current;
 
-      nodeGroup.attr("cx", (d) => d.x ?? 0).attr("cy", (d) => d.y ?? 0);
+      if (currentLinkGroup) {
+        currentLinkGroup
+          .attr("x1", (d) => (d.source as D3Node).x ?? 0)
+          .attr("y1", (d) => (d.source as D3Node).y ?? 0)
+          .attr("x2", (d) => (d.target as D3Node).x ?? 0)
+          .attr("y2", (d) => (d.target as D3Node).y ?? 0);
+      }
 
-      if (labelGroup) {
-        labelGroup.attr("x", (d) => d.x ?? 0).attr("y", (d) => (d.y ?? 0) - 10);
+      if (currentNodeGroup) {
+        currentNodeGroup.attr("cx", (d) => d.x ?? 0).attr("cy", (d) => d.y ?? 0);
+      }
+
+      if (currentLabelGroup) {
+        currentLabelGroup.attr("x", (d) => d.x ?? 0).attr("y", (d) => (d.y ?? 0) - 10);
       }
     });
 
@@ -654,6 +691,9 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     return () => {
       simulation.stop();
       simulationRef.current = null;
+      linkGroupRef.current = null;
+      nodeGroupRef.current = null;
+      labelGroupRef.current = null;
     };
   }, [
     filtered,
