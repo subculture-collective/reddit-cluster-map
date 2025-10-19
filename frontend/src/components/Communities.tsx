@@ -1,6 +1,9 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import type { GraphData } from "../types/graph";
-import { detectCommunities, type CommunityResult } from "../utils/communityDetection";
+import {
+  detectCommunities,
+  type CommunityResult,
+} from "../utils/communityDetection";
 import VirtualList from "./VirtualList";
 
 type CommunitiesProps = {
@@ -9,28 +12,45 @@ type CommunitiesProps = {
   onApplyCommunityColors?: (result: CommunityResult) => void;
 };
 
-export default function Communities({ 
-  onViewMode, 
+export default function Communities({
+  onViewMode,
   onFocusNode,
   onApplyCommunityColors,
 }: CommunitiesProps) {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [communityResult, setCommunityResult] = useState<CommunityResult | null>(null);
-  const [selectedCommunity, setSelectedCommunity] = useState<number | null>(null);
+  const [communityResult, setCommunityResult] =
+    useState<CommunityResult | null>(null);
+  const [selectedCommunity, setSelectedCommunity] = useState<number | null>(
+    null
+  );
   const [computing, setComputing] = useState(false);
 
-  useEffect(() => {
-    loadGraph();
-  }, []);
+  const computeCommunities = useCallback(
+    async (data: GraphData) => {
+      setComputing(true);
+      // Use setTimeout to allow UI to update
+      setTimeout(() => {
+        const result = detectCommunities(data);
+        setCommunityResult(result);
+        setComputing(false);
 
-  const loadGraph = async () => {
+        // Notify parent to apply colors
+        onApplyCommunityColors?.(result);
+      }, 100);
+    },
+    [onApplyCommunityColors]
+  );
+
+  const loadGraph = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const base = (import.meta.env?.VITE_API_URL || "/api").replace(/\/$/, "");
-      const response = await fetch(`${base}/graph?max_nodes=50000&max_links=100000`);
+      const response = await fetch(
+        `${base}/graph?max_nodes=50000&max_links=100000`
+      );
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = (await response.json()) as GraphData;
       setGraphData(data);
@@ -44,20 +64,11 @@ export default function Communities({
     } finally {
       setLoading(false);
     }
-  };
+  }, [computeCommunities]);
 
-  const computeCommunities = async (data: GraphData) => {
-    setComputing(true);
-    // Use setTimeout to allow UI to update
-    setTimeout(() => {
-      const result = detectCommunities(data);
-      setCommunityResult(result);
-      setComputing(false);
-      
-      // Notify parent to apply colors
-      onApplyCommunityColors?.(result);
-    }, 100);
-  };
+  useEffect(() => {
+    loadGraph();
+  }, [loadGraph]);
 
   const handleRecompute = () => {
     if (graphData) {
@@ -74,20 +85,24 @@ export default function Communities({
   const stats = useMemo(() => {
     if (!communityResult || !graphData) return null;
 
-    const avgSize = communityResult.communities.reduce((sum, c) => sum + c.size, 0) / 
-                    communityResult.communities.length;
-    
+    const avgSize =
+      communityResult.communities.reduce((sum, c) => sum + c.size, 0) /
+      communityResult.communities.length;
+
     const largestCommunity = communityResult.communities[0]; // Already sorted by size
-    const smallestCommunity = communityResult.communities[communityResult.communities.length - 1];
+    const smallestCommunity =
+      communityResult.communities[communityResult.communities.length - 1];
 
     // Calculate inter-community links
     let interCommunityLinks = 0;
     for (const link of graphData.links) {
       const sourceCommunity = communityResult.nodeCommunities.get(link.source);
       const targetCommunity = communityResult.nodeCommunities.get(link.target);
-      if (sourceCommunity !== undefined && 
-          targetCommunity !== undefined && 
-          sourceCommunity !== targetCommunity) {
+      if (
+        sourceCommunity !== undefined &&
+        targetCommunity !== undefined &&
+        sourceCommunity !== targetCommunity
+      ) {
         interCommunityLinks++;
       }
     }
@@ -127,9 +142,10 @@ export default function Communities({
     );
   }
 
-  const selectedCommunityData = selectedCommunity !== null
-    ? communityResult.communities.find((c) => c.id === selectedCommunity)
-    : null;
+  const selectedCommunityData =
+    selectedCommunity !== null
+      ? communityResult.communities.find((c) => c.id === selectedCommunity)
+      : null;
 
   return (
     <div className="w-full h-screen bg-gray-900 text-white overflow-auto p-6">
@@ -138,7 +154,8 @@ export default function Communities({
           <div>
             <h1 className="text-3xl font-bold">Community Detection</h1>
             <p className="text-gray-400 mt-2">
-              Louvain algorithm - Modularity: {communityResult.modularity.toFixed(4)}
+              Louvain algorithm - Modularity:{" "}
+              {communityResult.modularity.toFixed(4)}
             </p>
           </div>
           <div className="flex gap-2">
@@ -168,21 +185,29 @@ export default function Communities({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <div className="bg-gray-800 rounded-lg p-6">
             <div className="text-gray-400 text-sm mb-2">Total Communities</div>
-            <div className="text-3xl font-bold">{communityResult.communities.length}</div>
+            <div className="text-3xl font-bold">
+              {communityResult.communities.length}
+            </div>
           </div>
           <div className="bg-gray-800 rounded-lg p-6">
             <div className="text-gray-400 text-sm mb-2">Average Size</div>
-            <div className="text-3xl font-bold">{stats?.avgSize.toFixed(1)}</div>
+            <div className="text-3xl font-bold">
+              {stats?.avgSize.toFixed(1)}
+            </div>
           </div>
           <div className="bg-gray-800 rounded-lg p-6">
             <div className="text-gray-400 text-sm mb-2">Modularity Score</div>
-            <div className="text-3xl font-bold">{communityResult.modularity.toFixed(3)}</div>
+            <div className="text-3xl font-bold">
+              {communityResult.modularity.toFixed(3)}
+            </div>
             <div className="text-xs text-gray-400 mt-1">
               (higher = better separation)
             </div>
           </div>
           <div className="bg-gray-800 rounded-lg p-6">
-            <div className="text-gray-400 text-sm mb-2">Inter-Community Links</div>
+            <div className="text-gray-400 text-sm mb-2">
+              Inter-Community Links
+            </div>
             <div className="text-3xl font-bold">
               {formatNumber(stats?.interCommunityLinks || 0)}
             </div>
@@ -191,23 +216,29 @@ export default function Communities({
 
         {/* Community Size Distribution */}
         <div className="bg-gray-800 rounded-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Community Size Distribution</h2>
+          <h2 className="text-xl font-semibold mb-4">
+            Community Size Distribution
+          </h2>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span>Largest community:</span>
               <span className="font-semibold">
-                {stats?.largestCommunity.size} nodes ({stats?.largestCommunity.label})
+                {stats?.largestCommunity.size} nodes (
+                {stats?.largestCommunity.label})
               </span>
             </div>
             <div className="flex justify-between text-sm">
               <span>Smallest community:</span>
               <span className="font-semibold">
-                {stats?.smallestCommunity.size} nodes ({stats?.smallestCommunity.label})
+                {stats?.smallestCommunity.size} nodes (
+                {stats?.smallestCommunity.label})
               </span>
             </div>
             <div className="flex justify-between text-sm">
               <span>Intra-community links:</span>
-              <span className="font-semibold">{formatNumber(stats?.intraCommunityLinks || 0)}</span>
+              <span className="font-semibold">
+                {formatNumber(stats?.intraCommunityLinks || 0)}
+              </span>
             </div>
           </div>
         </div>
@@ -219,6 +250,7 @@ export default function Communities({
           </h2>
           <VirtualList
             items={communityResult.communities}
+            itemKey={(community) => String(community.id)}
             itemHeight={160}
             containerHeight={600}
             renderItem={(community) => (
@@ -245,7 +277,8 @@ export default function Communities({
                 </div>
                 <div className="text-2xl font-bold mb-1">{community.size}</div>
                 <div className="text-xs text-gray-400">
-                  {((community.size / graphData.nodes.length) * 100).toFixed(1)}% of nodes
+                  {((community.size / graphData.nodes.length) * 100).toFixed(1)}
+                  % of nodes
                 </div>
                 {community.topNodes && community.topNodes.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-600">
@@ -270,99 +303,113 @@ export default function Communities({
               </div>
             )}
           />
-        </div>
 
-        {/* Selected Community Details */}
-        {selectedCommunityData && (
-          <div className="bg-gray-800 rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-6 h-6 rounded"
-                  style={{ backgroundColor: selectedCommunityData.color }}
-                />
-                <h2 className="text-xl font-semibold">{selectedCommunityData.label}</h2>
-              </div>
-              <button
-                onClick={() => setSelectedCommunity(null)}
-                className="text-gray-400 hover:text-white"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div>
-                <div className="text-gray-400 text-sm">Community Size</div>
-                <div className="text-2xl font-bold">{selectedCommunityData.size}</div>
-              </div>
-              <div>
-                <div className="text-gray-400 text-sm">Percentage</div>
-                <div className="text-2xl font-bold">
-                  {((selectedCommunityData.size / graphData.nodes.length) * 100).toFixed(1)}%
-                </div>
-              </div>
-              <div>
-                <div className="text-gray-400 text-sm">Rank by Size</div>
-                <div className="text-2xl font-bold">
-                  #{communityResult.communities.findIndex((c) => c.id === selectedCommunityData.id) + 1}
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-semibold mb-3">
-                Top Nodes ({selectedCommunityData.topNodes?.length || 0})
-              </h3>
-              <VirtualList
-                items={selectedCommunityData.topNodes || []}
-                itemHeight={64}
-                containerHeight={400}
-                renderItem={(node, i) => (
+          {/* Selected Community Details */}
+          {selectedCommunityData && (
+            <div className="bg-gray-800 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
                   <div
-                    className="flex items-center justify-between p-3 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer mb-2"
-                    onClick={() => {
-                      onFocusNode?.(node.name);
-                      onViewMode?.("3d");
-                    }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="text-gray-400 w-6">#{i + 1}</div>
-                      <div className="font-medium">{node.name}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold">{node.degree}</div>
-                      <div className="text-xs text-gray-400">connections</div>
-                    </div>
+                    className="w-6 h-6 rounded"
+                    style={{ backgroundColor: selectedCommunityData.color }}
+                  />
+                  <h2 className="text-xl font-semibold">
+                    {selectedCommunityData.label}
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setSelectedCommunity(null)}
+                  className="text-gray-400 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div>
+                  <div className="text-gray-400 text-sm">Community Size</div>
+                  <div className="text-2xl font-bold">
+                    {selectedCommunityData.size}
                   </div>
-                )}
-              />
-            </div>
+                </div>
+                <div>
+                  <div className="text-gray-400 text-sm">Percentage</div>
+                  <div className="text-2xl font-bold">
+                    {(
+                      (selectedCommunityData.size / graphData.nodes.length) *
+                      100
+                    ).toFixed(1)}
+                    %
+                  </div>
+                </div>
+                <div>
+                  <div className="text-gray-400 text-sm">Rank by Size</div>
+                  <div className="text-2xl font-bold">
+                    #
+                    {communityResult.communities.findIndex(
+                      (c) => c.id === selectedCommunityData.id
+                    ) + 1}
+                  </div>
+                </div>
+              </div>
 
-            <div className="mt-6 flex gap-2">
-              <button
-                onClick={() => {
-                  onViewMode?.("3d");
-                }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
-              >
-                View in 3D Graph
-              </button>
-              <button
-                onClick={() => {
-                  onViewMode?.("2d");
-                }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
-              >
-                View in 2D Graph
-              </button>
+              <div>
+                <h3 className="text-lg font-semibold mb-3">
+                  Top Nodes ({selectedCommunityData.topNodes?.length || 0})
+                </h3>
+                <VirtualList
+                  items={selectedCommunityData.topNodes || []}
+                  itemKey={(node, i) => String(node.id ?? i)}
+                  itemHeight={64}
+                  containerHeight={400}
+                  renderItem={(node, i) => (
+                    <div
+                      className="flex items-center justify-between p-3 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer mb-2"
+                      onClick={() => {
+                        onFocusNode?.(node.name);
+                        onViewMode?.("3d");
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="text-gray-400 w-6">#{i + 1}</div>
+                        <div className="font-medium">{node.name}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold">{node.degree}</div>
+                        <div className="text-xs text-gray-400">connections</div>
+                      </div>
+                    </div>
+                  )}
+                />
+              </div>
+
+              <div className="mt-6 flex gap-2">
+                <button
+                  onClick={() => {
+                    onViewMode?.("3d");
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
+                >
+                  View in 3D Graph
+                </button>
+                <button
+                  onClick={() => {
+                    onViewMode?.("2d");
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
+                >
+                  View in 2D Graph
+                </button>
+              </div>
             </div>
+          )}
+
+          <div className="mt-8 text-center text-gray-400 text-sm">
+            <p>Communities detected using the Louvain algorithm</p>
+            <p className="mt-1">
+              Colors are automatically assigned to maximize visual distinction
+            </p>
           </div>
-        )}
-
-        <div className="mt-8 text-center text-gray-400 text-sm">
-          <p>Communities detected using the Louvain algorithm</p>
-          <p className="mt-1">Colors are automatically assigned to maximize visual distinction</p>
         </div>
       </div>
     </div>
