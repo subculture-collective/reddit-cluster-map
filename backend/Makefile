@@ -8,8 +8,10 @@ API_CONTAINER = backend-api-1
 CRAWLER_CONTAINER = backend-crawler-1
 
 # Database defaults (can be overridden by .env)
+# These provide sane defaults for when .env is absent (e.g., before 'make setup')
 POSTGRES_USER ?= postgres
 POSTGRES_DB ?= reddit_cluster
+# DB_USER and DB_NAME derive from POSTGRES_USER and POSTGRES_DB for backward compatibility
 DB_USER := $(POSTGRES_USER)
 DB_NAME := $(POSTGRES_DB)
 
