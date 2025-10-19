@@ -25,6 +25,7 @@ setup:
 		echo "To recreate, delete .env first or manually copy from .env.example"; \
 	else \
 		cp .env.example .env; \
+		chmod 600 .env; \
 		echo ".env file created from .env.example"; \
 		echo "Please edit .env and configure your settings before running the application."; \
 	fi
