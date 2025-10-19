@@ -197,6 +197,9 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const frameThrottlerRef = useRef<FrameThrottler | null>(null);
   const needsRenderRef = useRef(false);
+  const linkGroupRef = useRef<d3.Selection<SVGLineElement, D3Link, SVGGElement, unknown> | null>(null);
+  const nodeGroupRef = useRef<d3.Selection<SVGCircleElement, D3Node, SVGGElement, unknown> | null>(null);
+  const labelGroupRef = useRef<d3.Selection<SVGTextElement, D3Node, SVGGElement, unknown> | null>(null);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -509,6 +512,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       .attr("stroke", "#999")
       .attr("stroke-opacity", linkOpacity)
       .attr("stroke-width", 1);
+    
+    linkGroupRef.current = linkGroup;
 
     // Draw nodes
     const nodeGroup = g
@@ -557,6 +562,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     // Add titles (tooltips)
     nodeGroup.append("title").text((d) => d.name || d.id);
+    
+    nodeGroupRef.current = nodeGroup;
 
     // Add labels if enabled
     let labelGroup: d3.Selection<
@@ -601,6 +608,10 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         .attr("text-anchor", "middle")
         .attr("pointer-events", "none")
         .style("user-select", "none");
+      
+      labelGroupRef.current = labelGroup;
+    } else {
+      labelGroupRef.current = null;
     }
 
     // If we have precomputed positions, fit the initial view to the layout bounds
@@ -652,16 +663,24 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       if (!needsRenderRef.current) return;
       needsRenderRef.current = false;
       
-      linkGroup
-        .attr("x1", (d) => (d.source as D3Node).x ?? 0)
-        .attr("y1", (d) => (d.source as D3Node).y ?? 0)
-        .attr("x2", (d) => (d.target as D3Node).x ?? 0)
-        .attr("y2", (d) => (d.target as D3Node).y ?? 0);
+      const currentLinkGroup = linkGroupRef.current;
+      const currentNodeGroup = nodeGroupRef.current;
+      const currentLabelGroup = labelGroupRef.current;
+      
+      if (currentLinkGroup) {
+        currentLinkGroup
+          .attr("x1", (d) => (d.source as D3Node).x ?? 0)
+          .attr("y1", (d) => (d.source as D3Node).y ?? 0)
+          .attr("x2", (d) => (d.target as D3Node).x ?? 0)
+          .attr("y2", (d) => (d.target as D3Node).y ?? 0);
+      }
 
-      nodeGroup.attr("cx", (d) => d.x ?? 0).attr("cy", (d) => d.y ?? 0);
+      if (currentNodeGroup) {
+        currentNodeGroup.attr("cx", (d) => d.x ?? 0).attr("cy", (d) => d.y ?? 0);
+      }
 
-      if (labelGroup) {
-        labelGroup.attr("x", (d) => d.x ?? 0).attr("y", (d) => (d.y ?? 0) - 10);
+      if (currentLabelGroup) {
+        currentLabelGroup.attr("x", (d) => d.x ?? 0).attr("y", (d) => (d.y ?? 0) - 10);
       }
     });
 
