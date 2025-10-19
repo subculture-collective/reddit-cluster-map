@@ -24,9 +24,9 @@ FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Install PostgreSQL client
+# Install PostgreSQL client and jq for JSON validation
 RUN apt-get update && \
-    apt-get install -y curl gnupg2 && \
+    apt-get install -y curl gnupg2 jq && \
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
     apt-get update && \
