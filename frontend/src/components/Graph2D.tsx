@@ -657,7 +657,6 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     simulation.on("tick", () => {
       const currentLinkGroup = linkGroupRef.current;
       const currentNodeGroup = nodeGroupRef.current;
-      const currentLabelGroup = labelGroupRef.current;
 
       if (currentLinkGroup) {
         currentLinkGroup
