@@ -7,7 +7,7 @@ DB_CONTAINER = backend-db-1
 API_CONTAINER = backend-api-1
 CRAWLER_CONTAINER = backend-crawler-1
 DB_USER = $(POSTGRES_USER)
-DB_NAME = reddit_cluster
+DB_NAME = $(POSTGRES_DB)
 
 .PHONY: setup reset migrate drop logs logs-api logs-db logs-crawler logs-all kickstart migrate-up migrate-up-local migrate-priority-fix start-crawler stop-crawler test-crawl precalculate test test-integration sqlc generate
 
