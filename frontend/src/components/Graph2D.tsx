@@ -199,9 +199,6 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<d3.Simulation<D3Node, D3Link> | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
-  const linkGroupRef = useRef<LinkSelection | null>(null);
-  const nodeGroupRef = useRef<NodeSelection | null>(null);
-  const labelGroupRef = useRef<LabelSelection | null>(null);
   const frameThrottlerRef = useRef<FrameThrottler | null>(null);
   const needsRenderRef = useRef(false);
   const linkGroupRef = useRef<d3.Selection<SVGLineElement, D3Link, SVGGElement, unknown> | null>(null);
@@ -519,8 +516,6 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       .attr("stroke", "#999")
       .attr("stroke-opacity", linkOpacity)
       .attr("stroke-width", 1);
-    
-    linkGroupRef.current = linkGroup;
 
     // Store in ref for tick callback
     linkGroupRef.current = linkGroup;
@@ -575,8 +570,6 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     // Add titles (tooltips)
     nodeGroup.append("title").text((d) => d.name || d.id);
-    
-    nodeGroupRef.current = nodeGroup;
 
     // Add labels if enabled
     if (showLabels) {
