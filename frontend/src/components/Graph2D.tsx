@@ -680,7 +680,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       // Stop simulation first, then clear tick handler to prevent memory leaks
       simulation.stop().on("tick.graph2d", null);
       simulationRef.current = null;
-      throttler.stop();
+      frameThrottlerRef.current?.stop();
     };
   }, [
     filtered,
