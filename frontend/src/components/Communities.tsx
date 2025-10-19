@@ -28,7 +28,7 @@ export default function Communities({
   const [computing, setComputing] = useState(false);
 
   const computeCommunities = useCallback(
-    async (data: GraphData) => {
+    (data: GraphData) => {
       setComputing(true);
       // Use setTimeout to allow UI to update
       setTimeout(() => {
