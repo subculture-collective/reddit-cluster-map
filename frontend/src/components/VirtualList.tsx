@@ -6,12 +6,23 @@ interface VirtualListProps<T> {
   containerHeight: number;
   overscan?: number;
   renderItem: (item: T, index: number) => React.ReactNode;
+  itemKey: (item: T, index: number) => string;
   className?: string;
 }
 
 /**
  * A virtualized list component that only renders visible items.
  * This improves performance for large lists by reducing DOM nodes.
+ * 
+ * @param items - Array of items to render
+ * @param itemHeight - Height of each item in pixels
+ * @param containerHeight - Height of the container in pixels
+ * @param overscan - Number of items to render outside the visible area (default: 3)
+ * @param renderItem - Function to render each item
+ * @param itemKey - Function to generate a stable unique key for each item.
+ *                  Should return a stable identifier (e.g., item.id) rather than an index.
+ *                  This prevents rendering issues when items are added/removed.
+ * @param className - Optional CSS class name for the container
  */
 export default function VirtualList<T>({
   items,
@@ -19,6 +30,7 @@ export default function VirtualList<T>({
   containerHeight,
   overscan = 3,
   renderItem,
+  itemKey,
   className = "",
 }: VirtualListProps<T>) {
   const [scrollTop, setScrollTop] = useState(0);
@@ -58,9 +70,14 @@ export default function VirtualList<T>({
             right: 0,
           }}
         >
-          {visibleItems.map((item, i) => (
-            <div key={startIndex + i}>{renderItem(item, startIndex + i)}</div>
-          ))}
+          {visibleItems.map((item, i) => {
+            const actualIndex = startIndex + i;
+            return (
+              <div key={itemKey(item, actualIndex)}>
+                {renderItem(item, actualIndex)}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
