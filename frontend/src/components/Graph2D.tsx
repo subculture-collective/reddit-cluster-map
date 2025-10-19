@@ -569,8 +569,6 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     nodeGroup.append("title").text((d) => d.name || d.id);
 
     // Add labels if enabled
-    let labelGroup: LabelSelection | null = null;
-
     if (showLabels) {
       // Select top nodes by weight
       const weights = nodes.map((n) => {
@@ -586,7 +584,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       const TOP = Math.min(200, preferred.length);
       const labelNodes = preferred.slice(0, TOP).map((x) => x.node);
 
-      labelGroup = g
+      const labelGroup = g
         .append("g")
         .attr("class", "labels")
         .selectAll("text")
