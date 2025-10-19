@@ -653,9 +653,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     }
 
     return () => {
-      // Clear tick handler to prevent memory leaks
-      simulation.on("tick", null);
-      simulation.stop();
+      // Clear tick handler to prevent memory leaks before stopping
+      simulation.on("tick", null).stop();
       simulationRef.current = null;
     };
   }, [
