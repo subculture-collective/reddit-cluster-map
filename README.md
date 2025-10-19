@@ -65,6 +65,14 @@ See `docs/api.md` for details.
 
 Key environment variables (selected):
 
+- **Security** (see `docs/SECURITY.md` for details)
+  - `ENABLE_RATE_LIMIT` (true) — enable/disable rate limiting
+  - `RATE_LIMIT_GLOBAL` (100) — global requests per second
+  - `RATE_LIMIT_GLOBAL_BURST` (200) — global burst size
+  - `RATE_LIMIT_PER_IP` (10) — requests per second per IP
+  - `RATE_LIMIT_PER_IP_BURST` (20) — per-IP burst size
+  - `CORS_ALLOWED_ORIGINS` — comma-separated list of allowed CORS origins (default: localhost:5173,localhost:3000)
+  - `ADMIN_API_TOKEN` — bearer token for admin endpoints
 - Reddit OAuth
   - `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_REDIRECT_URI`, `REDDIT_SCOPES`, `REDDIT_USER_AGENT`
 - HTTP / retries

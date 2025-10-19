@@ -63,6 +63,7 @@ func TestPostCrawl_EnqueuesJob(t *testing.T) {
 	rr := httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"subreddit":"golang"}`)
 	req := httptest.NewRequest(http.MethodPost, "/crawl", body)
+	req.Header.Set("Content-Type", "application/json")
 	PostCrawl(qa)(rr, req)
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d", rr.Code)
