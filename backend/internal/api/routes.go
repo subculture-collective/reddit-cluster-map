@@ -7,11 +7,44 @@ import (
 	"github.com/onnwee/reddit-cluster-map/backend/internal/api/handlers"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/middleware"
 )
 
 func NewRouter(q *db.Queries) *mux.Router {
 	// Create the root router. All routes below are relative to this router.
 	r := mux.NewRouter()
+	
+	// Load configuration
+	cfg := config.Load()
+
+	// Apply global middleware in order
+	// 1. Security headers (first to ensure they're always set)
+	r.Use(middleware.SecurityHeaders)
+	
+	// 2. CORS middleware
+	corsConfig := &middleware.CORSConfig{
+		AllowedOrigins:   cfg.CORSAllowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}
+	r.Use(middleware.CORS(corsConfig))
+	
+	// 3. Request body validation
+	r.Use(middleware.ValidateRequestBody)
+	
+	// 4. Rate limiting (if enabled)
+	if cfg.EnableRateLimit {
+		rateLimiter := middleware.NewRateLimiter(
+			cfg.RateLimitGlobal,
+			cfg.RateLimitGlobalBurst,
+			cfg.RateLimitPerIP,
+			cfg.RateLimitPerIPBurst,
+		)
+		r.Use(rateLimiter.Limit)
+	}
 
 	// Lightweight healthcheck: GET /health -> {"status":"ok"}
 	r.HandleFunc("/health", handlers.Health).Methods("GET")
@@ -58,7 +91,6 @@ func NewRouter(q *db.Queries) *mux.Router {
 	r.HandleFunc("/api/crawl/status", handlers.GetCrawlStatus(q)).Methods("GET")
 
 	// Admin auth middleware using a static bearer token from env
-	cfg := config.Load()
 	adminOnly := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.AdminAPIToken == "" {
