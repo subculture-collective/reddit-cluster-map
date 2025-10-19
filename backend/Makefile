@@ -1,5 +1,5 @@
 # Environment
-include .env
+-include .env
 export
 
 # Docker Compose service names
@@ -9,7 +9,25 @@ CRAWLER_CONTAINER = backend-crawler-1
 DB_USER = $(POSTGRES_USER)
 DB_NAME = reddit_cluster
 
-.PHONY: reset migrate drop logs logs-api logs-db logs-crawler logs-all kickstart migrate-up migrate-up-local migrate-priority-fix start-crawler stop-crawler test-crawl precalculate test test-integration sqlc generate
+.PHONY: setup reset migrate drop logs logs-api logs-db logs-crawler logs-all kickstart migrate-up migrate-up-local migrate-priority-fix start-crawler stop-crawler test-crawl precalculate test test-integration sqlc generate
+
+# Setup environment file
+setup:
+	@if [ ! -f .env.example ]; then \
+		echo "ERROR: .env.example file not found!"; \
+		echo ""; \
+		echo "The .env.example file should exist in the backend directory."; \
+		echo "Please ensure you have the latest version of the repository."; \
+		exit 1; \
+	fi
+	@if [ -f .env ]; then \
+		echo ".env file already exists. Not overwriting."; \
+		echo "To recreate, delete .env first or manually copy from .env.example"; \
+	else \
+		cp .env.example .env; \
+		echo ".env file created from .env.example"; \
+		echo "Please edit .env and configure your settings before running the application."; \
+	fi
 
 # Reset and migrate database
 reset:
