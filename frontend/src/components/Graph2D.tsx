@@ -629,7 +629,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     }
 
     // Update positions on tick
-    simulation.on("tick", () => {
+    const tickHandler = () => {
       linkGroup
         .attr("x1", (d) => (d.source as D3Node).x ?? 0)
         .attr("y1", (d) => (d.source as D3Node).y ?? 0)
@@ -641,7 +641,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       if (labelGroup) {
         labelGroup.attr("x", (d) => d.x ?? 0).attr("y", (d) => (d.y ?? 0) - 10);
       }
-    });
+    };
+    simulation.on("tick", tickHandler);
 
     // Run for initial layout
     if (hasPrecomputedPositions) {
@@ -652,6 +653,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     }
 
     return () => {
+      // Clear tick handler to prevent memory leaks
+      simulation.on("tick", null);
       simulation.stop();
       simulationRef.current = null;
     };
