@@ -1,4 +1,5 @@
 import type { SelectedInfo } from "../types/ui";
+import VirtualList from "./VirtualList";
 
 interface Props {
   selected?: SelectedInfo;
@@ -45,25 +46,22 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
         )}
         {selected.neighbors && selected.neighbors.length > 0 && (
           <div className="mt-2">
-            <div className="opacity-70">Neighbors:</div>
-            <ul className="max-h-40 overflow-auto pr-1">
-              {selected.neighbors.slice(0, 50).map((n) => (
-                <li key={n.id}>
-                  <button
-                    className="text-left w-full hover:underline"
-                    onClick={() => onFocus(n.id)}
-                    title={n.id}
-                  >
-                    {n.name || n.id} {n.type ? `(${n.type})` : ""}
-                  </button>
-                </li>
-              ))}
-              {selected.neighbors.length > 50 && (
-                <li className="opacity-60">
-                  … {selected.neighbors.length - 50} more
-                </li>
+            <div className="opacity-70">Neighbors ({selected.neighbors.length}):</div>
+            <VirtualList
+              items={selected.neighbors}
+              itemHeight={28}
+              containerHeight={160}
+              className="pr-1"
+              renderItem={(n) => (
+                <button
+                  className="text-left w-full hover:underline text-sm py-1"
+                  onClick={() => onFocus(n.id)}
+                  title={n.id}
+                >
+                  {n.name || n.id} {n.type ? `(${n.type})` : ""}
+                </button>
               )}
-            </ul>
+            />
           </div>
         )}
       </div>
