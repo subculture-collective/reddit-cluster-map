@@ -40,6 +40,8 @@ For CI/CD pipeline and Docker image publishing, see `docs/CI-CD.md`.
 
 Common dev tasks from `backend/`:
 
+- Setup environment file:
+  - `make setup` (creates `.env` from `.env.example`)
 - Regenerate sqlc after editing SQL in `backend/internal/queries/*.sql`:
   - `make sqlc` (alias: `make generate`)
 - Run the one-shot graph precalc:

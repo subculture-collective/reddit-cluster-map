@@ -11,7 +11,7 @@ This guide gets you from zero to a running stack.
 ## Clone and configure
 
 1. Clone the repo.
-2. Backend env: copy `backend/.env.example` to `backend/.env` and fill:
+2. Backend env: From the `backend/` directory, run `make setup` to create `.env` from `.env.example`, then edit and fill:
 
 ```
 REDDIT_CLIENT_ID=<from reddit app>
