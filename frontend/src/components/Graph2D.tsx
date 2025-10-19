@@ -47,10 +47,6 @@ type D3Link = {
   target: string | D3Node;
 };
 
-type LinkSelection = d3.Selection<SVGLineElement, D3Link, SVGGElement, unknown>;
-type NodeSelection = d3.Selection<SVGCircleElement, D3Node, SVGGElement, unknown>;
-type LabelSelection = d3.Selection<SVGTextElement, D3Node, SVGGElement, unknown>;
-
 // ---- Helper functions (same as 3D) ----
 
 const buildDegreeMap = (links: GraphLink[]) => {
@@ -201,9 +197,24 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const frameThrottlerRef = useRef<FrameThrottler | null>(null);
   const needsRenderRef = useRef(false);
-  const linkGroupRef = useRef<d3.Selection<SVGLineElement, D3Link, SVGGElement, unknown> | null>(null);
-  const nodeGroupRef = useRef<d3.Selection<SVGCircleElement, D3Node, SVGGElement, unknown> | null>(null);
-  const labelGroupRef = useRef<d3.Selection<SVGTextElement, D3Node, SVGGElement, unknown> | null>(null);
+  const linkGroupRef = useRef<d3.Selection<
+    SVGLineElement,
+    D3Link,
+    SVGGElement,
+    unknown
+  > | null>(null);
+  const nodeGroupRef = useRef<d3.Selection<
+    SVGCircleElement,
+    D3Node,
+    SVGGElement,
+    unknown
+  > | null>(null);
+  const labelGroupRef = useRef<d3.Selection<
+    SVGTextElement,
+    D3Node,
+    SVGGElement,
+    unknown
+  > | null>(null);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -653,21 +664,22 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     const throttler = frameThrottlerRef.current;
 
-    // Update positions on tick with throttling
-    simulation.on('tick', () => {
-      // Only set needsRenderRef; all DOM updates are handled in the throttled callback
+    // Define tick handler to mark render as needed
+    const tickHandler = () => {
       needsRenderRef.current = true;
-    });
+    };
+
+    // Register single tick listener
+    const TICK_EVT = "tick.graph2d";
+    simulation.on(TICK_EVT, tickHandler);
 
     // Throttled render loop
     throttler.start(() => {
       if (!needsRenderRef.current) return;
       needsRenderRef.current = false;
-      
+
       const currentLinkGroup = linkGroupRef.current;
-      const currentNodeGroup = nodeGroupRef.current;
-      const currentLabelGroup = labelGroupRef.current;
-      
+
       if (currentLinkGroup) {
         currentLinkGroup
           .attr("x1", (d) => (d.source as D3Node).x ?? 0)
@@ -678,12 +690,16 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
       const currentNodeGroup = nodeGroupRef.current;
       if (currentNodeGroup) {
-        currentNodeGroup.attr("cx", (d) => d.x ?? 0).attr("cy", (d) => d.y ?? 0);
+        currentNodeGroup
+          .attr("cx", (d) => d.x ?? 0)
+          .attr("cy", (d) => d.y ?? 0);
       }
 
       const currentLabelGroup = labelGroupRef.current;
       if (currentLabelGroup) {
-        currentLabelGroup.attr("x", (d) => d.x ?? 0).attr("y", (d) => (d.y ?? 0) - 10);
+        currentLabelGroup
+          .attr("x", (d) => d.x ?? 0)
+          .attr("y", (d) => (d.y ?? 0) - 10);
       }
     });
 
@@ -696,13 +712,13 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     }
 
     return () => {
-      simulation.on('tick', null);
-      simulation.stop();
+      // Stop simulation first, then clear tick handler to prevent memory leaks
+      simulation.stop().on(TICK_EVT, null);
       simulationRef.current = null;
       linkGroupRef.current = null;
       nodeGroupRef.current = null;
       labelGroupRef.current = null;
-      throttler.stop();
+      frameThrottlerRef.current?.stop();
     };
   }, [
     filtered,
@@ -750,8 +766,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const isLoading = loading;
 
   return (
-    <div 
-      ref={containerRef} 
+    <div
+      ref={containerRef}
       className="w-full h-screen relative bg-black"
       onMouseMove={() => frameThrottlerRef.current?.markActive()}
       onWheel={() => frameThrottlerRef.current?.markActive()}
