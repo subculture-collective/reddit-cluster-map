@@ -50,7 +50,7 @@ If your items don't have a stable ID, use a combination of stable properties:
 
 Or add a stable ID when loading data:
 ```tsx
-// When fetching/loading data, add stable IDs ONCE
+// When fetching/loading data, add stable IDs once
 // ⚠️ Important: Do this during data loading, not in render!
 import { v4 as uuidv4 } from 'uuid';
 
@@ -90,7 +90,7 @@ const itemsWithIds = rawItems.map((item) => ({
 
 ### Bad Example 1: Using index as key
 ```tsx
-// ❌ BAD: Using index as key
+// ❌ BAD: Using index as key.
 // This defeats the purpose! Using index as key causes React to incorrectly 
 // reuse DOM nodes when items are reordered, added, or removed.
 <VirtualList
@@ -106,8 +106,8 @@ const itemsWithIds = rawItems.map((item) => ({
 
 ### Bad Example 2: Generating new UUIDs in itemKey
 ```tsx
-// ❌ BAD: Generating new UUIDs on each render
-// This creates different keys every render, breaking React's reconciliation
+// ❌ BAD: Generating new UUIDs on each render.
+// This creates different keys every render, breaking React's reconciliation.
 <VirtualList
   items={nodes}
   itemHeight={48}
