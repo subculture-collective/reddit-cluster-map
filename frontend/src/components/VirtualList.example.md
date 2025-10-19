@@ -84,7 +84,7 @@ const itemsWithIds = rawItems.map((item) => ({
 />
 ```
 
-**Note**: Never generate new UUIDs in the `itemKey` function itself - this would create different keys on each render and defeat the purpose of stable keys!
+**Note**: Never generate fresh UUIDs at render time in the `itemKey` function itself – this would create different keys on each render and defeat the purpose of stable keys!
 
 ## Bad Examples (Do Not Use)
 
