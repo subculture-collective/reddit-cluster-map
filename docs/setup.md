@@ -10,9 +10,6 @@ This guide gets you from zero to a running stack.
 
 ## Clone and configure
 
-1. Clone the repo.
-2. Backend env: From the `backend/` directory, run `make setup` to create `.env` from `.env.example`, then edit and fill:
-
 1. Clone the repo:
    ```bash
    git clone https://github.com/subculture-collective/reddit-cluster-map.git
