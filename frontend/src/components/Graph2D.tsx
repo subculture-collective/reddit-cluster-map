@@ -2,6 +2,7 @@ import * as d3 from "d3";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GraphData, GraphNode, GraphLink } from "../types/graph";
 import type { TypeFilters } from "../types/ui";
+import { FrameThrottler } from "../utils/frameThrottle";
 
 type SubSizeMode =
   | "subscribers"
@@ -194,6 +195,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<d3.Simulation<D3Node, D3Link> | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  const frameThrottlerRef = useRef<FrameThrottler | null>(null);
+  const needsRenderRef = useRef(false);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -630,6 +633,27 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     // Update positions on tick
     const tickHandler = () => {
+    // Initialize frame throttler for render updates
+    if (!frameThrottlerRef.current) {
+      frameThrottlerRef.current = new FrameThrottler({
+        activeFps: 60,
+        idleFps: 15,
+        idleTimeout: 2000,
+      });
+    }
+
+    const throttler = frameThrottlerRef.current;
+
+    // Update positions on tick with throttling
+    simulation.on("tick", () => {
+      needsRenderRef.current = true;
+    });
+
+    // Throttled render loop
+    throttler.start(() => {
+      if (!needsRenderRef.current) return;
+      needsRenderRef.current = false;
+      
       linkGroup
         .attr("x1", (d) => (d.source as D3Node).x ?? 0)
         .attr("y1", (d) => (d.source as D3Node).y ?? 0)
@@ -656,6 +680,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       // Stop simulation first, then clear tick handler to prevent memory leaks
       simulation.stop().on("tick", null);
       simulationRef.current = null;
+      throttler.stop();
     };
   }, [
     filtered,
@@ -703,7 +728,15 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const isLoading = loading;
 
   return (
-    <div ref={containerRef} className="w-full h-screen relative bg-black">
+    <div 
+      ref={containerRef} 
+      className="w-full h-screen relative bg-black"
+      onMouseMove={() => frameThrottlerRef.current?.markActive()}
+      onWheel={() => frameThrottlerRef.current?.markActive()}
+      onMouseDown={() => frameThrottlerRef.current?.markActive()}
+      onTouchStart={() => frameThrottlerRef.current?.markActive()}
+      onTouchMove={() => frameThrottlerRef.current?.markActive()}
+    >
       {error && (
         <div className="absolute top-2 left-2 z-20 bg-red-900/70 text-red-100 rounded px-3 py-2 text-sm">
           Error: {error}
