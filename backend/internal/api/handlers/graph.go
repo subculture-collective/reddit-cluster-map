@@ -14,6 +14,7 @@ import (
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
 )
 
 // Handler handles HTTP requests for the graph API.
@@ -38,11 +39,15 @@ var (
 	graphCacheTTL = 60 * time.Second
 )
 
-func cacheKey(maxNodes, maxLinks int, typeKey string) string {
+func cacheKey(maxNodes, maxLinks int, typeKey string, withPositions bool) string {
 	if typeKey == "" {
 		typeKey = "all"
 	}
-	return strconv.Itoa(maxNodes) + ":" + strconv.Itoa(maxLinks) + ":" + typeKey
+	key := strconv.Itoa(maxNodes) + ":" + strconv.Itoa(maxLinks) + ":" + typeKey
+	if withPositions {
+		key += ":pos"
+	}
+	return key
 }
 
 type Handler struct{ queries GraphDataReader }
@@ -94,25 +99,24 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 		return v == "1" || strings.EqualFold(v, "true")
 	}()
 	if !allowAll && len(allowedTypes) == 0 {
-		writeCachedEmpty(w, maxNodes, maxLinks, typeKey)
+		writeCachedEmpty(w, maxNodes, maxLinks, typeKey, withPos)
 		return
 	}
 
 	// Check cache first
-	key := cacheKey(maxNodes, maxLinks, typeKey)
-	if withPos {
-		key += ":pos"
-	}
+	key := cacheKey(maxNodes, maxLinks, typeKey, withPos)
 	now := time.Now()
 	graphCacheMu.Lock()
 	entry, found := graphCache[key]
 	if found && entry.expiresAt.After(now) {
 		graphCacheMu.Unlock()
+		metrics.APICacheHits.WithLabelValues("graph").Inc()
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(entry.data)
 		return
 	}
 	graphCacheMu.Unlock()
+	metrics.APICacheMisses.WithLabelValues("graph").Inc()
 	// Try precalculated tables (capped) first
 	rows, err := fetchPrecalcCapped(ctx, h.queries, maxNodes, maxLinks, allowAll, allowedList)
 	if err != nil {
@@ -202,7 +206,7 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 		graphCacheMu.Unlock()
 		return
 	}
-	handleLegacyGraph(ctx, w, h, maxNodes, maxLinks, allowAll, allowedTypes, key)
+	handleLegacyGraph(ctx, w, h, maxNodes, maxLinks, allowAll, allowedTypes, typeKey, withPos)
 }
 
 func toString(v interface{}) string {
@@ -306,7 +310,8 @@ func parseIntDefault(s string, def int) int {
 	return def
 }
 
-func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, h *Handler, maxNodes, maxLinks int, allowAll bool, allowedTypes map[string]struct{}, cacheKeyStr string) {
+func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, h *Handler, maxNodes, maxLinks int, allowAll bool, allowedTypes map[string]struct{}, typeKey string, withPos bool) {
+	cacheKeyStr := cacheKey(maxNodes, maxLinks, typeKey, withPos)
 	data, err := h.queries.GetGraphData(ctx)
 	if err != nil {
 		http.Error(w, "Failed to fetch graph data", http.StatusInternalServerError)
@@ -430,12 +435,12 @@ func parseTypes(raw string) (map[string]struct{}, []string, string, bool) {
 	return allowed, list, strings.Join(list, ","), false
 }
 
-func writeCachedEmpty(w http.ResponseWriter, maxNodes, maxLinks int, typeKey string) {
+func writeCachedEmpty(w http.ResponseWriter, maxNodes, maxLinks int, typeKey string, withPos bool) {
 	w.Header().Set("Content-Type", "application/json")
 	empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 	b, _ := json.Marshal(empty)
 	_, _ = w.Write(b)
 	graphCacheMu.Lock()
-	graphCache[cacheKey(maxNodes, maxLinks, typeKey)] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
+	graphCache[cacheKey(maxNodes, maxLinks, typeKey, withPos)] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
 	graphCacheMu.Unlock()
 }
