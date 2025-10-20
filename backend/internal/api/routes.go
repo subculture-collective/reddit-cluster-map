@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/api/handlers"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
@@ -48,6 +49,9 @@ func NewRouter(q *db.Queries) *mux.Router {
 
 	// Lightweight healthcheck: GET /health -> {"status":"ok"}
 	r.HandleFunc("/health", handlers.Health).Methods("GET")
+
+	// Prometheus metrics endpoint
+	r.Handle("/metrics", promhttp.Handler()).Methods("GET")
 
 	// OAuth login/callback for Reddit user authorization
 	auth := handlers.NewAuthHandlers(q)

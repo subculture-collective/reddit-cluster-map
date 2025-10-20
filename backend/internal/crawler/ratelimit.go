@@ -1,18 +1,42 @@
 package crawler
 
 import (
-	"time"
+"context"
+"sync"
+
+"golang.org/x/time/rate"
+
+"github.com/onnwee/reddit-cluster-map/backend/internal/config"
+"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
 )
 
-var limiter <-chan time.Time
+var (
+limiter     *rate.Limiter
+limiterOnce sync.Once
+)
 
-func init() {
-	// Global, coarse-grained pacing for all outbound HTTP requests to Reddit.
-	// Reddit’s guidelines discourage aggressive access; we keep at most ~1.66 rps.
-	// Every HTTP attempt (including retries and token calls) waits on this tick.
-	limiter = time.Tick(601 * time.Millisecond) // 601ms between calls
+// initLimiter creates the rate limiter based on config
+func initLimiter() {
+cfg := config.Load()
+// Create token bucket rate limiter with configured RPS and burst
+limiter = rate.NewLimiter(rate.Limit(cfg.CrawlerRPS), cfg.CrawlerBurstSize)
 }
 
+// getLimiter returns the singleton rate limiter instance
+func getLimiter() *rate.Limiter {
+limiterOnce.Do(initLimiter)
+return limiter
+}
+
+// waitForRateLimit blocks until a token is available from the rate limiter
 func waitForRateLimit() {
-	<-limiter
+// Use background context for rate limiting
+_ = getLimiter().Wait(context.Background())
+metrics.CrawlerRateLimitWaits.Inc()
+}
+
+// ResetLimiterForTest resets the rate limiter singleton for testing
+func ResetLimiterForTest() {
+limiterOnce = sync.Once{}
+limiter = nil
 }

@@ -43,6 +43,9 @@ type Config struct {
 	RateLimitPerIPBurst int    // burst size for per-IP rate limit
 	CORSAllowedOrigins []string // allowed CORS origins
 	EnableRateLimit    bool     // enable rate limiting middleware
+	// Crawler rate limiting (Reddit API)
+	CrawlerRPS         float64       // requests per second to Reddit API
+	CrawlerBurstSize   int           // burst size for crawler rate limit
 }
 
 var cached *Config
@@ -85,6 +88,9 @@ func Load() *Config {
 	RateLimitPerIP:       utils.GetEnvAsFloat("RATE_LIMIT_PER_IP", 10.0),
 	RateLimitPerIPBurst:  utils.GetEnvAsInt("RATE_LIMIT_PER_IP_BURST", 20),
 	EnableRateLimit:      utils.GetEnvAsBool("ENABLE_RATE_LIMIT", true),
+	// Crawler rate limiting: default to ~1.66 rps (60 requests per minute)
+	CrawlerRPS:           utils.GetEnvAsFloat("CRAWLER_RPS", 1.66),
+	CrawlerBurstSize:     utils.GetEnvAsInt("CRAWLER_BURST_SIZE", 1),
 	}
 	if cached.PostsSort == "" { cached.PostsSort = "top" }
 	if cached.PostsTimeFilter == "" { cached.PostsTimeFilter = "day" }
