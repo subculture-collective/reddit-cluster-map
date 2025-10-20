@@ -267,6 +267,7 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
               itemHeight={48}
               containerHeight={480}
               className="space-y-2"
+              itemKey={(node) => node.id}
               renderItem={(node, i) => (
                 <div
                   className="flex items-center justify-between p-2 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
@@ -299,6 +300,7 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
               itemHeight={48}
               containerHeight={480}
               className="space-y-2"
+              itemKey={(sub) => sub.id}
               renderItem={(sub, i) => (
                 <div
                   className="flex items-center justify-between p-2 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
@@ -337,6 +339,7 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
               itemHeight={48}
               containerHeight={480}
               className="space-y-2"
+              itemKey={(user) => user.id}
               renderItem={(user, i) => (
                 <div
                   className="flex items-center justify-between p-2 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"

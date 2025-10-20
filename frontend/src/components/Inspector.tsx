@@ -52,6 +52,7 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
               itemHeight={28}
               containerHeight={160}
               className="pr-1"
+              itemKey={(n) => n.id}
               renderItem={(n) => (
                 <button
                   className="text-left w-full hover:underline text-sm py-1"
