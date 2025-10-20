@@ -48,7 +48,9 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
     setError(null);
     try {
       const base = (import.meta.env?.VITE_API_URL || "/api").replace(/\/$/, "");
-      const response = await fetch(`${base}/graph?max_nodes=50000&max_links=100000`);
+      const response = await fetch(
+        `${base}/graph?max_nodes=50000&max_links=100000`
+      );
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = (await response.json()) as GraphData;
 
@@ -66,9 +68,10 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
       }
 
       const degrees = Array.from(degreeMap.values());
-      const avgDegree = degrees.length > 0 
-        ? degrees.reduce((a, b) => a + b, 0) / degrees.length 
-        : 0;
+      const avgDegree =
+        degrees.length > 0
+          ? degrees.reduce((a, b) => a + b, 0) / degrees.length
+          : 0;
       const maxDegree = degrees.length > 0 ? Math.max(...degrees) : 0;
 
       // Top nodes by degree
@@ -90,7 +93,7 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
       // Top subreddits by subscribers and activity
       const subreddits = data.nodes.filter((n) => n.type === "subreddit");
       const subredditActivity = new Map<string, { users: Set<string> }>();
-      
+
       for (const link of data.links) {
         const s = String(link.source);
         const t = String(link.target);
@@ -122,15 +125,19 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
         string,
         { posts: number; comments: number; name: string }
       >();
-      
+
       for (const link of data.links) {
         const s = String(link.source);
         const t = String(link.target);
-        
+
         if (s.startsWith("user_")) {
           const user = data.nodes.find((n) => n.id === s);
           if (!userActivity.has(s)) {
-            userActivity.set(s, { posts: 0, comments: 0, name: user?.name || s });
+            userActivity.set(s, {
+              posts: 0,
+              comments: 0,
+              name: user?.name || s,
+            });
           }
           if (t.startsWith("post_")) {
             userActivity.get(s)!.posts++;
@@ -218,15 +225,21 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <div className="bg-gray-800 rounded-lg p-6">
             <div className="text-gray-400 text-sm mb-2">Total Nodes</div>
-            <div className="text-3xl font-bold">{formatNumber(stats.totalNodes)}</div>
+            <div className="text-3xl font-bold">
+              {formatNumber(stats.totalNodes)}
+            </div>
           </div>
           <div className="bg-gray-800 rounded-lg p-6">
             <div className="text-gray-400 text-sm mb-2">Total Links</div>
-            <div className="text-3xl font-bold">{formatNumber(stats.totalLinks)}</div>
+            <div className="text-3xl font-bold">
+              {formatNumber(stats.totalLinks)}
+            </div>
           </div>
           <div className="bg-gray-800 rounded-lg p-6">
             <div className="text-gray-400 text-sm mb-2">Average Degree</div>
-            <div className="text-3xl font-bold">{stats.avgDegree.toFixed(1)}</div>
+            <div className="text-3xl font-bold">
+              {stats.avgDegree.toFixed(1)}
+            </div>
           </div>
           <div className="bg-gray-800 rounded-lg p-6">
             <div className="text-gray-400 text-sm mb-2">Max Degree</div>
@@ -247,10 +260,18 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
               };
               return (
                 <div key={type} className="flex items-center gap-3">
-                  <div className={`w-4 h-4 rounded ${colors[type] || "bg-purple-500"}`} />
+                  <div
+                    className={`w-4 h-4 rounded ${
+                      colors[type] || "bg-purple-500"
+                    }`}
+                  />
                   <div>
-                    <div className="text-sm text-gray-400 capitalize">{type}</div>
-                    <div className="text-xl font-semibold">{formatNumber(count)}</div>
+                    <div className="text-sm text-gray-400 capitalize">
+                      {type}
+                    </div>
+                    <div className="text-xl font-semibold">
+                      {formatNumber(count)}
+                    </div>
                   </div>
                 </div>
               );
@@ -261,12 +282,15 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Top Nodes */}
           <div className="bg-gray-800 rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">Top Nodes by Connections</h2>
+            <h2 className="text-xl font-semibold mb-4">
+              Top Nodes by Connections
+            </h2>
             <VirtualList
               items={stats.topNodes}
               itemHeight={48}
               containerHeight={480}
               className="space-y-2"
+              itemKey={(node) => node.id}
               renderItem={(node, i) => (
                 <div
                   className="flex items-center justify-between p-2 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
@@ -279,7 +303,9 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
                     <div className="text-gray-400 w-6">{i + 1}</div>
                     <div>
                       <div className="font-medium">{node.name}</div>
-                      <div className="text-xs text-gray-400 capitalize">{node.type}</div>
+                      <div className="text-xs text-gray-400 capitalize">
+                        {node.type}
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -299,6 +325,7 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
               itemHeight={48}
               containerHeight={480}
               className="space-y-2"
+              itemKey={(sub) => sub.id}
               renderItem={(sub, i) => (
                 <div
                   className="flex items-center justify-between p-2 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
@@ -319,7 +346,9 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
                   <div className="text-right">
                     {sub.subscribers !== undefined && (
                       <>
-                        <div className="font-semibold">{formatNumber(sub.subscribers)}</div>
+                        <div className="font-semibold">
+                          {formatNumber(sub.subscribers)}
+                        </div>
                         <div className="text-xs text-gray-400">subscribers</div>
                       </>
                     )}
@@ -337,6 +366,7 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
               itemHeight={48}
               containerHeight={480}
               className="space-y-2"
+              itemKey={(user) => user.id}
               renderItem={(user, i) => (
                 <div
                   className="flex items-center justify-between p-2 bg-gray-700 rounded hover:bg-gray-600 cursor-pointer"
@@ -381,9 +411,13 @@ export default function Dashboard({ onViewMode, onFocusNode }: DashboardProps) {
                 </div>
               </div>
               <div>
-                <div className="text-sm text-gray-400 mb-1">Average Clustering</div>
+                <div className="text-sm text-gray-400 mb-1">
+                  Average Clustering
+                </div>
                 <div className="text-2xl font-bold">
-                  {stats.avgDegree > 0 ? (stats.avgDegree / stats.maxDegree).toFixed(3) : "0"}
+                  {stats.avgDegree > 0
+                    ? (stats.avgDegree / stats.maxDegree).toFixed(3)
+                    : "0"}
                 </div>
                 <div className="text-xs text-gray-400 mt-1">
                   (avg degree / max degree ratio)
