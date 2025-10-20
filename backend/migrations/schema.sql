@@ -92,6 +92,11 @@ CREATE INDEX idx_graph_nodes_type ON graph_nodes(type) WHERE type IS NOT NULL;
 CREATE INDEX idx_graph_nodes_val_numeric ON graph_nodes(
     (CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END) DESC NULLS LAST, id
 );
+-- Partial index for common node types with value ordering
+CREATE INDEX idx_graph_nodes_type_val ON graph_nodes(type, (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST)
+WHERE type IN ('subreddit', 'user', 'post', 'comment');
 
 CREATE TABLE graph_links (
     id SERIAL PRIMARY KEY,
@@ -107,6 +112,7 @@ CREATE TABLE graph_links (
 CREATE INDEX idx_graph_links_source ON graph_links(source);
 CREATE INDEX idx_graph_links_target ON graph_links(target);
 CREATE INDEX idx_graph_links_target_source ON graph_links(target, source);
+CREATE INDEX idx_graph_links_source_target ON graph_links(source, target);
 
 CREATE TABLE subreddit_relationships (
     id SERIAL PRIMARY KEY,
