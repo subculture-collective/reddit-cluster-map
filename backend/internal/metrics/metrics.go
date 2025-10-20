@@ -102,4 +102,21 @@ var (
 		},
 		[]string{"component"},
 	)
+
+	// API cache metrics
+	APICacheHits = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "api_cache_hits_total",
+			Help: "Total number of API cache hits",
+		},
+		[]string{"endpoint"},
+	)
+
+	APICacheMisses = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "api_cache_misses_total",
+			Help: "Total number of API cache misses",
+		},
+		[]string{"endpoint"},
+	)
 )

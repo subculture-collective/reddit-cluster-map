@@ -135,6 +135,10 @@ test-integration: ## Run integration tests (requires TEST_DATABASE_URL)
 
 test-all: test ## Run all tests (alias for 'test')
 
+benchmark-graph: check-env ## Benchmark graph query performance
+	@echo "Running graph query benchmarks..."
+	@./scripts/benchmark_graph_queries.sh
+
 lint: ## Run Go linters (go vet and gofmt check)
 	@echo "Running go vet..."
 	@go vet ./...
