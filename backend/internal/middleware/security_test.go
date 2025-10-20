@@ -40,7 +40,7 @@ func TestSecurityHeaders(t *testing.T) {
 	if !contains(csp, "default-src 'self'") {
 		t.Errorf("Expected CSP to contain 'default-src self', got %s", csp)
 	}
-	
+
 	// X-XSS-Protection should NOT be set (deprecated)
 	if xss := rr.Header().Get("X-XSS-Protection"); xss != "" {
 		t.Errorf("X-XSS-Protection header should not be set (deprecated), got %s", xss)

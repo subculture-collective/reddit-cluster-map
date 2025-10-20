@@ -31,7 +31,7 @@ func TestRateLimiterDefault(t *testing.T) {
 
 func TestRateLimiterConfigurable(t *testing.T) {
 	// Set higher rate limit for testing
-	os.Setenv("CRAWLER_RPS", "10.0")   // 10 requests per second
+	os.Setenv("CRAWLER_RPS", "10.0")     // 10 requests per second
 	os.Setenv("CRAWLER_BURST_SIZE", "2") // Allow burst of 2
 	t.Cleanup(func() {
 		os.Unsetenv("CRAWLER_RPS")
@@ -67,7 +67,7 @@ func TestRateLimiterConfigurable(t *testing.T) {
 
 func TestRateLimiterEnforcesRate(t *testing.T) {
 	// Set a precise rate for testing
-	os.Setenv("CRAWLER_RPS", "5.0")    // 5 requests per second
+	os.Setenv("CRAWLER_RPS", "5.0")      // 5 requests per second
 	os.Setenv("CRAWLER_BURST_SIZE", "1") // No burst
 	t.Cleanup(func() {
 		os.Unsetenv("CRAWLER_RPS")

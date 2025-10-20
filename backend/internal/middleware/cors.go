@@ -19,10 +19,10 @@ type CORSConfig struct {
 // DefaultCORSConfig returns a secure default CORS configuration.
 func DefaultCORSConfig() *CORSConfig {
 	return &CORSConfig{
-		AllowedOrigins: []string{"http://localhost:5173", "http://localhost:3000"},
-		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders: []string{"Link"},
+		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:3000"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}
@@ -41,7 +41,7 @@ func CORS(config *CORSConfig) func(http.Handler) http.Handler {
 			// Check if origin is allowed
 			if origin != "" && isOriginAllowed(origin, config.AllowedOrigins) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
-				
+
 				if config.AllowCredentials {
 					w.Header().Set("Access-Control-Allow-Credentials", "true")
 				}

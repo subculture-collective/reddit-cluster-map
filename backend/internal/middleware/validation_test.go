@@ -76,15 +76,15 @@ func TestSanitizeInput_ValidateSubredditName(t *testing.T) {
 		name        string
 		shouldError bool
 	}{
-		{"", true},                              // empty
-		{"   ", true},                           // whitespace only
-		{"subreddit with spaces", true},         // spaces
-		{"sub/reddit", true},                    // slash
-		{"sub\\reddit", true},                   // backslash
-		{"verylongsubredditname123", true},      // too long (>21)
-		{"sub-reddit", true},                    // hyphen not allowed
-		{"sub.reddit", true},                    // dot not allowed
-		{"sub@reddit", true},                    // special char
+		{"", true},                         // empty
+		{"   ", true},                      // whitespace only
+		{"subreddit with spaces", true},    // spaces
+		{"sub/reddit", true},               // slash
+		{"sub\\reddit", true},              // backslash
+		{"verylongsubredditname123", true}, // too long (>21)
+		{"sub-reddit", true},               // hyphen not allowed
+		{"sub.reddit", true},               // dot not allowed
+		{"sub@reddit", true},               // special char
 	}
 
 	for _, tt := range invalidNames {

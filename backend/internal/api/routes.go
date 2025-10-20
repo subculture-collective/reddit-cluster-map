@@ -4,24 +4,24 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/api/handlers"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func NewRouter(q *db.Queries) *mux.Router {
 	// Create the root router. All routes below are relative to this router.
 	r := mux.NewRouter()
-	
+
 	// Load configuration
 	cfg := config.Load()
 
 	// Apply global middleware in order
 	// 1. Security headers (first to ensure they're always set)
 	r.Use(middleware.SecurityHeaders)
-	
+
 	// 2. CORS middleware
 	corsConfig := &middleware.CORSConfig{
 		AllowedOrigins:   cfg.CORSAllowedOrigins,
@@ -32,10 +32,10 @@ func NewRouter(q *db.Queries) *mux.Router {
 		MaxAge:           300,
 	}
 	r.Use(middleware.CORS(corsConfig))
-	
+
 	// 3. Request body validation
 	r.Use(middleware.ValidateRequestBody)
-	
+
 	// 4. Rate limiting (if enabled)
 	if cfg.EnableRateLimit {
 		rateLimiter := middleware.NewRateLimiter(
