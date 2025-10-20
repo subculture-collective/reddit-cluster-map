@@ -2,10 +2,6 @@
 -- These indexes are smaller and faster than full indexes for the typical case where
 -- queries focus on the most connected or valuable nodes
 
--- Note: The threshold of 100 for "high value" is a heuristic and may need tuning
--- based on your dataset distribution. Analyze your data with:
--- SELECT percentile_cont(0.9) WITHIN GROUP (ORDER BY CAST(val AS BIGINT))
--- FROM graph_nodes WHERE val ~ '^[0-9]+$';
 
 -- Composite index on (source, target) for fast bidirectional lookups
 -- This complements the existing (target, source) index to cover both directions
