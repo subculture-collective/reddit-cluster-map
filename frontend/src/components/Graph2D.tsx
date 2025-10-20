@@ -510,10 +510,10 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     simulationRef.current = simulation;
 
-    // If most nodes already have positions, quickly settle and fit view
+    // If most nodes already have positions, tune simulation to settle quickly
     if (hasPrecomputedPositions) {
       // Increase alphaDecay so it cools faster and doesn't drift far from provided layout
-      simulation.alpha(0.15).alphaDecay(0.15);
+      simulation.alphaDecay(0.15);
     }
 
     // Draw links
