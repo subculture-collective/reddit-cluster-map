@@ -46,12 +46,15 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
         )}
         {selected.neighbors && selected.neighbors.length > 0 && (
           <div className="mt-2">
-            <div className="opacity-70">Neighbors ({selected.neighbors.length}):</div>
+            <div className="opacity-70">
+              Neighbors ({selected.neighbors.length}):
+            </div>
             <VirtualList
               items={selected.neighbors}
               itemHeight={28}
               containerHeight={160}
               className="pr-1"
+              itemKey={(n) => n.id}
               renderItem={(n) => (
                 <button
                   className="text-left w-full hover:underline text-sm py-1"
