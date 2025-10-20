@@ -101,8 +101,8 @@ From `backend/`:
   - `make migrate-up` (or `make migrate-up-local` for local database)
   - Migration 000016 adds position columns (`pos_x`, `pos_y`, `pos_z`) to `graph_nodes` required for layout computation
   - The API will log the position columns status at startup:
-    - ✓ Position columns present: All columns detected
-    - ⚠️ Position columns missing: Run migrations to add them
+    - ✓ Success: "Position columns (pos_x, pos_y, pos_z) are present in graph_nodes table"
+    - ⚠️ Warning: "Position columns missing in graph_nodes table: pos_x=..., pos_y=..., pos_z=..." followed by migration instructions
 
 To verify position columns exist, check API startup logs:
 ```bash
