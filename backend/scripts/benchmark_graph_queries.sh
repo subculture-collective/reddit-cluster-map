@@ -51,7 +51,7 @@ run_benchmark() {
     
     for i in $(seq 1 $iterations); do
         # Run EXPLAIN ANALYZE and extract execution time
-        local result=$(psql "$DB_URL" -t -c "EXPLAIN (ANALYZE, TIMING OFF, SUMMARY ON) $query" 2>&1 | grep "Execution Time" | grep -oP '\d+\.\d+')
+        local result=$(psql "$DB_URL" -t -c "EXPLAIN (ANALYZE, TIMING OFF, SUMMARY ON) $query" 2>&1 | grep "Execution Time" | grep -oP '\d+(\.\d+)?')
         
         if [ -n "$result" ]; then
             echo "  Run $i: ${result}ms"
