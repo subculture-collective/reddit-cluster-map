@@ -100,6 +100,14 @@ From `backend/`:
 - **Important**: Run migrations to ensure all database schema changes are applied:
   - `make migrate-up` (or `make migrate-up-local` for local database)
   - Migration 000016 adds position columns (`pos_x`, `pos_y`, `pos_z`) to `graph_nodes` required for layout computation
+  - The API will log the position columns status at startup:
+    - ✓ Success: "Position columns (pos_x, pos_y, pos_z) are present in graph_nodes table"
+    - ⚠️ Warning: "Position columns missing in graph_nodes table: pos_x=..., pos_y=..., pos_z=..." followed by migration instructions
+
+To verify position columns exist, check API startup logs:
+```bash
+make logs-api | grep "Position columns"
+```
 
 The API listens on port 8000 inside the network. Frontend serves on port 80 (container) behind your reverse proxy.
 
@@ -148,6 +156,8 @@ Or wait for the API server’s graph job (every hour) to update automatically.
 ## Frontend access
 
 - Open your domain. The app fetches `/api/graph` via nginx.
+- To include precomputed 3D positions in the API response, use: `/api/graph?with_positions=true`
+  - Positions are only returned when the `pos_x`, `pos_y`, `pos_z` columns are present and populated
 
 ## Local dev (optional)
 
