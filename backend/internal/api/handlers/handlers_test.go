@@ -297,3 +297,249 @@ func TestGraphHandler_WithPositions(t *testing.T) {
 		}
 	})
 }
+
+// TestCacheKey verifies cache key generation includes all required parameters
+func TestCacheKey(t *testing.T) {
+	tests := []struct {
+		name          string
+		maxNodes      int
+		maxLinks      int
+		typeKey       string
+		withPositions bool
+		expected      string
+	}{
+		{
+			name:          "basic key without positions",
+			maxNodes:      100,
+			maxLinks:      200,
+			typeKey:       "user",
+			withPositions: false,
+			expected:      "100:200:user",
+		},
+		{
+			name:          "basic key with positions",
+			maxNodes:      100,
+			maxLinks:      200,
+			typeKey:       "user",
+			withPositions: true,
+			expected:      "100:200:user:pos",
+		},
+		{
+			name:          "empty typeKey defaults to all",
+			maxNodes:      500,
+			maxLinks:      1000,
+			typeKey:       "",
+			withPositions: false,
+			expected:      "500:1000:all",
+		},
+		{
+			name:          "empty typeKey with positions",
+			maxNodes:      500,
+			maxLinks:      1000,
+			typeKey:       "",
+			withPositions: true,
+			expected:      "500:1000:all:pos",
+		},
+		{
+			name:          "multiple types",
+			maxNodes:      1000,
+			maxLinks:      5000,
+			typeKey:       "user,subreddit",
+			withPositions: false,
+			expected:      "1000:5000:user,subreddit",
+		},
+		{
+			name:          "multiple types with positions",
+			maxNodes:      1000,
+			maxLinks:      5000,
+			typeKey:       "user,subreddit",
+			withPositions: true,
+			expected:      "1000:5000:user,subreddit:pos",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cacheKey(tt.maxNodes, tt.maxLinks, tt.typeKey, tt.withPositions)
+			if got != tt.expected {
+				t.Errorf("cacheKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestGraphHandler_CacheKeyIsolation verifies that different query parameters
+// use separate cache entries and don't interfere with each other
+func TestGraphHandler_CacheKeyIsolation(t *testing.T) {
+	// Clear cache before test
+	graphCacheMu.Lock()
+	graphCache = make(map[string]graphCacheEntry)
+	graphCacheMu.Unlock()
+
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+
+	// Request 1: with_positions=true
+	rr1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/graph?with_positions=true", nil)
+	h.GetGraphData(rr1, req1)
+
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("request 1: expected 200, got %d", rr1.Code)
+	}
+
+	var resp1 struct {
+		Nodes []struct {
+			ID string   `json:"id"`
+			X  *float64 `json:"x,omitempty"`
+			Y  *float64 `json:"y,omitempty"`
+			Z  *float64 `json:"z,omitempty"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(rr1.Body.Bytes(), &resp1); err != nil {
+		t.Fatalf("request 1 decode: %v", err)
+	}
+
+	// Request 2: without with_positions (should be separate cache entry)
+	rr2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/graph", nil)
+	h.GetGraphData(rr2, req2)
+
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("request 2: expected 200, got %d", rr2.Code)
+	}
+
+	var resp2 struct {
+		Nodes []struct {
+			ID string   `json:"id"`
+			X  *float64 `json:"x,omitempty"`
+			Y  *float64 `json:"y,omitempty"`
+			Z  *float64 `json:"z,omitempty"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(rr2.Body.Bytes(), &resp2); err != nil {
+		t.Fatalf("request 2 decode: %v", err)
+	}
+
+	// Verify both responses are different
+	if len(resp1.Nodes) < 1 || len(resp2.Nodes) < 1 {
+		t.Fatal("expected nodes in both responses")
+	}
+
+	// Response 1 should have positions
+	if resp1.Nodes[0].X == nil || resp1.Nodes[0].Y == nil || resp1.Nodes[0].Z == nil {
+		t.Error("request 1 (with_positions=true) should include position coordinates")
+	}
+
+	// Response 2 should NOT have positions
+	if resp2.Nodes[0].X != nil || resp2.Nodes[0].Y != nil || resp2.Nodes[0].Z != nil {
+		t.Error("request 2 (without with_positions) should not include position coordinates")
+	}
+
+	// Verify we have two separate cache entries
+	graphCacheMu.Lock()
+	cacheSize := len(graphCache)
+	graphCacheMu.Unlock()
+
+	if cacheSize != 2 {
+		t.Errorf("expected 2 cache entries (one with positions, one without), got %d", cacheSize)
+	}
+}
+
+// TestGraphHandler_CacheBehavior verifies cache hit/miss scenarios
+func TestGraphHandler_CacheBehavior(t *testing.T) {
+	// Clear cache before test
+	graphCacheMu.Lock()
+	graphCache = make(map[string]graphCacheEntry)
+	graphCacheMu.Unlock()
+
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+
+	// First request - cache miss
+	rr1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/graph?max_nodes=100&max_links=200", nil)
+	h.GetGraphData(rr1, req1)
+
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("request 1: expected 200, got %d", rr1.Code)
+	}
+	response1 := rr1.Body.String()
+
+	// Second request with same parameters - should be cache hit
+	rr2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/graph?max_nodes=100&max_links=200", nil)
+	h.GetGraphData(rr2, req2)
+
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("request 2: expected 200, got %d", rr2.Code)
+	}
+	response2 := rr2.Body.String()
+
+	// Responses should be identical
+	if response1 != response2 {
+		t.Error("cached response should be identical to original response")
+	}
+
+	// Third request with different parameters - cache miss
+	rr3 := httptest.NewRecorder()
+	req3 := httptest.NewRequest(http.MethodGet, "/graph?max_nodes=200&max_links=400", nil)
+	h.GetGraphData(rr3, req3)
+
+	if rr3.Code != http.StatusOK {
+		t.Fatalf("request 3: expected 200, got %d", rr3.Code)
+	}
+
+	// Verify we now have 2 cache entries
+	graphCacheMu.Lock()
+	cacheSize := len(graphCache)
+	graphCacheMu.Unlock()
+
+	if cacheSize != 2 {
+		t.Errorf("expected 2 cache entries for different parameters, got %d", cacheSize)
+	}
+}
+
+// TestGraphHandler_CacheKeyWithTypes verifies type filtering in cache keys
+func TestGraphHandler_CacheKeyWithTypes(t *testing.T) {
+	// Clear cache before test
+	graphCacheMu.Lock()
+	graphCache = make(map[string]graphCacheEntry)
+	graphCacheMu.Unlock()
+
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+
+	// Request 1: no type filter
+	rr1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/graph", nil)
+	h.GetGraphData(rr1, req1)
+
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("request 1: expected 200, got %d", rr1.Code)
+	}
+
+	// Request 2: with type filter
+	rr2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/graph?types=user", nil)
+	h.GetGraphData(rr2, req2)
+
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("request 2: expected 200, got %d", rr2.Code)
+	}
+
+	// Request 3: with different type filter
+	rr3 := httptest.NewRecorder()
+	req3 := httptest.NewRequest(http.MethodGet, "/graph?types=subreddit", nil)
+	h.GetGraphData(rr3, req3)
+
+	if rr3.Code != http.StatusOK {
+		t.Fatalf("request 3: expected 200, got %d", rr3.Code)
+	}
+
+	// Verify we have 3 separate cache entries
+	graphCacheMu.Lock()
+	cacheSize := len(graphCache)
+	graphCacheMu.Unlock()
+
+	if cacheSize != 3 {
+		t.Errorf("expected 3 cache entries for different type filters, got %d", cacheSize)
+	}
+}
