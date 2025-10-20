@@ -512,7 +512,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     // If most nodes already have positions, tune simulation to settle quickly
     if (hasPrecomputedPositions) {
-      // Increase alphaDecay so it cools faster and doesn't drift far from provided layout
+      // Increase alphaDecay from default (~0.0228) to 0.15 so it cools faster and doesn't drift far from provided layout
       simulation.alphaDecay(0.15);
     }
 
