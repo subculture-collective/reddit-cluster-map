@@ -128,6 +128,8 @@ CSS classes on container:
 ## Implementation Details
 
 ### Detection Logic
+
+**Graph3D (lines 666-682):**
 ```typescript
 const hasPrecomputedPositions = useMemo(() => {
   if (!usePrecomputedLayout) return false;
@@ -138,7 +140,7 @@ const hasPrecomputedPositions = useMemo(() => {
     if (
       typeof node.x === "number" &&
       typeof node.y === "number" &&
-      typeof node.z === "number"  // Graph2D doesn't check z
+      typeof node.z === "number"
     )
       withPos++;
   }
@@ -146,7 +148,26 @@ const hasPrecomputedPositions = useMemo(() => {
 }, [filtered, usePrecomputedLayout]);
 ```
 
+**Graph2D (lines 413-424):**
+```typescript
+const hasPrecomputedPositions = useMemo(() => {
+  if (!usePrecomputedLayout) return false;
+  const n = filtered.nodes.length;
+  if (n === 0) return false;
+  let withPos = 0;
+  for (const node of filtered.nodes) {
+    if (typeof node.x === "number" && typeof node.y === "number") withPos++;
+  }
+  return withPos / n > 0.7;  // 70% threshold
+}, [filtered, usePrecomputedLayout]);
+```
+
+Note: Graph2D only checks x and y coordinates, while Graph3D checks x, y, and z.
+
 ### API Request Behavior
+
+**Graph3D (lines 360-368) and Graph2D (lines 269-277):**
+
 When `usePrecomputedLayout={true}`:
 ```typescript
 const params = new URLSearchParams({
@@ -156,6 +177,8 @@ const params = new URLSearchParams({
 // Request precomputed positions only when enabled
 if (usePrecomputedLayout) params.set("with_positions", "true");
 ```
+
+Both components use identical logic in their respective `load` functions.
 
 ### Physics Tuning
 
@@ -174,18 +197,22 @@ if (usePrecomputedLayout) params.set("with_positions", "true");
 ```typescript
 // If most nodes already have positions, tune simulation to settle quickly
 if (hasPrecomputedPositions) {
-  // Increase alphaDecay so it cools faster and doesn't drift far from provided layout
+  // Increase alphaDecay from default (~0.0228) to 0.15 so it cools faster
+  // and doesn't drift far from provided layout
   simulation.alphaDecay(0.15);
 }
 
 // Later in the code:
 if (hasPrecomputedPositions) {
   // With precomputed positions, a gentle nudge is enough
+  // Lower initial alpha (0.15 vs default 1.0) means less initial movement
   simulation.alpha(0.15).restart();
 } else {
   simulation.alpha(1).restart();
 }
 ```
+
+Note: D3's default alphaDecay is approximately 0.0228 (calculated as 1 - Math.pow(0.001, 1/300)). Setting it to 0.15 causes the simulation to cool down in ~10-20 ticks instead of ~300.
 
 ## Parity Verification
 
