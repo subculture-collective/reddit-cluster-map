@@ -25,16 +25,16 @@ type CrawlQueue interface {
 
 func PostCrawl(q CrawlQueue) http.HandlerFunc {
 	sanitizer := &middleware.SanitizeInput{}
-	
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[PostCrawl] Received request: %v", r)
-		
+
 		// Validate content type
 		if err := middleware.ValidateJSON(r); err != nil {
 			http.Error(w, `{"error":"Invalid request format"}`, http.StatusBadRequest)
 			return
 		}
-		
+
 		var req CrawlRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, `{"error":"Invalid request body"}`, http.StatusBadRequest)
@@ -46,7 +46,7 @@ func PostCrawl(q CrawlQueue) http.HandlerFunc {
 		if req.Subreddit == "" {
 			req.Subreddit = "AskReddit"
 		}
-		
+
 		if err := sanitizer.ValidateSubredditName(req.Subreddit); err != nil {
 			http.Error(w, `{"error":"Invalid subreddit name"}`, http.StatusBadRequest)
 			return

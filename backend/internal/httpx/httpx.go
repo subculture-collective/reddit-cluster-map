@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
 )
 
 // PreAttempt lets callers run logic (e.g., rate limiting) before each try; return context error to abort.
@@ -53,6 +54,8 @@ func DoWithRetryFactoryObs(client *http.Client, build func() (*http.Request, err
 		}
 		resp, err := client.Do(req)
 		if err != nil {
+			// Network or transport error
+			metrics.CrawlerHTTPRequests.WithLabelValues("error").Inc()
 			if attempt == maxAttempts || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				if cfg.LogHTTPRetries {
 					log.Printf("httpx: attempt=%d method=%s url=%s err=%v (no more retries)", attempt, req.Method, req.URL.String(), err)
@@ -62,12 +65,14 @@ func DoWithRetryFactoryObs(client *http.Client, build func() (*http.Request, err
 				}
 				return nil, err
 			}
+			metrics.CrawlerHTTPRetries.Inc()
 			if obs != nil {
 				obs(AttemptInfo{Attempt: attempt, Method: req.Method, URL: req.URL.String(), Err: err})
 			}
 		} else {
 			// success unless 429/5xx
 			if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
+				metrics.CrawlerHTTPRequests.WithLabelValues("success").Inc()
 				if cfg.LogHTTPRetries && attempt > 1 {
 					log.Printf("httpx: attempt=%d method=%s url=%s status=%d (success)", attempt, req.Method, req.URL.String(), resp.StatusCode)
 				}
@@ -76,6 +81,8 @@ func DoWithRetryFactoryObs(client *http.Client, build func() (*http.Request, err
 				}
 				return resp, nil
 			}
+			// 429 or 5xx - will retry
+			metrics.CrawlerHTTPRequests.WithLabelValues("retry").Inc()
 			if attempt == maxAttempts {
 				if cfg.LogHTTPRetries {
 					log.Printf("httpx: attempt=%d method=%s url=%s status=%d (giving up)", attempt, req.Method, req.URL.String(), resp.StatusCode)
@@ -90,6 +97,7 @@ func DoWithRetryFactoryObs(client *http.Client, build func() (*http.Request, err
 				if secs, err := strconv.Atoi(ra); err == nil {
 					resp.Body.Close()
 					wait := time.Duration(secs) * time.Second
+					metrics.CrawlerRetryAfterWaits.Observe(wait.Seconds())
 					if cfg.LogHTTPRetries {
 						log.Printf("httpx: attempt=%d 429/5xx Retry-After=%s wait=%s method=%s url=%s", attempt, ra, wait, req.Method, req.URL.String())
 					}
@@ -103,6 +111,7 @@ func DoWithRetryFactoryObs(client *http.Client, build func() (*http.Request, err
 					delta := time.Until(t)
 					if delta > 0 {
 						resp.Body.Close()
+						metrics.CrawlerRetryAfterWaits.Observe(delta.Seconds())
 						if cfg.LogHTTPRetries {
 							log.Printf("httpx: attempt=%d 429/5xx Retry-After=%s wait=%s method=%s url=%s", attempt, ra, delta, req.Method, req.URL.String())
 						}
@@ -115,6 +124,7 @@ func DoWithRetryFactoryObs(client *http.Client, build func() (*http.Request, err
 				}
 			}
 			resp.Body.Close()
+			metrics.CrawlerHTTPRetries.Inc()
 		}
 		// backoff with jitter
 		jitter := time.Duration(rand.Intn(200)) * time.Millisecond

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/utils"
 )
 
@@ -20,6 +21,13 @@ var (
 
 func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 	startTime := time.Now()
+	var jobStatus string
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		metrics.CrawlerJobDuration.WithLabelValues(jobStatus).Observe(duration)
+		metrics.CrawlerJobsTotal.WithLabelValues(jobStatus).Inc()
+	}()
+
 	log.Printf("🕷️ Starting crawl job #%d", job.ID)
 
 	// Update job status to crawling
@@ -34,6 +42,7 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 		log.Printf("⚠️ Failed to get subreddit with ID %d: %v", job.SubredditID, err)
 		// Update job status to failed
 		_ = q.MarkCrawlJobFailed(ctx, job.ID)
+		jobStatus = "failed"
 		return err
 	}
 
@@ -43,6 +52,7 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 		log.Printf("❌ Failed to crawl r/%s: %v", subreddit.Name, err)
 		// Update job status to failed
 		_ = q.MarkCrawlJobFailed(ctx, job.ID)
+		jobStatus = "failed"
 		return err
 	}
 
@@ -59,6 +69,7 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 		log.Printf("⚠️ Failed to upsert subreddit r/%s: %v", subreddit.Name, err)
 		// Update job status to failed
 		_ = q.MarkCrawlJobFailed(ctx, job.ID)
+		jobStatus = "failed"
 		return err
 	}
 	log.Printf("✅ Updated subreddit r/%s", subreddit.Name)
@@ -73,6 +84,7 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 		log.Printf("⚠️ Failed to crawl and store posts: %v", err)
 		// Update job status to failed
 		_ = q.MarkCrawlJobFailed(ctx, job.ID)
+		jobStatus = "failed"
 		return err
 	}
 	log.Printf("✅ Stored %d posts", len(insertedPosts))
@@ -81,6 +93,7 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 		log.Printf("⚠️ Failed to crawl and store comments: %v", err)
 		// Update job status to failed
 		_ = q.MarkCrawlJobFailed(ctx, job.ID)
+		jobStatus = "failed"
 		return err
 	}
 
@@ -92,9 +105,11 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 	// Update job status to success
 	if err := q.MarkCrawlJobSuccess(ctx, job.ID); err != nil {
 		log.Printf("⚠️ Failed to update job status to success: %v", err)
+		jobStatus = "failed"
 		return err
 	}
 
+	jobStatus = "success"
 	return nil
 }
 
@@ -131,6 +146,7 @@ func crawlAndStorePosts(ctx context.Context, q *db.Queries, subredditID int32, p
 		} else {
 			insertedPosts[post.ID] = true
 			insertedCount++
+			metrics.CrawlerPostsProcessed.Inc()
 		}
 	}
 
@@ -205,6 +221,7 @@ func crawlAndStoreComments(
 				if err := q.UpsertComment(ctx, params); err == nil {
 					inserted[c.ID] = true
 					insertedThisPost++
+					metrics.CrawlerCommentsProcessed.Inc()
 				} else {
 					log.Printf("⚠️ Failed to insert comment %s: %v", c.ID, err)
 					skippedThisPost++
@@ -220,6 +237,7 @@ func crawlAndStoreComments(
 				if err := q.UpsertComment(ctx, params); err == nil {
 					inserted[id] = true
 					insertedThisPost++
+					metrics.CrawlerCommentsProcessed.Inc()
 				} else {
 					log.Printf("⚠️ Second pass failed for comment %s: %v", id, err)
 					skippedThisPost++

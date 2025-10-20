@@ -77,6 +77,7 @@ See the **[Developer Guide](docs/developer-guide.md)** for detailed workflows, t
 
 - **[Developer Guide](docs/developer-guide.md)** - Comprehensive dev workflows, Makefile targets, testing, and troubleshooting
 - **[Setup Guide](docs/setup.md)** - Full setup instructions for Docker, env vars, and seeding
+- **[Crawler Resilience](docs/CRAWLER_RESILIENCE.md)** - Rate limiting, retries, metrics, and circuit breaker configuration
 - **[API Documentation](docs/api.md)** - API endpoints and usage
 - **[Architecture Overview](docs/overview.md)** - System design and data flow
 - **[CI/CD Pipeline](docs/CI-CD.md)** - Continuous integration and deployment

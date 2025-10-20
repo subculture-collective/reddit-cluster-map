@@ -122,11 +122,11 @@ func TestGetClientIP_RemoteAddr(t *testing.T) {
 
 func TestRateLimiter_Cleanup(t *testing.T) {
 	rl := NewRateLimiter(10.0, 10, 10.0, 10)
-	
+
 	// Create some IP limiters
 	rl.getLimiter("192.168.1.1")
 	rl.getLimiter("192.168.1.2")
-	
+
 	// Check they exist
 	rl.mu.RLock()
 	count := len(rl.perIP)
@@ -134,7 +134,7 @@ func TestRateLimiter_Cleanup(t *testing.T) {
 	if count != 2 {
 		t.Errorf("Expected 2 IP limiters, got %d", count)
 	}
-	
+
 	// Stop the rate limiter (which stops cleanup)
 	rl.Stop()
 }

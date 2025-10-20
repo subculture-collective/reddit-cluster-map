@@ -35,14 +35,17 @@ type Config struct {
 	// API background graph job control
 	DisableAPIGraphJob bool
 	// Admin API token for gating admin endpoints (Bearer token)
-	AdminAPIToken      string
+	AdminAPIToken string
 	// Security settings
-	RateLimitGlobal    float64 // requests per second globally
-	RateLimitGlobalBurst int   // burst size for global rate limit
-	RateLimitPerIP     float64 // requests per second per IP
-	RateLimitPerIPBurst int    // burst size for per-IP rate limit
-	CORSAllowedOrigins []string // allowed CORS origins
-	EnableRateLimit    bool     // enable rate limiting middleware
+	RateLimitGlobal      float64  // requests per second globally
+	RateLimitGlobalBurst int      // burst size for global rate limit
+	RateLimitPerIP       float64  // requests per second per IP
+	RateLimitPerIPBurst  int      // burst size for per-IP rate limit
+	CORSAllowedOrigins   []string // allowed CORS origins
+	EnableRateLimit      bool     // enable rate limiting middleware
+	// Crawler rate limiting (Reddit API)
+	CrawlerRPS       float64 // requests per second to Reddit API
+	CrawlerBurstSize int     // burst size for crawler rate limit
 }
 
 var cached *Config
@@ -57,38 +60,45 @@ func Load() *Config {
 		ua = "reddit-cluster-map/0.1"
 	}
 	cached = &Config{
-		UserAgent:          ua,
-		HTTPMaxRetries:     utils.GetEnvAsInt("HTTP_MAX_RETRIES", 3),
-		HTTPRetryBase:      time.Duration(utils.GetEnvAsInt("HTTP_RETRY_BASE_MS", 300)) * time.Millisecond,
-		HTTPTimeout:        time.Duration(utils.GetEnvAsInt("HTTP_TIMEOUT_MS", 15000)) * time.Millisecond,
-		LogHTTPRetries:     utils.GetEnvAsBool("LOG_HTTP_RETRIES", false),
-		GraphQueryTimeout:  time.Duration(utils.GetEnvAsInt("GRAPH_QUERY_TIMEOUT_MS", 30000)) * time.Millisecond,
-		DBStatementTimeout: time.Duration(utils.GetEnvAsInt("DB_STATEMENT_TIMEOUT_MS", 25000)) * time.Millisecond,
-		DetailedGraph:      utils.GetEnvAsBool("DETAILED_GRAPH", false),
-		PostsPerSubInGraph: utils.GetEnvAsInt("POSTS_PER_SUB_IN_GRAPH", 10),
-		CommentsPerPost:    utils.GetEnvAsInt("COMMENTS_PER_POST_IN_GRAPH", 50),
-		MaxAuthorLinks:     utils.GetEnvAsInt("MAX_AUTHOR_CONTENT_LINKS", 3),
-		MaxPostsPerSub:     utils.GetEnvAsInt("MAX_POSTS_PER_SUB", 25),
-		PostsSort:          strings.ToLower(strings.TrimSpace(os.Getenv("POSTS_SORT"))),
-		PostsTimeFilter:    strings.ToLower(strings.TrimSpace(os.Getenv("POSTS_TIME_FILTER"))),
-	RedditClientID:     strings.TrimSpace(os.Getenv("REDDIT_CLIENT_ID")),
-	RedditClientSecret: strings.TrimSpace(os.Getenv("REDDIT_CLIENT_SECRET")),
-	RedditRedirectURI:  strings.TrimSpace(os.Getenv("REDDIT_REDIRECT_URI")),
-	RedditScopes:       strings.TrimSpace(os.Getenv("REDDIT_SCOPES")),
-	StaleDays:           utils.GetEnvAsInt("STALE_DAYS", 30),
-	ResetCrawlingAfterMin: utils.GetEnvAsInt("RESET_CRAWLING_AFTER_MIN", 15),
-	DisableAPIGraphJob:    utils.GetEnvAsBool("DISABLE_API_GRAPH_JOB", false),
-	AdminAPIToken:         strings.TrimSpace(os.Getenv("ADMIN_API_TOKEN")),
-	// Security settings with sensible defaults
-	RateLimitGlobal:      utils.GetEnvAsFloat("RATE_LIMIT_GLOBAL", 100.0),
-	RateLimitGlobalBurst: utils.GetEnvAsInt("RATE_LIMIT_GLOBAL_BURST", 200),
-	RateLimitPerIP:       utils.GetEnvAsFloat("RATE_LIMIT_PER_IP", 10.0),
-	RateLimitPerIPBurst:  utils.GetEnvAsInt("RATE_LIMIT_PER_IP_BURST", 20),
-	EnableRateLimit:      utils.GetEnvAsBool("ENABLE_RATE_LIMIT", true),
+		UserAgent:             ua,
+		HTTPMaxRetries:        utils.GetEnvAsInt("HTTP_MAX_RETRIES", 3),
+		HTTPRetryBase:         time.Duration(utils.GetEnvAsInt("HTTP_RETRY_BASE_MS", 300)) * time.Millisecond,
+		HTTPTimeout:           time.Duration(utils.GetEnvAsInt("HTTP_TIMEOUT_MS", 15000)) * time.Millisecond,
+		LogHTTPRetries:        utils.GetEnvAsBool("LOG_HTTP_RETRIES", false),
+		GraphQueryTimeout:     time.Duration(utils.GetEnvAsInt("GRAPH_QUERY_TIMEOUT_MS", 30000)) * time.Millisecond,
+		DBStatementTimeout:    time.Duration(utils.GetEnvAsInt("DB_STATEMENT_TIMEOUT_MS", 25000)) * time.Millisecond,
+		DetailedGraph:         utils.GetEnvAsBool("DETAILED_GRAPH", false),
+		PostsPerSubInGraph:    utils.GetEnvAsInt("POSTS_PER_SUB_IN_GRAPH", 10),
+		CommentsPerPost:       utils.GetEnvAsInt("COMMENTS_PER_POST_IN_GRAPH", 50),
+		MaxAuthorLinks:        utils.GetEnvAsInt("MAX_AUTHOR_CONTENT_LINKS", 3),
+		MaxPostsPerSub:        utils.GetEnvAsInt("MAX_POSTS_PER_SUB", 25),
+		PostsSort:             strings.ToLower(strings.TrimSpace(os.Getenv("POSTS_SORT"))),
+		PostsTimeFilter:       strings.ToLower(strings.TrimSpace(os.Getenv("POSTS_TIME_FILTER"))),
+		RedditClientID:        strings.TrimSpace(os.Getenv("REDDIT_CLIENT_ID")),
+		RedditClientSecret:    strings.TrimSpace(os.Getenv("REDDIT_CLIENT_SECRET")),
+		RedditRedirectURI:     strings.TrimSpace(os.Getenv("REDDIT_REDIRECT_URI")),
+		RedditScopes:          strings.TrimSpace(os.Getenv("REDDIT_SCOPES")),
+		StaleDays:             utils.GetEnvAsInt("STALE_DAYS", 30),
+		ResetCrawlingAfterMin: utils.GetEnvAsInt("RESET_CRAWLING_AFTER_MIN", 15),
+		DisableAPIGraphJob:    utils.GetEnvAsBool("DISABLE_API_GRAPH_JOB", false),
+		AdminAPIToken:         strings.TrimSpace(os.Getenv("ADMIN_API_TOKEN")),
+		// Security settings with sensible defaults
+		RateLimitGlobal:      utils.GetEnvAsFloat("RATE_LIMIT_GLOBAL", 100.0),
+		RateLimitGlobalBurst: utils.GetEnvAsInt("RATE_LIMIT_GLOBAL_BURST", 200),
+		RateLimitPerIP:       utils.GetEnvAsFloat("RATE_LIMIT_PER_IP", 10.0),
+		RateLimitPerIPBurst:  utils.GetEnvAsInt("RATE_LIMIT_PER_IP_BURST", 20),
+		EnableRateLimit:      utils.GetEnvAsBool("ENABLE_RATE_LIMIT", true),
+		// Crawler rate limiting: default to ~1.66 rps (60 requests per minute)
+		CrawlerRPS:       utils.GetEnvAsFloat("CRAWLER_RPS", 1.66),
+		CrawlerBurstSize: utils.GetEnvAsInt("CRAWLER_BURST_SIZE", 1),
 	}
-	if cached.PostsSort == "" { cached.PostsSort = "top" }
-	if cached.PostsTimeFilter == "" { cached.PostsTimeFilter = "day" }
-	
+	if cached.PostsSort == "" {
+		cached.PostsSort = "top"
+	}
+	if cached.PostsTimeFilter == "" {
+		cached.PostsTimeFilter = "day"
+	}
+
 	// Parse CORS allowed origins
 	corsOrigins := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
 	if corsOrigins == "" {
@@ -100,7 +110,7 @@ func Load() *Config {
 			cached.CORSAllowedOrigins[i] = strings.TrimSpace(cached.CORSAllowedOrigins[i])
 		}
 	}
-	
+
 	return cached
 }
 
