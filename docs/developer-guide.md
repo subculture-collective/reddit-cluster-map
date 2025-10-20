@@ -59,7 +59,7 @@ Run `make help` from the `backend/` directory to see all available targets. Key 
 
 - `make test` - Run all Go unit tests
 - `make test-integration` - Run integration tests (requires TEST_DATABASE_URL)
-- `make benchmark-graph` - Benchmark graph query performance
+- `make benchmark-graph` (from backend/) - Benchmark graph query performance
 - `make lint` - Run Go linters (go vet and gofmt check)
 - `make fmt` - Auto-format Go code with gofmt
 - `make smoke-test` - Run smoke tests (basic API health checks)
@@ -214,7 +214,7 @@ make test-integration
 
 #### Performance Benchmarks
 
-To measure graph query performance:
+To measure graph query performance (from `backend/`):
 
 ```bash
 # Ensure database is populated with graph data

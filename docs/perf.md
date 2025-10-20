@@ -47,29 +47,24 @@ The following indexes optimize graph query performance:
    CREATE INDEX idx_graph_links_target_source ON graph_links(target, source);
    ```
 
-### Partial Indexes for High-Degree Nodes (Migration 000018)
+### Additional Indexes (Migration 000018)
 
-Additional partial indexes optimize queries for high-value nodes (nodes with high val or degree):
+Additional indexes optimize common query patterns:
 
-1. **idx_graph_links_source_high_val** - Partial index for links from high-value nodes
+1. **idx_graph_links_source_target** - Composite index for bidirectional lookups
    ```sql
-   CREATE INDEX idx_graph_links_source_high_val ON graph_links(source)
-   WHERE source IN (
-       SELECT id FROM graph_nodes 
-       WHERE val ~ '^[0-9]+$' AND CAST(val AS BIGINT) > 100
-   );
+   CREATE INDEX idx_graph_links_source_target ON graph_links(source, target);
    ```
+   Complements the existing `idx_graph_links_target_source` to cover both directions efficiently.
 
-2. **idx_graph_links_target_high_val** - Partial index for links to high-value nodes
+2. **idx_graph_nodes_type_val** - Partial index for type-filtered queries with value ordering
    ```sql
-   CREATE INDEX idx_graph_links_target_high_val ON graph_links(target)
-   WHERE target IN (
-       SELECT id FROM graph_nodes 
-       WHERE val ~ '^[0-9]+$' AND CAST(val AS BIGINT) > 100
-   );
+   CREATE INDEX idx_graph_nodes_type_val ON graph_nodes(type, (
+       CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+   ) DESC NULLS LAST)
+   WHERE type IN ('subreddit', 'user', 'post', 'comment');
    ```
-
-These partial indexes are smaller and faster for the common case where queries focus on high-value nodes.
+   Optimizes the common case of filtering by node type and ordering by value, which is the exact pattern used in `GetPrecalculatedGraphDataCappedFiltered`.
 
 ## Query Patterns and Performance
 

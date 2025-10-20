@@ -90,7 +90,7 @@ From `backend/`, run `make help` to see all available targets. Key ones:
 - `make generate` - Regenerate sqlc code after editing SQL
 - `make precalculate` - Run graph precalculation
 - `make test` - Run all tests
-- `make benchmark-graph` - Benchmark graph query performance
+- `make benchmark-graph` (from backend/) - Benchmark graph query performance
 - `make lint` - Check code formatting and run go vet
 - `make fmt` - Auto-format Go code
 - `make smoke-test` - Run API health checks
