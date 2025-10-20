@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -168,4 +169,131 @@ func findSubstr(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// fakeGraphQueriesWithPositions simulates graph data with position columns
+type fakeGraphQueriesWithPositions struct{}
+
+func (f *fakeGraphQueriesWithPositions) GetGraphData(ctx context.Context) ([]json.RawMessage, error) {
+	return nil, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error) {
+	// Return sample data with positions
+	return []db.GetPrecalculatedGraphDataCappedAllRow{
+		{
+			DataType: "node",
+			ID:       "test_node_1",
+			Name:     "Test Node 1",
+			Val:      "100",
+			Type:     sql.NullString{String: "user", Valid: true},
+			PosX:     sql.NullFloat64{Float64: 1.5, Valid: true},
+			PosY:     sql.NullFloat64{Float64: 2.5, Valid: true},
+			PosZ:     sql.NullFloat64{Float64: 3.5, Valid: true},
+		},
+		{
+			DataType: "link",
+			ID:       "1",
+			Source:   "test_node_1",
+			Target:   "test_node_2",
+		},
+	}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetPrecalculatedGraphDataCappedFiltered(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedFilteredParams) ([]db.GetPrecalculatedGraphDataCappedFilteredRow, error) {
+	return nil, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetPrecalculatedGraphDataNoPos(ctx context.Context) ([]db.GetPrecalculatedGraphDataNoPosRow, error) {
+	return nil, nil
+}
+
+func TestGraphHandler_WithPositions(t *testing.T) {
+	// Clear cache before test
+	graphCacheMu.Lock()
+	graphCache = make(map[string]graphCacheEntry)
+	graphCacheMu.Unlock()
+
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+
+	// Test with with_positions=true
+	t.Run("with_positions=true", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/graph?with_positions=true", nil)
+		h.GetGraphData(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+
+		var out struct {
+			Nodes []struct {
+				ID   string   `json:"id"`
+				Name string   `json:"name"`
+				X    *float64 `json:"x,omitempty"`
+				Y    *float64 `json:"y,omitempty"`
+				Z    *float64 `json:"z,omitempty"`
+			} `json:"nodes"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+
+		if len(out.Nodes) != 1 {
+			t.Fatalf("expected 1 node, got %d", len(out.Nodes))
+		}
+
+		node := out.Nodes[0]
+		if node.X == nil || node.Y == nil || node.Z == nil {
+			t.Errorf("expected position coordinates, got x=%v, y=%v, z=%v", node.X, node.Y, node.Z)
+		}
+		if node.X != nil && *node.X != 1.5 {
+			t.Errorf("expected x=1.5, got %f", *node.X)
+		}
+		if node.Y != nil && *node.Y != 2.5 {
+			t.Errorf("expected y=2.5, got %f", *node.Y)
+		}
+		if node.Z != nil && *node.Z != 3.5 {
+			t.Errorf("expected z=3.5, got %f", *node.Z)
+		}
+	})
+
+	// Test without with_positions parameter (should not include positions)
+	t.Run("without_positions", func(t *testing.T) {
+		// Clear cache
+		graphCacheMu.Lock()
+		graphCache = make(map[string]graphCacheEntry)
+		graphCacheMu.Unlock()
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/graph", nil)
+		h.GetGraphData(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+
+		var out struct {
+			Nodes []struct {
+				ID   string   `json:"id"`
+				Name string   `json:"name"`
+				X    *float64 `json:"x,omitempty"`
+				Y    *float64 `json:"y,omitempty"`
+				Z    *float64 `json:"z,omitempty"`
+			} `json:"nodes"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+
+		if len(out.Nodes) != 1 {
+			t.Fatalf("expected 1 node, got %d", len(out.Nodes))
+		}
+
+		node := out.Nodes[0]
+		// When with_positions is not set, positions should be omitted
+		if node.X != nil || node.Y != nil || node.Z != nil {
+			t.Errorf("expected no position coordinates, got x=%v, y=%v, z=%v", node.X, node.Y, node.Z)
+		}
+	})
 }
