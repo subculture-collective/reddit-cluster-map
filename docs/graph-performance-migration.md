@@ -178,6 +178,17 @@ If index creation fails due to memory, you can:
 2. Create indexes one at a time manually
 3. Run during low-traffic period
 
+## Additional Optimizations (Migration 000018)
+
+Further performance improvements have been added through partial indexes:
+
+- **idx_graph_links_source_target**: Composite index for bidirectional lookups
+- **idx_graph_nodes_type_val**: Optimized index for type-filtered queries with value ordering
+
+These indexes specifically target the common query patterns in `GetPrecalculatedGraphDataCappedFiltered`.
+
+For detailed performance analysis and benchmarking, see [Performance Documentation](perf.md).
+
 ## Support
 
 For issues or questions:

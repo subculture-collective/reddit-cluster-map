@@ -59,6 +59,7 @@ Run `make help` from the `backend/` directory to see all available targets. Key 
 
 - `make test` - Run all Go unit tests
 - `make test-integration` - Run integration tests (requires TEST_DATABASE_URL)
+- `make benchmark-graph` - Benchmark graph query performance
 - `make lint` - Run Go linters (go vet and gofmt check)
 - `make fmt` - Auto-format Go code with gofmt
 - `make smoke-test` - Run smoke tests (basic API health checks)
@@ -210,6 +211,31 @@ Integration tests require a database. Set `TEST_DATABASE_URL`:
 export TEST_DATABASE_URL="postgres://postgres:password@localhost:5432/reddit_cluster_test?sslmode=disable"
 make test-integration
 ```
+
+#### Performance Benchmarks
+
+To measure graph query performance:
+
+```bash
+# Ensure database is populated with graph data
+make precalculate
+
+# Run benchmarks
+make benchmark-graph
+```
+
+The benchmark script tests query patterns used by the graph API and reports:
+- Execution times (averaged over 5 runs)
+- Index usage statistics
+- Table statistics
+
+For detailed performance analysis with EXPLAIN ANALYZE:
+
+```bash
+psql "$DATABASE_URL" -f backend/scripts/explain_analyze_queries.sql
+```
+
+See [Performance Documentation](perf.md) for interpreting results and optimization tips.
 
 #### Smoke Tests
 
