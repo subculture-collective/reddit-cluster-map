@@ -687,31 +687,12 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	}
 	log.Printf("✅ position columns detected: layout computation enabled")
 
-	// Caps and iteration counts via env to keep safe on servers
-	maxNodes := 5000
-	if v := os.Getenv("LAYOUT_MAX_NODES"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 100 {
-			maxNodes = n
-		}
-	}
-	iterations := 400
-	if v := os.Getenv("LAYOUT_ITERATIONS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 50 {
-			iterations = n
-		}
-	}
-	batchSize := 5000
-	if v := os.Getenv("LAYOUT_BATCH_SIZE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 100 {
-			batchSize = n
-		}
-	}
-	epsilon := 0.0 // distance threshold for updates (0 = update all)
-	if v := os.Getenv("LAYOUT_EPSILON"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
-			epsilon = f
-		}
-	}
+	// Load layout configuration from centralized config
+	cfg := config.Load()
+	maxNodes := cfg.LayoutMaxNodes
+	iterations := cfg.LayoutIterations
+	batchSize := cfg.LayoutBatchSize
+	epsilon := cfg.LayoutEpsilon
 
 	log.Printf("⚙️ layout configuration: max_nodes=%d, iterations=%d, batch_size=%d, epsilon=%.2f", maxNodes, iterations, batchSize, epsilon)
 
