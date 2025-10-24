@@ -23,6 +23,30 @@ type D3Node = {
 
 type D3Link = { source: string; target: string; weight: number };
 
+// Helper function to calculate community density
+function calculateCommunityDensity(
+  communityNodes: string[],
+  links: { source: string; target: string }[]
+): number {
+  const memberSet = new Set(communityNodes);
+  let internalEdges = 0;
+  for (const l of links) {
+    if (memberSet.has(l.source) && memberSet.has(l.target)) {
+      internalEdges++;
+    }
+  }
+  const size = communityNodes.length;
+  const possibleEdges = (size * (size - 1)) / 2;
+  return possibleEdges > 0 ? internalEdges / possibleEdges : 0;
+}
+
+// Helper function to calculate label font size
+function calculateLabelFontSize(nodeSize: number): number {
+  const baseSize = 10;
+  const sizeBonus = Math.min(8, Math.sqrt(nodeSize) * 1.2);
+  return baseSize + sizeBonus;
+}
+
 export default function CommunityMap({
   communityResult,
   onBack,
@@ -80,16 +104,7 @@ export default function CommunityMap({
     if (expanded === null) {
       // Community-level supernodes
       for (const c of comm.communities) {
-        // Calculate density: ratio of actual edges to possible edges in community
-        const memberSet = new Set(c.nodes);
-        let internalEdges = 0;
-        for (const l of graph.links) {
-          if (memberSet.has(l.source) && memberSet.has(l.target)) {
-            internalEdges++;
-          }
-        }
-        const possibleEdges = (c.size * (c.size - 1)) / 2;
-        const density = possibleEdges > 0 ? internalEdges / possibleEdges : 0;
+        const density = calculateCommunityDensity(c.nodes, graph.links);
 
         nodes.push({
           id: `community_${c.id}`,
@@ -143,16 +158,7 @@ export default function CommunityMap({
       for (const c of comm.communities) {
         if (c.id === expanded) continue;
         
-        // Calculate density for other communities too
-        const memberSet2 = new Set(c.nodes);
-        let internalEdges = 0;
-        for (const l of graph.links) {
-          if (memberSet2.has(l.source) && memberSet2.has(l.target)) {
-            internalEdges++;
-          }
-        }
-        const possibleEdges = (c.size * (c.size - 1)) / 2;
-        const density = possibleEdges > 0 ? internalEdges / possibleEdges : 0;
+        const density = calculateCommunityDensity(c.nodes, graph.links);
 
         nodes.push({
           id: `community_${c.id}`,
@@ -317,10 +323,7 @@ export default function CommunityMap({
       .text((d) => (d.type === "community" ? d.name : ""))
       .attr("font-size", (d) => {
         if (d.type === "community") {
-          // Improved sizing: larger communities get larger labels, but capped
-          const baseSize = 10;
-          const sizeBonus = Math.min(8, Math.sqrt(d.size) * 1.2);
-          return baseSize + sizeBonus;
+          return calculateLabelFontSize(d.size);
         }
         return 0;
       })
@@ -353,7 +356,7 @@ export default function CommunityMap({
       .force(
         "collide",
         d3.forceCollide<LabelNode>((d) => {
-          const fontSize = 10 + Math.min(8, Math.sqrt(d.size) * 1.2);
+          const fontSize = calculateLabelFontSize(d.size);
           return (d.name.length * fontSize) / 2 + 10;
         })
       )
