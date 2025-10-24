@@ -46,6 +46,11 @@ type Config struct {
 	// Crawler rate limiting (Reddit API)
 	CrawlerRPS       float64 // requests per second to Reddit API
 	CrawlerBurstSize int     // burst size for crawler rate limit
+	// Layout computation settings
+	LayoutMaxNodes     int     // maximum nodes to include in layout computation
+	LayoutIterations   int     // number of force-directed iterations
+	LayoutBatchSize    int     // batch size for position updates
+	LayoutEpsilon      float64 // minimum distance threshold for position updates (0 = update all)
 }
 
 var cached *Config
@@ -91,6 +96,11 @@ func Load() *Config {
 		// Crawler rate limiting: default to ~1.66 rps (60 requests per minute)
 		CrawlerRPS:       utils.GetEnvAsFloat("CRAWLER_RPS", 1.66),
 		CrawlerBurstSize: utils.GetEnvAsInt("CRAWLER_BURST_SIZE", 1),
+		// Layout computation: sensible defaults for force-directed layout
+		LayoutMaxNodes:   utils.GetEnvAsInt("LAYOUT_MAX_NODES", 5000),
+		LayoutIterations: utils.GetEnvAsInt("LAYOUT_ITERATIONS", 400),
+		LayoutBatchSize:  utils.GetEnvAsInt("LAYOUT_BATCH_SIZE", 5000),
+		LayoutEpsilon:    utils.GetEnvAsFloat("LAYOUT_EPSILON", 0.0),
 	}
 	if cached.PostsSort == "" {
 		cached.PostsSort = "top"

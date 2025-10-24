@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	_ "github.com/lib/pq"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
@@ -200,4 +201,103 @@ func TestIntegration_BatchUpdatePositions_Epsilon(t *testing.T) {
 	if updated != 1 {
 		t.Logf("Warning: expected 1 update with epsilon filter, got %d (this may vary based on actual distances)", updated)
 	}
+}
+
+func TestIntegration_LayoutComputation_ConfigRespect(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+		return
+	}
+	conn, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+	svc := NewService(q)
+	ctx := context.Background()
+
+	// Check if position columns exist first
+	hasPositions := svc.checkPositionColumnsExist(ctx, q)
+	if !hasPositions {
+		t.Skip("Position columns not present; skipping layout config test")
+		return
+	}
+
+	// Set custom config values for layout
+	os.Setenv("LAYOUT_MAX_NODES", "100")
+	os.Setenv("LAYOUT_ITERATIONS", "50")
+	os.Setenv("LAYOUT_BATCH_SIZE", "50")
+	os.Setenv("LAYOUT_EPSILON", "0.5")
+
+	// Reset config to pick up new env vars
+	config.ResetForTest()
+	cfg := config.Load()
+
+	// Verify config values are as expected
+	if cfg.LayoutMaxNodes != 100 {
+		t.Errorf("expected LayoutMaxNodes=100, got %d", cfg.LayoutMaxNodes)
+	}
+	if cfg.LayoutIterations != 50 {
+		t.Errorf("expected LayoutIterations=50, got %d", cfg.LayoutIterations)
+	}
+
+	// Insert a small set of test nodes and links for layout computation
+	testNodeIDs := []string{"layout_test_1", "layout_test_2", "layout_test_3"}
+	for i, id := range testNodeIDs {
+		err := q.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{
+			ID:   id,
+			Name: "Layout Test Node " + id,
+			Val:  sql.NullString{String: string(rune('0' + i + 1)), Valid: true},
+			Type: sql.NullString{String: "test", Valid: true},
+		})
+		if err != nil {
+			t.Fatalf("failed to insert test node %s: %v", id, err)
+		}
+	}
+
+	// Add some links between nodes
+	_, err = conn.ExecContext(ctx, "INSERT INTO graph_links (source, target) VALUES ($1, $2) ON CONFLICT DO NOTHING", testNodeIDs[0], testNodeIDs[1])
+	if err != nil {
+		t.Fatalf("failed to insert test link: %v", err)
+	}
+	_, err = conn.ExecContext(ctx, "INSERT INTO graph_links (source, target) VALUES ($1, $2) ON CONFLICT DO NOTHING", testNodeIDs[1], testNodeIDs[2])
+	if err != nil {
+		t.Fatalf("failed to insert test link: %v", err)
+	}
+
+	t.Cleanup(func() {
+		// Clean up test nodes and links
+		for _, id := range testNodeIDs {
+			_, _ = conn.ExecContext(ctx, "DELETE FROM graph_nodes WHERE id = $1", id)
+			_, _ = conn.ExecContext(ctx, "DELETE FROM graph_links WHERE source = $1 OR target = $1", id)
+		}
+		// Reset env vars
+		os.Unsetenv("LAYOUT_MAX_NODES")
+		os.Unsetenv("LAYOUT_ITERATIONS")
+		os.Unsetenv("LAYOUT_BATCH_SIZE")
+		os.Unsetenv("LAYOUT_EPSILON")
+		config.ResetForTest()
+	})
+
+	// Run layout computation
+	err = svc.computeAndStoreLayout(ctx)
+	if err != nil {
+		t.Fatalf("computeAndStoreLayout failed: %v", err)
+	}
+
+	// Verify that positions were set for at least some nodes
+	var posCount int
+	err = conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_nodes WHERE id = ANY($1) AND pos_x IS NOT NULL", testNodeIDs).Scan(&posCount)
+	if err != nil {
+		t.Fatalf("failed to count positioned nodes: %v", err)
+	}
+
+	if posCount == 0 {
+		t.Error("expected at least some nodes to have positions set after layout computation")
+	}
+
+	t.Logf("Layout computation completed: %d/%d nodes positioned", posCount, len(testNodeIDs))
 }
