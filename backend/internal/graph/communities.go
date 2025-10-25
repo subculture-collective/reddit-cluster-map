@@ -344,19 +344,30 @@ func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, res
 
 	// Map node IDs to their database community IDs
 	nodeToDB := make(map[string]int32)
+
+	// Fetch all communities once and build a lookup map by (label, size)
+	dbComms, err := queries.GetAllCommunities(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch communities: %w", err)
+	}
+	type commKey struct {
+		Label string
+		Size  int32
+	}
+	dbCommMap := make(map[commKey]db.Community)
+	for _, dbComm := range dbComms {
+		key := commKey{Label: dbComm.Label, Size: dbComm.Size}
+		dbCommMap[key] = dbComm
+	}
+
 	for _, comm := range result.Communities {
-		dbComms, err := queries.GetAllCommunities(ctx)
-		if err != nil {
-			return fmt.Errorf("fetch communities: %w", err)
+		key := commKey{Label: comm.Label, Size: int32(len(comm.Members))}
+		dbComm, ok := dbCommMap[key]
+		if !ok {
+			continue // or handle error if this should never happen
 		}
-		// Match by label and size
-		for _, dbComm := range dbComms {
-			if dbComm.Label == comm.Label && dbComm.Size == int32(len(comm.Members)) {
-				for _, memberID := range comm.Members {
-					nodeToDB[memberID] = dbComm.ID
-				}
-				break
-			}
+		for _, memberID := range comm.Members {
+			nodeToDB[memberID] = dbComm.ID
 		}
 	}
 
