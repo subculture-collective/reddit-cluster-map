@@ -353,21 +353,12 @@ func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, res
 	type commKey struct {
 		Label string
 		Size  int32
-	}
-	dbCommMap := make(map[commKey]db.Community)
-	for _, dbComm := range dbComms {
-		key := commKey{Label: dbComm.Label, Size: dbComm.Size}
-		dbCommMap[key] = dbComm
-	}
-
+	// Map node IDs to their database community IDs using the stored community ID
+	nodeToDB := make(map[string]int32)
 	for _, comm := range result.Communities {
-		key := commKey{Label: comm.Label, Size: int32(len(comm.Members))}
-		dbComm, ok := dbCommMap[key]
-		if !ok {
-			continue // or handle error if this should never happen
-		}
+		// comm.ID should be set to the database-generated community ID at insertion time
 		for _, memberID := range comm.Members {
-			nodeToDB[memberID] = dbComm.ID
+			nodeToDB[memberID] = int32(comm.ID)
 		}
 	}
 
