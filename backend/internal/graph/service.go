@@ -629,6 +629,17 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 
 	log.Printf("🎉 Graph data precalculation completed successfully")
 
+	// Run community detection and store results
+	if queries, ok := s.store.(*db.Queries); ok {
+		if result, nodes, links, err := s.detectCommunities(ctx, queries); err != nil {
+			log.Printf("⚠️ community detection failed: %v", err)
+		} else if err := s.storeCommunities(ctx, queries, result, nodes, links); err != nil {
+			log.Printf("⚠️ failed to store communities: %v", err)
+		}
+	} else {
+		log.Printf("ℹ️ community detection skipped: store is not *db.Queries")
+	}
+
 	// Optional: compute and store a simple 2D layout for faster client rendering
 	if err := s.computeAndStoreLayout(ctx); err != nil {
 		log.Printf("⚠️ layout computation failed: %v", err)

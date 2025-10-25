@@ -47,10 +47,10 @@ type Config struct {
 	CrawlerRPS       float64 // requests per second to Reddit API
 	CrawlerBurstSize int     // burst size for crawler rate limit
 	// Layout computation settings
-	LayoutMaxNodes     int     // maximum nodes to include in layout computation
-	LayoutIterations   int     // number of force-directed iterations
-	LayoutBatchSize    int     // batch size for position updates
-	LayoutEpsilon      float64 // minimum distance threshold for position updates (0 = update all)
+	LayoutMaxNodes   int     // maximum nodes to include in layout computation
+	LayoutIterations int     // number of force-directed iterations
+	LayoutBatchSize  int     // batch size for position updates
+	LayoutEpsilon    float64 // minimum distance threshold for position updates (0 = update all)
 }
 
 var cached *Config

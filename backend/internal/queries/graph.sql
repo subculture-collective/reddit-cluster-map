@@ -309,3 +309,130 @@ FROM (
            unnest($4::double precision[]) AS z
 ) AS u
 WHERE g.id = u.id;
+
+-- ============================================================
+-- Community Detection Queries
+-- ============================================================
+
+-- name: ClearCommunityTables :exec
+TRUNCATE TABLE graph_communities CASCADE;
+
+-- name: CreateCommunity :one
+INSERT INTO graph_communities (
+    label,
+    size,
+    modularity
+) VALUES (
+    $1, $2, $3
+) RETURNING *;
+
+-- name: CreateCommunityMember :exec
+INSERT INTO graph_community_members (
+    community_id,
+    node_id
+) VALUES (
+    $1, $2
+) ON CONFLICT (community_id, node_id) DO NOTHING;
+
+-- name: CreateCommunityLink :exec
+INSERT INTO graph_community_links (
+    source_community_id,
+    target_community_id,
+    weight
+) VALUES (
+    $1, $2, $3
+) ON CONFLICT (source_community_id, target_community_id)
+DO UPDATE SET weight = EXCLUDED.weight;
+
+-- name: GetAllCommunities :many
+SELECT * FROM graph_communities
+ORDER BY size DESC;
+
+-- name: GetCommunity :one
+SELECT * FROM graph_communities
+WHERE id = $1;
+
+-- name: GetCommunityMembers :many
+SELECT node_id FROM graph_community_members
+WHERE community_id = $1;
+
+-- name: GetCommunitySupernodesWithPositions :many
+WITH community_stats AS (
+    SELECT 
+        gc.id,
+        gc.label,
+        gc.size,
+        gc.modularity,
+        AVG(gn.pos_x) as avg_x,
+        AVG(gn.pos_y) as avg_y,
+        AVG(gn.pos_z) as avg_z
+    FROM graph_communities gc
+    LEFT JOIN graph_community_members gcm ON gc.id = gcm.community_id
+    LEFT JOIN graph_nodes gn ON gcm.node_id = gn.id
+    GROUP BY gc.id, gc.label, gc.size, gc.modularity
+)
+SELECT 
+    'node' as data_type,
+    CAST('community_' || id AS TEXT) as id,
+    label as name,
+    CAST(size AS TEXT) as val,
+    'community' as type,
+    avg_x as pos_x,
+    avg_y as pos_y,
+    avg_z as pos_z,
+    NULL as source,
+    NULL as target
+FROM community_stats
+ORDER BY size DESC;
+
+-- name: GetCommunityLinks :many
+SELECT
+    'link' as data_type,
+    CAST(gcl.source_community_id || '_' || gcl.target_community_id AS TEXT) as id,
+    NULL as name,
+    CAST(gcl.weight AS TEXT) as val,
+    NULL as type,
+    NULL as pos_x,
+    NULL as pos_y,
+    NULL as pos_z,
+    CAST('community_' || gcl.source_community_id AS TEXT) as source,
+    CAST('community_' || gcl.target_community_id AS TEXT) as target
+FROM graph_community_links gcl
+ORDER BY gcl.weight DESC
+LIMIT $1;
+
+-- name: GetCommunitySubgraph :many
+WITH member_nodes AS (
+    SELECT node_id FROM graph_community_members
+    WHERE community_id = $1
+)
+SELECT
+    'node' as data_type,
+    gn.id,
+    gn.name,
+    CAST(gn.val AS TEXT) as val,
+    gn.type,
+    gn.pos_x,
+    gn.pos_y,
+    gn.pos_z,
+    NULL as source,
+    NULL as target
+FROM graph_nodes gn
+WHERE gn.id IN (SELECT node_id FROM member_nodes)
+UNION ALL
+SELECT
+    'link' as data_type,
+    CAST(gl.id AS TEXT),
+    NULL as name,
+    CAST(NULL AS TEXT) as val,
+    NULL as type,
+    NULL as pos_x,
+    NULL as pos_y,
+    NULL as pos_z,
+    gl.source,
+    gl.target
+FROM graph_links gl
+WHERE gl.source IN (SELECT node_id FROM member_nodes)
+    AND gl.target IN (SELECT node_id FROM member_nodes)
+ORDER BY data_type, id
+LIMIT $2;
