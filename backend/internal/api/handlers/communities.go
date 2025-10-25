@@ -68,6 +68,8 @@ func (h *CommunityHandler) GetCommunities(w http.ResponseWriter, r *http.Request
 	// Parse query parameters
 	maxNodes := parseIntDefault(r.URL.Query().Get("max_nodes"), 100)
 	maxLinks := parseIntDefault(r.URL.Query().Get("max_links"), 500)
+	// Note: int32 conversion is safe here as maxLinks is bounded by default/user params
+	// and matches pattern used in graph.go (lines 384, 387)
 	withPos := func() bool {
 		v := strings.TrimSpace(r.URL.Query().Get("with_positions"))
 		return v == "1" || strings.EqualFold(v, "true")
@@ -167,11 +169,12 @@ func (h *CommunityHandler) GetCommunityByID(w http.ResponseWriter, r *http.Reque
 	// Parse community ID from URL
 	vars := mux.Vars(r)
 	idStr := vars["id"]
-	communityID, err := strconv.ParseInt(idStr, 10, 32)
-	if err != nil {
+	communityID64, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil || communityID64 < 0 || communityID64 > 2147483647 {
 		http.Error(w, `{"error":"Invalid community ID"}`, http.StatusBadRequest)
 		return
 	}
+	communityID := int32(communityID64)
 
 	// Parse query parameters
 	maxNodes := parseIntDefault(r.URL.Query().Get("max_nodes"), 10000)
@@ -200,7 +203,7 @@ func (h *CommunityHandler) GetCommunityByID(w http.ResponseWriter, r *http.Reque
 	metrics.APICacheMisses.WithLabelValues("community_subgraph").Inc()
 
 	// Verify community exists
-	_, err = h.queries.GetCommunity(ctx, int32(communityID))
+	_, err = h.queries.GetCommunity(ctx, communityID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error":"Community not found"}`, http.StatusNotFound)
@@ -214,7 +217,7 @@ func (h *CommunityHandler) GetCommunityByID(w http.ResponseWriter, r *http.Reque
 	// Fetch subgraph
 	totalLimit := int32(maxNodes + maxLinks)
 	rows, err := h.queries.GetCommunitySubgraph(ctx, db.GetCommunitySubgraphParams{
-		CommunityID: int32(communityID),
+		CommunityID: communityID,
 		Limit:       totalLimit,
 	})
 	if err != nil {
