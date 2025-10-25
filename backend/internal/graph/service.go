@@ -631,9 +631,9 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 
 	// Run community detection and store results
 	if queries, ok := s.store.(*db.Queries); ok {
-		if result, err := s.detectCommunities(ctx, queries); err != nil {
+		if result, nodes, links, err := s.detectCommunities(ctx, queries); err != nil {
 			log.Printf("⚠️ community detection failed: %v", err)
-		} else if err := s.storeCommunities(ctx, queries, result); err != nil {
+		} else if err := s.storeCommunities(ctx, queries, result, nodes, links); err != nil {
 			log.Printf("⚠️ failed to store communities: %v", err)
 		}
 	} else {

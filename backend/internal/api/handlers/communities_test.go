@@ -265,7 +265,7 @@ func TestCommunityCaching(t *testing.T) {
 	}
 
 	handler := NewCommunityHandler(mock)
-	
+
 	// First request - cache miss
 	req1 := httptest.NewRequest("GET", "/api/communities", nil)
 	w1 := httptest.NewRecorder()
