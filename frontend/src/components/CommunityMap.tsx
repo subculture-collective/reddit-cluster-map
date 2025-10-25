@@ -226,17 +226,22 @@ export default function CommunityMap({
 
     node.append("title").text((d) => d.name);
 
+    // Create a Map for quick node lookup by ID
+    const nodeMap = new Map<string, SimNode>();
+    for (const n of nodes) nodeMap.set(n.id, n);
+
+    // Only create labels for community-type nodes
+    const communityNodes = nodes.filter((n) => n.type === "community");
+
     const label = g
       .append("g")
       .attr("class", "labels")
       .selectAll<SVGTextElement, SimNode>("text")
-      .data(nodes)
+      .data(communityNodes)
       .enter()
       .append("text")
-      .text((d) => (d.type === "community" ? d.name : ""))
-      .attr("font-size", (d) =>
-        d.type === "community" ? 10 + Math.min(12, Math.sqrt(d.size) * 1.5) : 0
-      )
+      .text((d) => d.name)
+      .attr("font-size", (d) => 10 + Math.min(12, Math.sqrt(d.size) * 1.5))
       .attr("fill", "#fff")
       .attr("text-anchor", "middle")
       .attr("pointer-events", "none")
