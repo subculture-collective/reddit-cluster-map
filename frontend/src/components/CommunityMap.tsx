@@ -312,11 +312,14 @@ export default function CommunityMap({
         tooltip.style("opacity", "0");
       });
 
+    // Only create labels for community-type nodes
+    const communityNodes = nodes.filter((n) => n.type === "community");
+
     const label = g
       .append("g")
       .attr("class", "labels")
       .selectAll<SVGTextElement, SimNode>("text")
-      .data(nodes)
+      .data(communityNodes)
       .enter()
       .append("text")
       .text((d) => (d.type === "community" ? d.name : ""))

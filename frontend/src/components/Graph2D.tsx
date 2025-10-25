@@ -584,19 +584,23 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
     // Add labels if enabled
     if (showLabels) {
-      // Select top nodes by weight
+      // Select top nodes by weight and create a Set of their IDs
       const weights = nodes.map((n) => {
         const deg = degreeMap.get(n.id) || 0;
         const val = typeof n.val === "number" ? n.val : 0;
         const w = Math.max(val, deg);
-        return { node: n, w };
+        return { id: n.id, type: n.type, name: n.name || n.id, w };
       });
       const preferred = weights.filter(
-        (x) => x.node.type === "subreddit" || x.node.type === "user"
+        (x) => x.type === "subreddit" || x.type === "user"
       );
       preferred.sort((a, b) => b.w - a.w);
       const TOP = Math.min(200, preferred.length);
-      const labelNodes = preferred.slice(0, TOP).map((x) => x.node);
+      const labelSet = new Set<string>();
+      for (let i = 0; i < TOP; i++) labelSet.add(preferred[i].id);
+
+      // Filter nodes to only those in labelSet for label rendering
+      const labelNodes = nodes.filter((n) => labelSet.has(n.id));
 
       const labelGroup = g
         .append("g")
