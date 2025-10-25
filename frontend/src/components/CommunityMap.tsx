@@ -374,7 +374,6 @@ export default function CommunityMap({
         .attr("y2", (d) =>
           typeof d.target === "object" ? d.target.y ?? 0 : 0
         );
-      
       node
         .attr("cx", (d) => d.x ?? 0)
         .attr("cy", (d) => d.y ?? 0);
