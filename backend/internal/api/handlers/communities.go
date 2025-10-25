@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -170,7 +171,7 @@ func (h *CommunityHandler) GetCommunityByID(w http.ResponseWriter, r *http.Reque
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 	communityID64, err := strconv.ParseInt(idStr, 10, 32)
-	if err != nil || communityID64 < 0 || communityID64 > 2147483647 {
+	if err != nil || communityID64 < 0 || communityID64 > math.MaxInt32 {
 		http.Error(w, `{"error":"Invalid community ID"}`, http.StatusBadRequest)
 		return
 	}
