@@ -157,7 +157,6 @@ export default function CommunityMap({
       // Other communities remain as supernodes
       for (const c of comm.communities) {
         if (c.id === expanded) continue;
-        
         const density = calculateCommunityDensity(c.nodes, graph.links);
 
         nodes.push({
