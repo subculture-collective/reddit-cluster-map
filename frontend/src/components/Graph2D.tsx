@@ -598,10 +598,6 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       const TOP = Math.min(200, preferred.length);
       const labelSet = new Set<string>();
       for (let i = 0; i < TOP; i++) labelSet.add(preferred[i].id);
-      
-      // Create a Map for quick node lookup by ID
-      const nodeMap = new Map<string, D3Node>();
-      for (const n of nodes) nodeMap.set(n.id, n);
 
       // Filter nodes to only those in labelSet for label rendering
       const labelNodes = nodes.filter((n) => labelSet.has(n.id));

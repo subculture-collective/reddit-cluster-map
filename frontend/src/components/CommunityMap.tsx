@@ -226,10 +226,6 @@ export default function CommunityMap({
 
     node.append("title").text((d) => d.name);
 
-    // Create a Map for quick node lookup by ID
-    const nodeMap = new Map<string, SimNode>();
-    for (const n of nodes) nodeMap.set(n.id, n);
-
     // Only create labels for community-type nodes
     const communityNodes = nodes.filter((n) => n.type === "community");
 
