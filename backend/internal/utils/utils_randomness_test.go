@@ -5,7 +5,7 @@ import (
 )
 
 // TestPickRandomString_NonDeterministic verifies that PickRandomString produces varied results.
-// This test demonstrates that the random number generator is properly seeded.
+// In Go 1.20+, the global rand is automatically seeded, so this test confirms non-deterministic behavior.
 func TestPickRandomString_NonDeterministic(t *testing.T) {
 options := []string{"a", "b", "c", "d", "e"}
 

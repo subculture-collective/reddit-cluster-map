@@ -6,10 +6,8 @@ import (
 	"time"
 )
 
-func init() {
-	// Seed the global random number generator to ensure non-deterministic behavior
-	rand.Seed(time.Now().UnixNano())
-}
+// Note: In Go 1.20+, the global random number generator is automatically seeded.
+// No explicit seeding is required for rand.Intn, rand.Shuffle, etc.
 
 func ContainsString(slice []string, val string) bool {
 	for _, s := range slice {
