@@ -441,7 +441,6 @@ export default function CommunityMap({
     }
 
     sim.alpha(0.9).restart();
-    
     return () => {
       sim.on('tick', null);
       sim.on('end', null);
