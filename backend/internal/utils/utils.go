@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// Note: In Go 1.20+, the global random number generator is automatically seeded.
+// No explicit seeding is required for rand.Intn, rand.Shuffle, etc.
+
 func ContainsString(slice []string, val string) bool {
 	for _, s := range slice {
 		if s == val {
@@ -44,11 +47,11 @@ func SanitizeUsername(name string) string {
 }
 
 // ShuffleStrings returns a shuffled copy of a string slice.
+// Uses the auto-seeded global RNG (Go 1.20+).
 func ShuffleStrings(input []string) []string {
-	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 	shuffled := make([]string, len(input))
 	copy(shuffled, input)
-	rnd.Shuffle(len(shuffled), func(i, j int) {
+	rand.Shuffle(len(shuffled), func(i, j int) {
 		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 	})
 	return shuffled

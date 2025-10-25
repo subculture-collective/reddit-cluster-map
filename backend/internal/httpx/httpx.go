@@ -13,6 +13,9 @@ import (
 	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
 )
 
+// Note: In Go 1.20+, the global random number generator is automatically seeded.
+// No explicit seeding is required for rand.Intn used in retry jitter.
+
 // PreAttempt lets callers run logic (e.g., rate limiting) before each try; return context error to abort.
 type PreAttempt func(ctx context.Context, attempt int) error
 
