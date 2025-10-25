@@ -241,8 +241,10 @@ function modularityGain(
   const m2 = 2 * totalWeight;
   
   // Use cached community degrees instead of calling sumDegrees
+  // Note: fromCommDegree includes the moving node (since it's currently in fromCommunity),
+  // but we need to exclude it for the modularity calculation
   const toCommDegree = communityDegrees.get(toCommunity) || 0;
-  const fromCommDegree = communityDegrees.get(fromCommunity) || 0;
+  const fromCommDegree = (communityDegrees.get(fromCommunity) || 0) - nodeDegree;
   
   const gain =
     (weightTo - weightFrom) / m2 -
