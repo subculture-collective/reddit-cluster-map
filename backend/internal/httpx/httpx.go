@@ -13,6 +13,11 @@ import (
 	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
 )
 
+func init() {
+	// Seed the global random number generator to ensure non-deterministic behavior
+	rand.Seed(time.Now().UnixNano())
+}
+
 // PreAttempt lets callers run logic (e.g., rate limiting) before each try; return context error to abort.
 type PreAttempt func(ctx context.Context, attempt int) error
 

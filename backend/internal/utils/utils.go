@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+func init() {
+	// Seed the global random number generator to ensure non-deterministic behavior
+	rand.Seed(time.Now().UnixNano())
+}
+
 func ContainsString(slice []string, val string) bool {
 	for _, s := range slice {
 		if s == val {
