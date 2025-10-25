@@ -26,17 +26,18 @@ type CommunityResult struct {
 }
 
 // detectCommunities performs Louvain community detection on the graph
-func (s *Service) detectCommunities(ctx context.Context, queries *db.Queries) (*CommunityResult, error) {
+// Returns the community detection result along with the fetched nodes and links
+func (s *Service) detectCommunities(ctx context.Context, queries *db.Queries) (*CommunityResult, []db.ListGraphNodesByWeightRow, []db.ListGraphLinksAmongRow, error) {
 	log.Printf("🔍 Starting community detection (Louvain algorithm)")
 
 	// Fetch all nodes and links
 	nodes, err := queries.ListGraphNodesByWeight(ctx, 50000) // Cap at 50k nodes for performance
 	if err != nil {
-		return nil, fmt.Errorf("fetch nodes: %w", err)
+		return nil, nil, nil, fmt.Errorf("fetch nodes: %w", err)
 	}
 	if len(nodes) == 0 {
 		log.Printf("ℹ️ No nodes found for community detection")
-		return &CommunityResult{Communities: []Community{}, NodeToCommunity: map[string]int{}, Modularity: 0}, nil
+		return &CommunityResult{Communities: []Community{}, NodeToCommunity: map[string]int{}, Modularity: 0}, nodes, nil, nil
 	}
 
 	nodeIDs := make([]string, len(nodes))
@@ -46,7 +47,7 @@ func (s *Service) detectCommunities(ctx context.Context, queries *db.Queries) (*
 
 	links, err := queries.ListGraphLinksAmong(ctx, nodeIDs)
 	if err != nil {
-		return nil, fmt.Errorf("fetch links: %w", err)
+		return nil, nil, nil, fmt.Errorf("fetch links: %w", err)
 	}
 
 	log.Printf("📊 Building graph structure: %d nodes, %d links", len(nodeIDs), len(links))
@@ -219,7 +220,7 @@ func (s *Service) detectCommunities(ctx context.Context, queries *db.Queries) (*
 		Communities:     communities,
 		NodeToCommunity: finalNodeToCommunity,
 		Modularity:      modularity,
-	}, nil
+	}, nodes, links, nil
 }
 
 // modularityGain calculates the gain in modularity from moving a node between communities
@@ -292,7 +293,8 @@ func calculateModularity(nodeToCommunity map[string]int, adjacency map[string]ma
 }
 
 // storeCommunities stores the detected communities in the database
-func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, result *CommunityResult) error {
+// Accepts nodes and links fetched during detection to avoid redundant database queries
+func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, result *CommunityResult, nodes []db.ListGraphNodesByWeightRow, links []db.ListGraphLinksAmongRow) error {
 	log.Printf("💾 Storing community detection results")
 
 	// Clear existing communities
@@ -300,7 +302,8 @@ func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, res
 		return fmt.Errorf("clear community tables: %w", err)
 	}
 
-	// Insert communities
+	// Insert communities and build mapping from member IDs to database community IDs
+	nodeToDB := make(map[string]int32)
 	for _, comm := range result.Communities {
 		dbComm, err := queries.CreateCommunity(ctx, db.CreateCommunityParams{
 			Label:      comm.Label,
@@ -312,7 +315,7 @@ func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, res
 			continue
 		}
 
-		// Insert members
+		// Insert members and map them to the database community ID
 		for _, memberID := range comm.Members {
 			if err := queries.CreateCommunityMember(ctx, db.CreateCommunityMemberParams{
 				CommunityID: dbComm.ID,
@@ -320,47 +323,12 @@ func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, res
 			}); err != nil {
 				log.Printf("⚠️ failed to add member %s to community %d: %v", memberID, dbComm.ID, err)
 			}
+			nodeToDB[memberID] = dbComm.ID
 		}
 	}
 
-	// Calculate and store inter-community links
+	// Calculate and store inter-community links using the passed-in links
 	linkWeights := make(map[[2]int32]int)
-	
-	// We need to fetch links again to calculate inter-community weights
-	nodes, err := queries.ListGraphNodesByWeight(ctx, 50000)
-	if err != nil {
-		return fmt.Errorf("fetch nodes for links: %w", err)
-	}
-	
-	nodeIDs := make([]string, len(nodes))
-	for i, n := range nodes {
-		nodeIDs[i] = n.ID
-	}
-	
-	links, err := queries.ListGraphLinksAmong(ctx, nodeIDs)
-	if err != nil {
-		return fmt.Errorf("fetch links: %w", err)
-	}
-
-	// Map node IDs to their database community IDs
-	nodeToDB := make(map[string]int32)
-
-	// Fetch all communities once and build a lookup map by (label, size)
-	dbComms, err := queries.GetAllCommunities(ctx)
-	if err != nil {
-		return fmt.Errorf("fetch communities: %w", err)
-	}
-	type commKey struct {
-		Label string
-		Size  int32
-	// Map node IDs to their database community IDs using the stored community ID
-	nodeToDB := make(map[string]int32)
-	for _, comm := range result.Communities {
-		// comm.ID should be set to the database-generated community ID at insertion time
-		for _, memberID := range comm.Members {
-			nodeToDB[memberID] = int32(comm.ID)
-		}
-	}
 
 	// Count inter-community links
 	for _, link := range links {
