@@ -60,6 +60,13 @@ export function detectCommunities(data: GraphData): CommunityResult {
   const nodeToCommunity = new Map<string, number>();
   nodeIds.forEach((id, i) => nodeToCommunity.set(id, i));
 
+  // Cache community degree sums to avoid O(nodes²) complexity
+  const communityDegrees = new Map<number, number>();
+  for (const [nodeId, community] of nodeToCommunity) {
+    const deg = degrees.get(nodeId) || 0;
+    communityDegrees.set(community, (communityDegrees.get(community) || 0) + deg);
+  }
+
   let improved = true;
   let iteration = 0;
   const maxIterations = 50;
@@ -99,7 +106,8 @@ export function detectCommunities(data: GraphData): CommunityResult {
           nodeToCommunity,
           adjacency,
           degrees,
-          totalWeight
+          totalWeight,
+          communityDegrees
         );
 
         if (gain > bestGain) {
@@ -111,6 +119,18 @@ export function detectCommunities(data: GraphData): CommunityResult {
       // Move to best community if improvement found
       if (bestCommunity !== currentCommunity) {
         nodeToCommunity.set(nodeId, bestCommunity);
+        
+        // Update community degree cache incrementally
+        const nodeDegree = degrees.get(nodeId) || 0;
+        communityDegrees.set(
+          currentCommunity,
+          (communityDegrees.get(currentCommunity) || 0) - nodeDegree
+        );
+        communityDegrees.set(
+          bestCommunity,
+          (communityDegrees.get(bestCommunity) || 0) + nodeDegree
+        );
+        
         improved = true;
       }
     }
@@ -196,7 +216,8 @@ function modularityGain(
   nodeToCommunity: Map<string, number>,
   adjacency: Map<string, Map<string, number>>,
   degrees: Map<string, number>,
-  totalWeight: number
+  totalWeight: number,
+  communityDegrees: Map<number, number>
 ): number {
   if (totalWeight === 0) return 0;
 
@@ -218,28 +239,16 @@ function modularityGain(
   }
 
   const m2 = 2 * totalWeight;
+  
+  // Use cached community degrees instead of calling sumDegrees
+  const toCommDegree = communityDegrees.get(toCommunity) || 0;
+  const fromCommDegree = communityDegrees.get(fromCommunity) || 0;
+  
   const gain =
     (weightTo - weightFrom) / m2 -
-    (nodeDegree *
-      (sumDegrees(toCommunity, nodeToCommunity, degrees) -
-        sumDegrees(fromCommunity, nodeToCommunity, degrees))) /
-      (m2 * m2);
+    (nodeDegree * (toCommDegree - fromCommDegree)) / (m2 * m2);
 
   return gain;
-}
-
-function sumDegrees(
-  community: number,
-  nodeToCommunity: Map<string, number>,
-  degrees: Map<string, number>
-): number {
-  let sum = 0;
-  for (const [node, comm] of nodeToCommunity) {
-    if (comm === community) {
-      sum += degrees.get(node) || 0;
-    }
-  }
-  return sum;
 }
 
 function calculateModularity(
