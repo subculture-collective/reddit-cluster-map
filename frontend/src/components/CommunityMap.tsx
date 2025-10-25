@@ -450,7 +450,7 @@ export default function CommunityMap({
       sim.stop();
       tooltip.remove();
     };
-  }, [aggregated, onFocusNode, comm]);
+  }, [aggregated, onFocusNode]);
 
   return (
     <div ref={containerRef} className="w-full h-screen relative bg-black">
