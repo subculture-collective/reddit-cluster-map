@@ -87,6 +87,11 @@ func NewRouter(q *db.Queries) *mux.Router {
 	graphHandler := handlers.NewHandler(q)
 	r.HandleFunc("/api/graph", graphHandler.GetGraphData).Methods("GET")
 
+	// Community aggregation endpoints
+	communityHandler := handlers.NewCommunityHandler(q)
+	r.HandleFunc("/api/communities", communityHandler.GetCommunities).Methods("GET")
+	r.HandleFunc("/api/communities/{id}", communityHandler.GetCommunityByID).Methods("GET")
+
 	// Admin: toggle background services (gated)
 	admin := handlers.NewAdminHandler(q)
 	// We'll define adminOnly below, so temporarily register after it's declared.

@@ -80,6 +80,7 @@ See the **[Developer Guide](docs/developer-guide.md)** for detailed workflows, t
 - **[Performance Documentation](docs/perf.md)** - Graph query performance analysis, benchmarking, and optimization
 - **[Crawler Resilience](docs/CRAWLER_RESILIENCE.md)** - Rate limiting, retries, metrics, and circuit breaker configuration
 - **[API Documentation](docs/api.md)** - API endpoints and usage
+- **[Community API](docs/api-communities.md)** - Community aggregation endpoints (supernodes and subgraphs)
 - **[Architecture Overview](docs/overview.md)** - System design and data flow
 - **[CI/CD Pipeline](docs/CI-CD.md)** - Continuous integration and deployment
 
@@ -103,10 +104,15 @@ From `backend/`, run `make help` to see all available targets. Key ones:
 - `GET /api/graph?max_nodes=20000&max_links=50000`
   - Returns `{ nodes, links }`. Results are cached for ~60s and capped by max_nodes/max_links using a stable weighting.
   - Prefers precalculated tables, falls back to legacy JSON when empty.
+- `GET /api/communities?max_nodes=100&max_links=500&with_positions=true`
+  - Returns aggregated community supernodes and inter-community weighted links.
+  - Communities detected via server-side Louvain algorithm during precalculation.
+- `GET /api/communities/{id}?max_nodes=10000&max_links=50000`
+  - Returns the full subgraph (all nodes and links) for a specific community.
 - `POST /api/crawl { "subreddit": "AskReddit" }`
 - Additional resource endpoints exist without `/api` prefix: `/subreddits`, `/users`, `/posts`, `/comments`, `/jobs`.
 
-See `docs/api.md` for details.
+See `docs/api.md` and `docs/api-communities.md` for details.
 
 ---
 
