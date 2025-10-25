@@ -234,6 +234,7 @@ const data = await response.json();
 | Data Size | Limited by browser | Up to 50k nodes |
 | Speed | 1-5 seconds | Instant (cached) |
 | Consistency | Per-session | Shared across users |
+| Resource Usage | Browser CPU/memory | Server resources |
 | Use Case | Interactive exploration | Production view |
 
 **Recommendation:** Use server-side for production, client-side for immediate feedback.
@@ -465,5 +466,6 @@ API endpoints will still work with existing data.
 
 - [Graph Precalculation](../backend/internal/graph/service.go) - How communities are detected
 - [Community Detection (Frontend)](../frontend/src/utils/communityDetection.ts) - Client-side algorithm
-- [Database Schema](../backend/migrations/schema.sql) - Full schema
+- [Database Schema - Communities Migration](../backend/migrations/000019_graph_communities.up.sql) - Community tables schema
+- [Database Schema - Full](../backend/migrations/schema.sql) - Complete database schema
 - [API Routes](../backend/internal/api/routes.go) - All API endpoints
