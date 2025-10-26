@@ -213,4 +213,13 @@ var (
 			Buckets: []float64{1, 5, 10, 30, 60, 120, 300},
 		},
 	)
+
+	// Metrics collection error tracking
+	MetricsCollectionErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "metrics_collection_errors_total",
+			Help: "Total number of errors during metrics collection",
+		},
+		[]string{"collector"}, // collector: graph, community, database, crawl_jobs
+	)
 )
