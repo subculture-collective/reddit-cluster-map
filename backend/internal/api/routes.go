@@ -19,24 +19,30 @@ func NewRouter(q *db.Queries) *mux.Router {
 	cfg := config.Load()
 
 	// Apply global middleware in order
-	// 1. Security headers (first to ensure they're always set)
+	// 1. Request ID middleware (first to track all requests)
+	r.Use(middleware.RequestID)
+
+	// 2. Security headers
 	r.Use(middleware.SecurityHeaders)
 
-	// 2. CORS middleware
+	// 3. CORS middleware
 	corsConfig := &middleware.CORSConfig{
 		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders:   []string{"Link"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Request-ID"},
+		ExposedHeaders:   []string{"Link", "X-Request-ID"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}
 	r.Use(middleware.CORS(corsConfig))
 
-	// 3. Request body validation
+	// 4. Request body validation
 	r.Use(middleware.ValidateRequestBody)
 
-	// 4. Rate limiting (if enabled)
+	// 5. Error recovery middleware
+	r.Use(middleware.RecoverWithSentry)
+
+	// 6. Rate limiting (if enabled)
 	if cfg.EnableRateLimit {
 		rateLimiter := middleware.NewRateLimiter(
 			cfg.RateLimitGlobal,
