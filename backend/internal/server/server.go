@@ -10,11 +10,13 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/graph"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
 )
 
 type Server struct {
-	DB           *db.Queries
-	graphService *graph.Service
+	DB               *db.Queries
+	graphService     *graph.Service
+	metricsCollector *metrics.Collector
 }
 
 func InitDB() (*db.Queries, error) {
@@ -75,14 +77,19 @@ func checkPositionColumns(conn *sql.DB) {
 
 func NewServer(q *db.Queries) *Server {
 	graphService := graph.NewService(q)
+	metricsCollector := metrics.NewCollector(q, 30*time.Second) // Collect metrics every 30 seconds
 
 	return &Server{
-		DB:           q,
-		graphService: graphService,
+		DB:               q,
+		graphService:     graphService,
+		metricsCollector: metricsCollector,
 	}
 }
 
 func (s *Server) Start(ctx context.Context) error {
+	// Start metrics collector
+	go s.metricsCollector.Start(ctx)
+
 	// The graph precalculation runs in a dedicated service now; API will not start it.
 	// Seed default subreddits if queue is empty
 	go func() {

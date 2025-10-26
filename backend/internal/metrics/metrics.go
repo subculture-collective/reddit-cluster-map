@@ -68,6 +68,35 @@ var (
 		},
 	)
 
+	// Crawl job status gauges
+	CrawlJobsPending = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "crawl_jobs_pending",
+			Help: "Number of pending crawl jobs",
+		},
+	)
+
+	CrawlJobsProcessing = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "crawl_jobs_processing",
+			Help: "Number of crawl jobs currently processing",
+		},
+	)
+
+	CrawlJobsCompleted = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "crawl_jobs_completed",
+			Help: "Number of completed crawl jobs",
+		},
+	)
+
+	CrawlJobsFailed = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "crawl_jobs_failed",
+			Help: "Number of failed crawl jobs",
+		},
+	)
+
 	// Database operation metrics
 	DBOperationDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -118,5 +147,70 @@ var (
 			Help: "Total number of API cache misses",
 		},
 		[]string{"endpoint"},
+	)
+
+	// Graph metrics
+	GraphNodesTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "graph_nodes_total",
+			Help: "Total number of nodes in the graph by type",
+		},
+		[]string{"type"}, // type: user, subreddit, post, comment
+	)
+
+	GraphLinksTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "graph_links_total",
+			Help: "Total number of links in the graph",
+		},
+	)
+
+	GraphPrecalculationDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "graph_precalculation_duration_seconds",
+			Help:    "Duration of graph precalculation in seconds",
+			Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600},
+		},
+	)
+
+	GraphPrecalculationErrors = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "graph_precalculation_errors_total",
+			Help: "Total number of graph precalculation errors",
+		},
+	)
+
+	// API request metrics
+	APIRequestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "api_request_duration_seconds",
+			Help:    "Duration of API requests in seconds",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5},
+		},
+		[]string{"endpoint", "method", "status"},
+	)
+
+	APIRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "api_requests_total",
+			Help: "Total number of API requests",
+		},
+		[]string{"endpoint", "method", "status"},
+	)
+
+	// Community metrics
+	CommunitiesTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "communities_total",
+			Help: "Total number of detected communities",
+		},
+	)
+
+	CommunityDetectionDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "community_detection_duration_seconds",
+			Help:    "Duration of community detection in seconds",
+			Buckets: []float64{1, 5, 10, 30, 60, 120, 300},
+		},
 	)
 )

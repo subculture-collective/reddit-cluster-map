@@ -1,0 +1,111 @@
+package metrics
+
+import (
+	"context"
+	"log"
+	"time"
+
+	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+)
+
+// Collector periodically collects and updates Prometheus metrics
+type Collector struct {
+	queries  *db.Queries
+	interval time.Duration
+	stop     chan struct{}
+}
+
+// NewCollector creates a new metrics collector
+func NewCollector(queries *db.Queries, interval time.Duration) *Collector {
+	return &Collector{
+		queries:  queries,
+		interval: interval,
+		stop:     make(chan struct{}),
+	}
+}
+
+// Start begins the metrics collection loop
+func (c *Collector) Start(ctx context.Context) {
+	ticker := time.NewTicker(c.interval)
+	defer ticker.Stop()
+
+	// Collect initial metrics
+	c.collectMetrics(ctx)
+
+	for {
+		select {
+		case <-ticker.C:
+			c.collectMetrics(ctx)
+		case <-c.stop:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// Stop stops the metrics collector
+func (c *Collector) Stop() {
+	close(c.stop)
+}
+
+// collectMetrics collects all metrics from the database
+func (c *Collector) collectMetrics(ctx context.Context) {
+	c.collectGraphMetrics(ctx)
+	c.collectCommunityMetrics(ctx)
+	c.collectDatabaseStats(ctx)
+	c.collectCrawlJobStats(ctx)
+}
+
+// collectGraphMetrics collects graph node and link counts
+func (c *Collector) collectGraphMetrics(ctx context.Context) {
+	// Count total links
+	linkCount, err := c.queries.CountGraphLinks(ctx)
+	if err != nil {
+		log.Printf("Error counting graph links: %v", err)
+	} else {
+		GraphLinksTotal.Set(float64(linkCount))
+	}
+}
+
+// collectCommunityMetrics collects community-related metrics
+func (c *Collector) collectCommunityMetrics(ctx context.Context) {
+	// Count communities by checking distinct community IDs in user_subreddit_activity
+	// This is a placeholder - adjust based on your actual community detection schema
+	count, err := c.queries.CountCommunities(ctx)
+	if err != nil {
+		log.Printf("Error counting communities: %v", err)
+	} else {
+		CommunitiesTotal.Set(float64(count))
+	}
+}
+
+// collectDatabaseStats collects database entity counts
+func (c *Collector) collectDatabaseStats(ctx context.Context) {
+	stats, err := c.queries.GetDatabaseStats(ctx)
+	if err != nil {
+		log.Printf("Error getting database stats: %v", err)
+		return
+	}
+
+	// Update node counts with database stats
+	GraphNodesTotal.WithLabelValues("subreddit").Set(float64(stats.SubredditCount))
+	GraphNodesTotal.WithLabelValues("user").Set(float64(stats.UserCount))
+	GraphNodesTotal.WithLabelValues("post").Set(float64(stats.PostCount))
+	GraphNodesTotal.WithLabelValues("comment").Set(float64(stats.CommentCount))
+}
+
+// collectCrawlJobStats collects crawl job status metrics
+func (c *Collector) collectCrawlJobStats(ctx context.Context) {
+	stats, err := c.queries.GetCrawlJobStats(ctx)
+	if err != nil {
+		log.Printf("Error getting crawl job stats: %v", err)
+		return
+	}
+
+	// Update crawl job metrics
+	CrawlJobsPending.Set(float64(stats.PendingJobs))
+	CrawlJobsProcessing.Set(float64(stats.ProcessingJobs))
+	CrawlJobsCompleted.Set(float64(stats.CompletedJobs))
+	CrawlJobsFailed.Set(float64(stats.FailedJobs))
+}
