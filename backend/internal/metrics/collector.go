@@ -63,6 +63,8 @@ func (c *Collector) collectGraphMetrics(ctx context.Context) {
 	linkCount, err := c.queries.CountGraphLinks(ctx)
 	if err != nil {
 		log.Printf("Error counting graph links: %v", err)
+		MetricsCollectionErrors.WithLabelValues("graph").Inc()
+		GraphLinksTotal.Set(-1) // Signal stale data
 	} else {
 		GraphLinksTotal.Set(float64(linkCount))
 	}
@@ -75,6 +77,8 @@ func (c *Collector) collectCommunityMetrics(ctx context.Context) {
 	count, err := c.queries.CountCommunities(ctx)
 	if err != nil {
 		log.Printf("Error counting communities: %v", err)
+		MetricsCollectionErrors.WithLabelValues("community").Inc()
+		CommunitiesTotal.Set(-1) // Signal stale data
 	} else {
 		CommunitiesTotal.Set(float64(count))
 	}
@@ -85,6 +89,12 @@ func (c *Collector) collectDatabaseStats(ctx context.Context) {
 	stats, err := c.queries.GetDatabaseStats(ctx)
 	if err != nil {
 		log.Printf("Error getting database stats: %v", err)
+		MetricsCollectionErrors.WithLabelValues("database").Inc()
+		// Signal stale data for all node types
+		GraphNodesTotal.WithLabelValues("subreddit").Set(-1)
+		GraphNodesTotal.WithLabelValues("user").Set(-1)
+		GraphNodesTotal.WithLabelValues("post").Set(-1)
+		GraphNodesTotal.WithLabelValues("comment").Set(-1)
 		return
 	}
 
@@ -100,6 +110,12 @@ func (c *Collector) collectCrawlJobStats(ctx context.Context) {
 	stats, err := c.queries.GetCrawlJobStats(ctx)
 	if err != nil {
 		log.Printf("Error getting crawl job stats: %v", err)
+		MetricsCollectionErrors.WithLabelValues("crawl_jobs").Inc()
+		// Signal stale data for all job status metrics
+		CrawlJobsPending.Set(-1)
+		CrawlJobsProcessing.Set(-1)
+		CrawlJobsCompleted.Set(-1)
+		CrawlJobsFailed.Set(-1)
 		return
 	}
 
