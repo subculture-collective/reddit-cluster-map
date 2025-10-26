@@ -27,6 +27,8 @@ func Init(serviceName string) (func(context.Context) error, error) {
 	ctx := context.Background()
 
 	// Create OTLP HTTP exporter
+	// Note: WithEndpoint expects "host:port" format without protocol scheme.
+	// The protocol is determined by WithInsecure() (HTTP) vs WithTLSClientConfig() (HTTPS)
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "localhost:4318" // Default OTLP HTTP endpoint
