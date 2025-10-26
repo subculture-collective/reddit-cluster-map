@@ -8,8 +8,12 @@ import (
 	"time"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/logger"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/tracing"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/utils"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 var (
@@ -20,43 +24,70 @@ var (
 )
 
 func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
+	ctx, span := tracing.StartSpan(ctx, "crawler.handleJob")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.Int("job_id", int(job.ID)),
+		attribute.Int("subreddit_id", int(job.SubredditID)),
+	)
+
 	startTime := time.Now()
 	var jobStatus string
 	defer func() {
 		duration := time.Since(startTime).Seconds()
 		metrics.CrawlerJobDuration.WithLabelValues(jobStatus).Observe(duration)
 		metrics.CrawlerJobsTotal.WithLabelValues(jobStatus).Inc()
+		span.SetAttributes(
+			attribute.String("job_status", jobStatus),
+			attribute.Float64("duration_seconds", duration),
+		)
 	}()
 
-	log.Printf("🕷️ Starting crawl job #%d", job.ID)
+	logger.InfoContext(ctx, "Starting crawl job", "job_id", job.ID)
 
 	// Update job status to crawling
 	if err := q.MarkCrawlJobStarted(ctx, job.ID); err != nil {
-		log.Printf("⚠️ Failed to update job status to crawling: %v", err)
+		logger.WarnContext(ctx, "Failed to update job status to crawling", "error", err, "job_id", job.ID)
+		span.RecordError(err)
 		return err
 	}
 
 	// Get subreddit name from ID
 	subreddit, err := q.GetSubredditByID(ctx, job.SubredditID)
 	if err != nil {
-		log.Printf("⚠️ Failed to get subreddit with ID %d: %v", job.SubredditID, err)
+		logger.ErrorContext(ctx, "Failed to get subreddit", "error", err, "subreddit_id", job.SubredditID)
 		// Update job status to failed
 		_ = q.MarkCrawlJobFailed(ctx, job.ID)
 		jobStatus = "failed"
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to get subreddit")
 		return err
 	}
 
-	log.Printf("📊 Crawling r/%s", subreddit.Name)
+	span.SetAttributes(attribute.String("subreddit", subreddit.Name))
+	logger.InfoContext(ctx, "Crawling subreddit", "subreddit", subreddit.Name)
+
 	info, posts, err := CrawlSubreddit(subreddit.Name)
 	if err != nil {
-		log.Printf("❌ Failed to crawl r/%s: %v", subreddit.Name, err)
+		logger.ErrorContext(ctx, "Failed to crawl subreddit", "error", err, "subreddit", subreddit.Name)
 		// Update job status to failed
 		_ = q.MarkCrawlJobFailed(ctx, job.ID)
 		jobStatus = "failed"
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "crawl failed")
 		return err
 	}
 
-	log.Printf("✅ r/%s: %d posts, %d subs", subreddit.Name, len(posts), info.Subscribers)
+	logger.InfoContext(ctx, "Crawled subreddit successfully",
+		"subreddit", subreddit.Name,
+		"posts", len(posts),
+		"subscribers", info.Subscribers,
+	)
+	span.SetAttributes(
+		attribute.Int("posts_count", len(posts)),
+		attribute.Int("subscribers", info.Subscribers),
+	)
 
 	// Update subreddit info
 	_, err = q.UpsertSubreddit(ctx, db.UpsertSubredditParams{
@@ -66,16 +97,18 @@ func handleJob(ctx context.Context, q *db.Queries, job db.CrawlJob) error {
 		Subscribers: sql.NullInt32{Int32: int32(info.Subscribers), Valid: info.Subscribers >= 0},
 	})
 	if err != nil {
-		log.Printf("⚠️ Failed to upsert subreddit r/%s: %v", subreddit.Name, err)
+		logger.WarnContext(ctx, "Failed to upsert subreddit", "error", err, "subreddit", subreddit.Name)
 		// Update job status to failed
 		_ = q.MarkCrawlJobFailed(ctx, job.ID)
 		jobStatus = "failed"
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "upsert failed")
 		return err
 	}
-	log.Printf("✅ Updated subreddit r/%s", subreddit.Name)
+	logger.DebugContext(ctx, "Updated subreddit info", "subreddit", subreddit.Name)
 
 	if len(posts) > MaxPostsPerSubreddit {
-		log.Printf("📝 Limiting posts from %d to %d", len(posts), MaxPostsPerSubreddit)
+		logger.DebugContext(ctx, "Limiting posts", "from", len(posts), "to", MaxPostsPerSubreddit)
 		posts = posts[:MaxPostsPerSubreddit]
 	}
 

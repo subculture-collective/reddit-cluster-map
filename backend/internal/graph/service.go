@@ -17,6 +17,10 @@ import (
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/logger"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/tracing"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // progressLogger provides periodic progress output based on a modulo interval.
@@ -245,16 +249,28 @@ func (s *Service) CalculateUserActivity(ctx context.Context) error {
 
 // PrecalculateGraphData builds nodes and links. It preserves existing graph rows unless PRECALC_CLEAR_ON_START is set.
 func (s *Service) PrecalculateGraphData(ctx context.Context) error {
-	log.Printf("🔄 Starting graph data precalculation")
+	ctx, span := tracing.StartSpan(ctx, "graph.PrecalculateGraphData")
+	defer span.End()
+
+	logger.InfoContext(ctx, "Starting graph data precalculation")
+	startTime := time.Now()
+	defer func() {
+		duration := time.Since(startTime)
+		logger.InfoContext(ctx, "Graph precalculation completed", "duration", duration)
+		span.SetAttributes(attribute.String("total_duration", duration.String()))
+	}()
 
 	// Optional clear on start (must happen before node/link inserts)
 	if config.Load().GetEnvBool("PRECALC_CLEAR_ON_START", false) {
+		span.AddEvent("clearing_graph_tables")
 		if err := s.store.ClearGraphTables(ctx); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to clear graph tables")
 			return fmt.Errorf("failed to clear graph tables: %w", err)
 		}
-		log.Printf("🧹 Cleared existing graph data (requested)")
+		logger.InfoContext(ctx, "Cleared existing graph data")
 	} else {
-		log.Printf("ℹ️ Preserving existing graph data; running incremental precalc")
+		logger.InfoContext(ctx, "Preserving existing graph data; running incremental precalc")
 	}
 
 	cfg := config.Load()
@@ -262,16 +278,35 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	postsPerSub := int32(cfg.PostsPerSubInGraph)
 	commentsPerPost := int(cfg.CommentsPerPost)
 
+	span.SetAttributes(
+		attribute.Bool("detailed_graph", detailed),
+		attribute.Int("posts_per_sub", int(postsPerSub)),
+		attribute.Int("comments_per_post", commentsPerPost),
+	)
+
 	// Users & Subreddits -> nodes (batched upsert inside single transaction for speed)
 	usersWithActivity, err := s.store.ListUsersWithActivity(ctx)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to fetch user activity")
 		return fmt.Errorf("failed to fetch user activity totals: %w", err)
 	}
 	subreddits, err := s.store.GetAllSubreddits(ctx)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to fetch subreddits")
 		return fmt.Errorf("failed to fetch subreddits: %w", err)
 	}
-	log.Printf("👥 Preparing %d user nodes and %d subreddit nodes", len(usersWithActivity), len(subreddits))
+
+	span.SetAttributes(
+		attribute.Int("users_count", len(usersWithActivity)),
+		attribute.Int("subreddits_count", len(subreddits)),
+	)
+
+	logger.InfoContext(ctx, "Preparing graph nodes",
+		"users", len(usersWithActivity),
+		"subreddits", len(subreddits),
+	)
 
 	// Configurable node batch size / progress interval via env
 	nodeBatchSize := 1000
