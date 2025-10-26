@@ -13,16 +13,53 @@ import (
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/crawler"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/errorreporting"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/graph"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/logger"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/tracing"
 )
 
 func main() {
+	// Load configuration
+	cfg := config.Load()
+
+	// Initialize structured logging
+	logger.Init(cfg.LogLevel)
+	logger.Info("Initializing graph precalculation", "version", cfg.SentryRelease, "log_level", cfg.LogLevel)
+
+	// Initialize error reporting
+	if err := errorreporting.Init(cfg.SentryEnvironment); err != nil {
+		logger.Warn("Failed to initialize error reporting", "error", err)
+	} else if errorreporting.IsSentryEnabled() {
+		logger.Info("Error reporting initialized", "environment", cfg.SentryEnvironment)
+		defer func() {
+			logger.Info("Flushing error reports...")
+			errorreporting.Flush(2 * time.Second)
+		}()
+	}
+
+	// Initialize tracing
+	shutdownTracing, err := tracing.Init("reddit-cluster-map-precalculate")
+	if err != nil {
+		logger.Warn("Failed to initialize tracing", "error", err)
+	} else if cfg.OTELEnabled {
+		logger.Info("Tracing initialized", "endpoint", cfg.OTELEndpoint, "sample_rate", cfg.OTELSampleRate)
+		defer func() {
+			logger.Info("Shutting down tracer...")
+			if err := shutdownTracing(context.Background()); err != nil {
+				logger.Error("Failed to shutdown tracer", "error", err)
+			}
+		}()
+	}
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
+		logger.Error("DATABASE_URL environment variable not set")
 		log.Fatal("DATABASE_URL environment variable not set")
 	}
 	dbConn, err := sql.Open("postgres", dbURL)
 	if err != nil {
+		logger.Error("Failed to initialize DB", "error", err)
 		log.Fatalf("Failed to initialize DB: %v", err)
 	}
 	defer dbConn.Close()
@@ -30,7 +67,7 @@ func main() {
 	queries := db.New(dbConn)
 	// Honor admin toggle; if disabled, exit cleanly
 	if ok, _ := admin.GetBool(context.Background(), queries, "precalc_enabled", true); !ok {
-		log.Println("Precalculation disabled by admin flag; exiting")
+		logger.Info("Precalculation disabled by admin flag; exiting")
 		return
 	}
 	graphService := graph.NewService(queries)
@@ -38,24 +75,24 @@ func main() {
 	ctx := context.Background()
 	// On startup: optionally force-clear graph tables if PRECALC_FORCE_CLEAR=true
 	if os.Getenv("PRECALC_FORCE_CLEAR") == "1" || os.Getenv("PRECALC_FORCE_CLEAR") == "true" {
-		log.Println("PRECALC_FORCE_CLEAR enabled: clearing graph tables and restarting from scratch")
+		logger.Info("PRECALC_FORCE_CLEAR enabled: clearing graph tables and restarting from scratch")
 		if err := queries.ClearGraphTables(ctx); err != nil {
+			logger.Error("Failed to clear graph tables", "error", err)
 			log.Fatalf("failed to clear graph tables: %v", err)
 		}
 	}
 
 	// Reset any incomplete crawl jobs so they can be resumed
-	cfg := config.Load()
 	resetOlder := time.Duration(cfg.ResetCrawlingAfterMin) * time.Minute
 	if err := crawler.ResetIncompleteJobs(ctx, queries, resetOlder); err != nil {
-		log.Printf("warning: failed to reset incomplete jobs: %v", err)
+		logger.Warn("Failed to reset incomplete jobs", "error", err)
 	}
 
 	// Requeue stale subreddits for recalculation based on configured StaleDays
 	staleDays := cfg.StaleDays
 	if staleDays > 0 {
 		if err := crawler.RequeueStaleSubreddits(ctx, queries, time.Duration(staleDays)*24*time.Hour); err != nil {
-			log.Printf("warning: failed to requeue stale subreddits: %v", err)
+			logger.Warn("Failed to requeue stale subreddits", "error", err)
 		}
 	}
 
@@ -76,7 +113,7 @@ func main() {
 		case <-ticker.C:
 			// If admin disabled, skip run
 			if ok, _ := admin.GetBool(context.Background(), queries, "precalc_enabled", true); !ok {
-				log.Println("precalc disabled by admin flag; skipping this run")
+				logger.Info("Precalc disabled by admin flag; skipping this run")
 				continue
 			}
 			runOnce(ctx, dbConn, queries, graphService)
@@ -97,15 +134,16 @@ func hasMinSubredditsWithPosts(ctx context.Context, dbc *sql.DB, min int) (bool,
 func runOnce(ctx context.Context, dbc *sql.DB, queries *db.Queries, graphService *graph.Service) {
 	// Defer precalc until at least two subreddits have been crawled (i.e., produced posts)
 	if ok, cnt, err := hasMinSubredditsWithPosts(ctx, dbc, 2); err != nil {
-		log.Printf("precalc readiness check failed: %v", err)
+		logger.Error("Precalc readiness check failed", "error", err)
 		return
 	} else if !ok {
-		log.Printf("precalc deferred: only %d subreddit(s) with posts; need at least 2", cnt)
+		logger.Info("Precalc deferred: insufficient data", "subreddits_with_posts", cnt, "required", 2)
 		return
 	}
 	if err := graphService.PrecalculateGraphData(ctx); err != nil {
-		log.Printf("Failed to precalculate graph data: %v", err)
+		logger.Error("Failed to precalculate graph data", "error", err)
+		errorreporting.CaptureError(err)
 		return
 	}
-	log.Println("Graph data precalculated successfully")
+	logger.Info("Graph data precalculated successfully")
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -14,7 +13,11 @@ import (
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/logger"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/tracing"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // Handler handles HTTP requests for the graph API.
@@ -79,13 +82,16 @@ type GraphResponse struct {
 // It prefers the precalculated graph tables (graph_nodes/graph_links) when available,
 // and falls back to the legacy aggregated JSON if none are present.
 func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracing.StartSpan(r.Context(), "handlers.GetGraphData")
+	defer span.End()
+
 	// Derive a bounded context to avoid very long queries
 	cfg := config.Load()
 	timeout := cfg.GraphQueryTimeout
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// Optional caps and fallback control via query params
@@ -98,7 +104,17 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 		v := strings.TrimSpace(r.URL.Query().Get("with_positions"))
 		return v == "1" || strings.EqualFold(v, "true")
 	}()
+
+	// Add attributes to span
+	span.SetAttributes(
+		attribute.Int("max_nodes", maxNodes),
+		attribute.Int("max_links", maxLinks),
+		attribute.Bool("with_positions", withPos),
+		attribute.String("type_filter", typeKey),
+	)
+
 	if !allowAll && len(allowedTypes) == 0 {
+		span.SetAttributes(attribute.String("result", "empty_filter"))
 		writeCachedEmpty(w, maxNodes, maxLinks, typeKey, withPos)
 		return
 	}
@@ -111,27 +127,35 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 	if found && entry.expiresAt.After(now) {
 		graphCacheMu.Unlock()
 		metrics.APICacheHits.WithLabelValues("graph").Inc()
+		span.SetAttributes(attribute.Bool("cache_hit", true))
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(entry.data)
 		return
 	}
 	graphCacheMu.Unlock()
 	metrics.APICacheMisses.WithLabelValues("graph").Inc()
+	span.SetAttributes(attribute.Bool("cache_hit", false))
+
 	// Try precalculated tables (capped) first
 	rows, err := fetchPrecalcCapped(ctx, h.queries, maxNodes, maxLinks, allowAll, allowedList)
 	if err != nil {
 		// Check if this was a timeout/cancellation
 		if ctx.Err() == context.DeadlineExceeded || err == context.DeadlineExceeded {
-			log.Printf("⚠️ precalc query timed out after %v", timeout)
+			logger.WarnContext(ctx, "Precalc query timed out", "timeout", timeout)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "query timeout")
 			http.Error(w, `{"error":"Graph query timeout - dataset may be too large. Try reducing max_nodes or max_links parameters."}`, http.StatusRequestTimeout)
 			return
 		}
 		if ctx.Err() == context.Canceled || err == context.Canceled {
-			log.Printf("⚠️ precalc query was canceled")
+			logger.WarnContext(ctx, "Precalc query was canceled")
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "query canceled")
 			http.Error(w, `{"error":"Request canceled"}`, http.StatusRequestTimeout)
 			return
 		}
-		log.Printf("⚠️ precalc capped query failed: %v (falling back)", err)
+		logger.WarnContext(ctx, "Precalc capped query failed, falling back", "error", err)
+		span.AddEvent("precalc_query_failed")
 		// Continue to fallback
 	}
 	if len(rows) > 0 {

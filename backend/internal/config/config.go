@@ -51,6 +51,15 @@ type Config struct {
 	LayoutIterations int     // number of force-directed iterations
 	LayoutBatchSize  int     // batch size for position updates
 	LayoutEpsilon    float64 // minimum distance threshold for position updates (0 = update all)
+	// Observability settings
+	LogLevel            string  // log level: debug, info, warn, error
+	OTELEnabled         bool    // enable OpenTelemetry tracing
+	OTELEndpoint        string  // OpenTelemetry collector endpoint
+	OTELSampleRate      float64 // trace sampling rate (0.0 to 1.0)
+	SentryDSN           string  // Sentry DSN for error reporting
+	SentryEnvironment   string  // Sentry environment (dev, staging, production)
+	SentryRelease       string  // Sentry release version
+	SentrySampleRate    float64 // Sentry error sampling rate (0.0 to 1.0)
 }
 
 var cached *Config
@@ -101,12 +110,31 @@ func Load() *Config {
 		LayoutIterations: utils.GetEnvAsInt("LAYOUT_ITERATIONS", 400),
 		LayoutBatchSize:  utils.GetEnvAsInt("LAYOUT_BATCH_SIZE", 5000),
 		LayoutEpsilon:    utils.GetEnvAsFloat("LAYOUT_EPSILON", 0.0),
+		// Observability settings
+		LogLevel:          strings.ToLower(strings.TrimSpace(os.Getenv("LOG_LEVEL"))),
+		OTELEnabled:       utils.GetEnvAsBool("OTEL_ENABLED", false),
+		OTELEndpoint:      strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
+		OTELSampleRate:    utils.GetEnvAsFloat("OTEL_TRACE_SAMPLE_RATE", 0.1),
+		SentryDSN:         strings.TrimSpace(os.Getenv("SENTRY_DSN")),
+		SentryEnvironment: strings.TrimSpace(os.Getenv("SENTRY_ENVIRONMENT")),
+		SentryRelease:     strings.TrimSpace(os.Getenv("SENTRY_RELEASE")),
+		SentrySampleRate:  utils.GetEnvAsFloat("SENTRY_SAMPLE_RATE", 1.0),
 	}
 	if cached.PostsSort == "" {
 		cached.PostsSort = "top"
 	}
 	if cached.PostsTimeFilter == "" {
 		cached.PostsTimeFilter = "day"
+	}
+	if cached.LogLevel == "" {
+		cached.LogLevel = "info"
+	}
+	if cached.SentryEnvironment == "" {
+		if env := os.Getenv("ENV"); env != "" {
+			cached.SentryEnvironment = env
+		} else {
+			cached.SentryEnvironment = "development"
+		}
 	}
 
 	// Parse CORS allowed origins
