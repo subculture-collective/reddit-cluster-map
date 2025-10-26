@@ -28,6 +28,7 @@ Collect, analyze, and visualize relationships between Reddit communities and use
   - Data access via sqlc: SQL in `backend/internal/queries/*.sql` → generated in `backend/internal/db`
 - Database: PostgreSQL
 - Frontend (Vite + React 3D): `frontend/` (graph viewer)
+- Monitoring: Prometheus + Grafana for metrics and dashboards
 
 See `docs/overview.md` for the full system picture and data flow.
 
@@ -78,6 +79,7 @@ See the **[Developer Guide](docs/developer-guide.md)** for detailed workflows, t
 - **[Developer Guide](docs/developer-guide.md)** - Comprehensive dev workflows, Makefile targets, testing, and troubleshooting
 - **[Setup Guide](docs/setup.md)** - Full setup instructions for Docker, env vars, and seeding
 - **[Performance Documentation](docs/perf.md)** - Graph query performance analysis, benchmarking, and optimization
+- **[Monitoring Guide](docs/monitoring.md)** - Analytics, metrics, Prometheus, and Grafana dashboards
 - **[Crawler Resilience](docs/CRAWLER_RESILIENCE.md)** - Rate limiting, retries, metrics, and circuit breaker configuration
 - **[API Documentation](docs/api.md)** - API endpoints and usage
 - **[Community API](docs/api-communities.md)** - Community aggregation endpoints (supernodes and subgraphs)
@@ -116,6 +118,36 @@ See `docs/api.md` and `docs/api-communities.md` for details.
 
 ---
 
+## 📊 Monitoring and Analytics
+
+The project includes comprehensive monitoring with Prometheus and Grafana:
+
+- **Metrics endpoint**: `GET /metrics` - Prometheus format metrics
+- **Prometheus**: http://localhost:9090 - Metrics collection and querying
+- **Grafana**: http://localhost:3000 - Dashboards and visualizations (default: admin/admin)
+
+### Key Metrics
+
+- **Crawl metrics**: Job throughput, success/failure rates, posts/comments processed
+- **API metrics**: Request rates, response times (p50/p95/p99), error rates
+- **Graph metrics**: Node/link counts by type, precalculation duration
+- **Database metrics**: Operation durations, error rates
+- **System health**: Circuit breaker status, rate limiting pressure
+
+### Alerts
+
+Pre-configured alerts for:
+- High API error rates (>5%)
+- High crawler error rates (>10%)
+- Slow queries (p95 > 2s)
+- Database errors
+- Circuit breaker trips
+- Stalled crawl jobs
+
+See **[Monitoring Guide](docs/monitoring.md)** for complete metrics reference, dashboard setup, and PromQL examples.
+
+---
+
 ## ⚙️ Configuration
 
 Key environment variables (selected):
@@ -128,6 +160,8 @@ Key environment variables (selected):
   - `RATE_LIMIT_PER_IP_BURST` (20) — per-IP burst size
   - `CORS_ALLOWED_ORIGINS` — comma-separated list of allowed CORS origins (default: localhost:5173,localhost:3000)
   - `ADMIN_API_TOKEN` — bearer token for admin endpoints
+- **Monitoring**
+  - `GRAFANA_ADMIN_PASSWORD` (admin) — Grafana admin password
 - Reddit OAuth
   - `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_REDIRECT_URI`, `REDDIT_SCOPES`, `REDDIT_USER_AGENT`
 - HTTP / retries

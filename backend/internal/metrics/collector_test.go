@@ -56,4 +56,3 @@ func TestCollectorContextCancellation(t *testing.T) {
 		t.Error("Context cancellation not working properly")
 	}
 }
-
