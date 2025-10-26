@@ -1,0 +1,101 @@
+groups:
+  - name: reddit_cluster_map_alerts
+    interval: 30s
+    rules:
+      # API Error Rate
+      - alert: HighAPIErrorRate
+        expr: |
+          (
+            sum(rate(api_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(api_requests_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API error rate detected"
+          description: "API error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Crawler Error Rate
+      - alert: HighCrawlerErrorRate
+        expr: |
+          (
+            sum(rate(crawler_jobs_total{status="failed"}[5m]))
+            /
+            sum(rate(crawler_jobs_total[5m]))
+          ) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High crawler error rate detected"
+          description: "Crawler error rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+      # Slow API Queries
+      - alert: SlowAPIQueries
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(api_request_duration_seconds_bucket[5m])) by (le, endpoint)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow API queries detected"
+          description: "95th percentile API response time for {{ $labels.endpoint }} is {{ $value }}s (threshold: 2s)"
+
+      # Database Operation Errors
+      - alert: DatabaseOperationErrors
+        expr: |
+          rate(db_operation_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database operation errors detected"
+          description: "Database operation {{ $labels.operation }} has error rate {{ $value }} errors/s"
+
+      # Circuit Breaker Trips
+      - alert: CircuitBreakerTripped
+        expr: |
+          rate(circuit_breaker_trips_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker tripped"
+          description: "Circuit breaker for {{ $labels.component }} has tripped"
+
+      # No crawl jobs being processed
+      - alert: NoCrawlJobsProcessing
+        expr: |
+          sum(crawl_jobs_processing) == 0 and sum(crawl_jobs_pending) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No crawl jobs being processed"
+          description: "There are {{ $value }} pending jobs but none are being processed"
+
+      # High number of failed jobs
+      - alert: HighFailedJobCount
+        expr: |
+          crawl_jobs_failed > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of failed crawl jobs"
+          description: "There are {{ $value }} failed crawl jobs"
+
+      # Crawler rate limit pressure
+      - alert: HighRateLimitWaits
+        expr: |
+          rate(crawler_rate_limit_waits_total[5m]) > 10
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Crawler experiencing high rate limit pressure"
+          description: "Crawler is hitting rate limits {{ $value }} times per second"
