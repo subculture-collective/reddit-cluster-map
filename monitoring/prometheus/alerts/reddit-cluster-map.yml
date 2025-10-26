@@ -70,7 +70,7 @@ groups:
       # No crawl jobs being processed
       - alert: NoCrawlJobsProcessing
         expr: |
-          crawl_jobs_processing == 0 and crawl_jobs_pending > 0
+          sum(crawl_jobs_processing) == 0 and sum(crawl_jobs_pending) > 0
         for: 30m
         labels:
           severity: warning
