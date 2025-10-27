@@ -424,7 +424,7 @@ export default function Controls(props: Props) {
             className="bg-black/40 border border-white/20 rounded px-2 py-1 text-sm outline-none w-20"
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
               const val = e.target.value;
-              onMinDegreeChange(val === "" ? undefined : Math.max(0, parseInt(val) || 0));
+              onMinDegreeChange(val === "" ? undefined : parseInt(val, 10) || 0);
             }}
           />
         </div>
@@ -440,7 +440,7 @@ export default function Controls(props: Props) {
             className="bg-black/40 border border-white/20 rounded px-2 py-1 text-sm outline-none w-20"
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
               const val = e.target.value;
-              onMaxDegreeChange(val === "" ? undefined : Math.max(0, parseInt(val) || 0));
+              onMaxDegreeChange(val === "" ? undefined : parseInt(val, 10) || 0);
             }}
           />
         </div>

@@ -200,11 +200,11 @@ export function generateShareURL(state: AppState): string {
     params.set("f_comment", state.filters.comment ? "1" : "0");
   }
 
-  if (state.minDegree !== undefined && state.minDegree > 0) {
+  if (state.minDegree !== undefined && state.minDegree >= 0) {
     params.set("minDegree", state.minDegree.toString());
   }
 
-  if (state.maxDegree !== undefined && state.maxDegree > 0) {
+  if (state.maxDegree !== undefined && state.maxDegree >= 0) {
     params.set("maxDegree", state.maxDegree.toString());
   }
 
