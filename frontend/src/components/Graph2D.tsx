@@ -12,6 +12,8 @@ type SubSizeMode =
 
 type Graph2DProps = {
   filters: TypeFilters;
+  minDegree?: number;
+  maxDegree?: number;
   linkOpacity: number;
   nodeRelSize: number;
   physics: {
@@ -31,6 +33,8 @@ type Graph2DProps = {
     communities: Array<{ id: number; color: string }>;
   } | null;
   usePrecomputedLayout?: boolean;
+  initialCamera?: { x: number; y: number; zoom: number };
+  onCameraChange?: (camera: { x: number; y: number; zoom: number }) => void;
 };
 
 type D3Node = GraphNode & {
@@ -175,6 +179,8 @@ const getNodeColor = (
 const Graph2D = function Graph2D(props: Graph2DProps) {
   const {
     filters,
+    minDegree,
+    maxDegree,
     linkOpacity,
     nodeRelSize,
     physics,
@@ -185,6 +191,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     showLabels,
     communityResult,
     usePrecomputedLayout,
+    initialCamera,
+    onCameraChange,
   } = props;
 
   const [onlyLinked, setOnlyLinked] = useState(true);
@@ -333,14 +341,39 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   );
 
   const degreeMap = useMemo(() => buildDegreeMap(links), [links]);
+
+  // Apply degree threshold filters
+  const degreeFilteredNodes = useMemo(() => {
+    if (minDegree === undefined && maxDegree === undefined) {
+      return filteredNodes;
+    }
+    return filteredNodes.filter((n) => {
+      const degree = degreeMap.get(n.id) || 0;
+      if (minDegree !== undefined && degree < minDegree) return false;
+      if (maxDegree !== undefined && degree > maxDegree) return false;
+      return true;
+    });
+  }, [filteredNodes, degreeMap, minDegree, maxDegree]);
+
+  const degreeFilteredNodeIds = useMemo(
+    () => new Set(degreeFilteredNodes.map((n) => n.id)),
+    [degreeFilteredNodes]
+  );
+
+  const degreeFilteredLinks = useMemo(
+    () =>
+      links.filter((l) => degreeFilteredNodeIds.has(l.source) && degreeFilteredNodeIds.has(l.target)),
+    [links, degreeFilteredNodeIds]
+  );
+
   const subredditMetric = useMemo(
-    () => computeSubredditMetric(subredditSize, links, filteredNodes),
-    [links, filteredNodes, subredditSize]
+    () => computeSubredditMetric(subredditSize, degreeFilteredLinks, degreeFilteredNodes),
+    [degreeFilteredLinks, degreeFilteredNodes, subredditSize]
   );
 
   const userMetric = useMemo(() => {
     const m = new Map<string, number>();
-    for (const l of links) {
+    for (const l of degreeFilteredLinks) {
       const s = String(l.source);
       const t = String(l.target);
       if (s.startsWith("user_") && t.startsWith("post_"))
@@ -349,27 +382,27 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         m.set(s, (m.get(s) || 0) + 1);
     }
     return m;
-  }, [links]);
+  }, [degreeFilteredLinks]);
 
   const linkedNodeIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const l of links) {
+    for (const l of degreeFilteredLinks) {
       ids.add(l.source);
       ids.add(l.target);
     }
     return ids;
-  }, [links]);
+  }, [degreeFilteredLinks]);
 
   const filtered: GraphData = useMemo(() => {
     const baseNodes = onlyLinked
-      ? filteredNodes.filter((n) => linkedNodeIds.has(n.id))
-      : filteredNodes;
+      ? degreeFilteredNodes.filter((n) => linkedNodeIds.has(n.id))
+      : degreeFilteredNodes;
 
     if (
       baseNodes.length <= MAX_RENDER_NODES &&
-      links.length <= MAX_RENDER_LINKS
+      degreeFilteredLinks.length <= MAX_RENDER_LINKS
     ) {
-      return { nodes: baseNodes, links };
+      return { nodes: baseNodes, links: degreeFilteredLinks };
     }
 
     const nodeWeight = new Map<string, number>();
@@ -390,8 +423,8 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       .sort((a, b) => nodeWeight.get(b.id)! - nodeWeight.get(a.id)!);
     const picked = sorted.slice(0, MAX_RENDER_NODES);
     const pickedIds = new Set(picked.map((n) => n.id));
-    const keptLinks: typeof links = [];
-    for (const l of links) {
+    const keptLinks: typeof degreeFilteredLinks = [];
+    for (const l of degreeFilteredLinks) {
       if (pickedIds.has(l.source) && pickedIds.has(l.target)) {
         keptLinks.push(l);
         if (keptLinks.length >= MAX_RENDER_LINKS) break;
@@ -400,9 +433,9 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     return { nodes: picked, links: keptLinks };
   }, [
     onlyLinked,
-    filteredNodes,
+    degreeFilteredNodes,
     linkedNodeIds,
-    links,
+    degreeFilteredLinks,
     MAX_RENDER_NODES,
     MAX_RENDER_LINKS,
     degreeMap,
@@ -766,6 +799,43 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     const transform = d3.zoomIdentity.translate(x, y).scale(scale);
     svg.call(z.transform, transform);
   }, [focusNodeId, filtered]);
+
+  // Set initial camera position from URL state
+  useEffect(() => {
+    if (!initialCamera || !svgRef.current || !zoomRef.current) return;
+    
+    const svg = d3.select(svgRef.current);
+    const transform = d3.zoomIdentity
+      .translate(initialCamera.x, initialCamera.y)
+      .scale(initialCamera.zoom);
+    svg.call(zoomRef.current.transform, transform);
+  }, [initialCamera]);
+
+  // Track camera changes for URL state
+  useEffect(() => {
+    if (!onCameraChange || !svgRef.current) return;
+    
+    const svg = d3.select(svgRef.current);
+    let lastTransform = { x: 0, y: 0, zoom: 1 };
+    
+    const updateCamera = () => {
+      const transform = d3.zoomTransform(svg.node() as Element);
+      const newCamera = { x: transform.x, y: transform.y, zoom: transform.k };
+      
+      // Only update if values changed significantly (to avoid excessive updates)
+      if (
+        Math.abs(newCamera.x - lastTransform.x) > 5 ||
+        Math.abs(newCamera.y - lastTransform.y) > 5 ||
+        Math.abs(newCamera.zoom - lastTransform.zoom) > 0.01
+      ) {
+        lastTransform = newCamera;
+        onCameraChange(newCamera);
+      }
+    };
+
+    const interval = setInterval(updateCamera, 1000); // Update every second
+    return () => clearInterval(interval);
+  }, [onCameraChange]);
 
   const isLoading = loading;
 

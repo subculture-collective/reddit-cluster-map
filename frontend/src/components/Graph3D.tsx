@@ -248,6 +248,8 @@ const applyPhysics = (
 
 interface Props {
   filters: Filters;
+  minDegree?: number;
+  maxDegree?: number;
   linkOpacity: number;
   nodeRelSize: number;
   physics?: {
@@ -267,11 +269,15 @@ interface Props {
     communities: Array<{ id: number; color: string }>;
   } | null;
   usePrecomputedLayout?: boolean;
+  initialCamera?: { x: number; y: number; z: number };
+  onCameraChange?: (camera: { x: number; y: number; z: number }) => void;
 }
 
 export default function Graph3D(props: Props) {
   const {
     filters,
+    minDegree,
+    maxDegree,
     linkOpacity,
     nodeRelSize,
     physics,
@@ -282,6 +288,8 @@ export default function Graph3D(props: Props) {
     showLabels,
     communityResult,
     usePrecomputedLayout,
+    initialCamera,
+    onCameraChange,
   } = props;
 
   const [onlyLinked, setOnlyLinked] = useState(true);
@@ -496,6 +504,31 @@ export default function Graph3D(props: Props) {
     );
   }, [focusNodeId, graphData, CAMERA_ANIMATION_DURATION_MS]);
 
+  // Set initial camera position from URL state
+  useEffect(() => {
+    if (!initialCamera || !fgRef.current) return;
+    const fg = fgRef.current as unknown as FGApi | undefined;
+    if (fg?.cameraPosition) {
+      fg.cameraPosition(initialCamera, { x: 0, y: 0, z: 0 }, 0);
+    }
+  }, [initialCamera]);
+
+  // Track camera changes for URL state
+  useEffect(() => {
+    if (!onCameraChange || !fgRef.current) return;
+    
+    const interval = setInterval(() => {
+      const fg = fgRef.current as unknown as FGApi | undefined;
+      const cam = fg?.camera?.();
+      if (cam?.position) {
+        const { x, y, z } = cam.position;
+        onCameraChange({ x, y, z });
+      }
+    }, 1000); // Update every second
+
+    return () => clearInterval(interval);
+  }, [onCameraChange]);
+
   // filters and links
   const allowed = useMemo(
     () =>
@@ -524,19 +557,43 @@ export default function Graph3D(props: Props) {
 
   const degreeMap = useMemo(() => buildDegreeMap(links), [links]);
 
+  // Apply degree threshold filters
+  const degreeFilteredNodes = useMemo(() => {
+    if (minDegree === undefined && maxDegree === undefined) {
+      return filteredNodes;
+    }
+    return filteredNodes.filter((n) => {
+      const degree = degreeMap.get(n.id) || 0;
+      if (minDegree !== undefined && degree < minDegree) return false;
+      if (maxDegree !== undefined && degree > maxDegree) return false;
+      return true;
+    });
+  }, [filteredNodes, degreeMap, minDegree, maxDegree]);
+
+  const degreeFilteredNodeIds = useMemo(
+    () => new Set(degreeFilteredNodes.map((n) => n.id)),
+    [degreeFilteredNodes]
+  );
+
+  const degreeFilteredLinks = useMemo(
+    () =>
+      links.filter((l) => degreeFilteredNodeIds.has(l.source) && degreeFilteredNodeIds.has(l.target)),
+    [links, degreeFilteredNodeIds]
+  );
+
   const subredditMetric = useMemo(
     () =>
       computeSubredditMetric(
         subredditSize || "subscribers",
-        links,
-        filteredNodes
+        degreeFilteredLinks,
+        degreeFilteredNodes
       ),
-    [links, filteredNodes, subredditSize]
+    [degreeFilteredLinks, degreeFilteredNodes, subredditSize]
   );
 
   const userMetric = useMemo(() => {
     const m = new Map<string, number>();
-    for (const l of links) {
+    for (const l of degreeFilteredLinks) {
       const s = String(l.source);
       const t = String(l.target);
       if (s.startsWith("user_") && t.startsWith("post_"))
@@ -545,27 +602,27 @@ export default function Graph3D(props: Props) {
         m.set(s, (m.get(s) || 0) + 1);
     }
     return m;
-  }, [links]);
+  }, [degreeFilteredLinks]);
 
   const linkedNodeIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const l of links) {
+    for (const l of degreeFilteredLinks) {
       ids.add(l.source);
       ids.add(l.target);
     }
     return ids;
-  }, [links]);
+  }, [degreeFilteredLinks]);
 
   const filtered: GraphData = useMemo(() => {
     const baseNodes = onlyLinked
-      ? filteredNodes.filter((n) => linkedNodeIds.has(n.id))
-      : filteredNodes;
+      ? degreeFilteredNodes.filter((n) => linkedNodeIds.has(n.id))
+      : degreeFilteredNodes;
 
     if (
       baseNodes.length <= MAX_RENDER_NODES &&
-      links.length <= MAX_RENDER_LINKS
+      degreeFilteredLinks.length <= MAX_RENDER_LINKS
     ) {
-      return { nodes: baseNodes, links };
+      return { nodes: baseNodes, links: degreeFilteredLinks };
     }
 
     const nodeWeight = new Map<string, number>();
@@ -587,8 +644,8 @@ export default function Graph3D(props: Props) {
       .sort((a, b) => nodeWeight.get(b.id)! - nodeWeight.get(a.id)!);
     const picked = sorted.slice(0, MAX_RENDER_NODES);
     const pickedIds = new Set(picked.map((n) => n.id));
-    const keptLinks: typeof links = [];
-    for (const l of links) {
+    const keptLinks: typeof degreeFilteredLinks = [];
+    for (const l of degreeFilteredLinks) {
       if (pickedIds.has(l.source) && pickedIds.has(l.target)) {
         keptLinks.push(l);
         if (keptLinks.length >= MAX_RENDER_LINKS) break;
@@ -597,9 +654,9 @@ export default function Graph3D(props: Props) {
     return { nodes: picked, links: keptLinks };
   }, [
     onlyLinked,
-    filteredNodes,
+    degreeFilteredNodes,
     linkedNodeIds,
-    links,
+    degreeFilteredLinks,
     MAX_RENDER_NODES,
     MAX_RENDER_LINKS,
     degreeMap,
