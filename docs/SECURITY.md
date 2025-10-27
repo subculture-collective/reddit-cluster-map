@@ -10,6 +10,126 @@ The API includes multiple layers of security protection:
 2. **CORS (Cross-Origin Resource Sharing)** - Controls which origins can access the API
 3. **Security Headers** - Adds HTTP headers to protect against common attacks
 4. **Input Validation** - Sanitizes and validates all user input
+5. **Admin Authentication** - Protects administrative endpoints with bearer token auth
+6. **Secret Management** - Secure handling of sensitive credentials
+7. **Dependency Scanning** - Automated vulnerability detection in dependencies
+
+## Secret Management
+
+### Environment Variables
+
+All sensitive configuration values (credentials, tokens, API keys) MUST be stored in environment variables and NEVER committed to source control.
+
+#### Required Secrets
+
+1. **Reddit OAuth Credentials**
+   - `REDDIT_CLIENT_ID`: Reddit API client ID
+   - `REDDIT_CLIENT_SECRET`: Reddit API client secret
+   - Obtain from: https://www.reddit.com/prefs/apps
+
+2. **Database Credentials**
+   - `POSTGRES_USER`: Database username
+   - `POSTGRES_PASSWORD`: Database password (min 16 chars in production)
+   - `POSTGRES_DB`: Database name
+   - `DATABASE_URL`: Full connection string
+
+3. **Admin API Token**
+   - `ADMIN_API_TOKEN`: Bearer token for admin endpoints
+   - Generate: `openssl rand -base64 32`
+   - Minimum 32 characters
+
+### Best Practices
+
+#### For Development
+
+1. Copy `.env.example` to `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Replace placeholder values with real credentials
+3. Ensure `.env` is in `.gitignore` (it is by default)
+
+#### For Production
+
+Choose a secrets management solution based on your infrastructure:
+
+**Option 1: Docker Secrets (Docker Swarm)**
+```yaml
+services:
+  api:
+    secrets:
+      - reddit_client_id
+      - reddit_client_secret
+      - postgres_password
+      - admin_api_token
+```
+
+**Option 2: Kubernetes Secrets**
+```bash
+kubectl create secret generic reddit-cluster-secrets \
+  --from-literal=reddit-client-id=xxx \
+  --from-literal=reddit-client-secret=xxx \
+  --from-literal=postgres-password=xxx \
+  --from-literal=admin-api-token=xxx
+```
+
+**Option 3: Cloud Provider Secrets Manager**
+- AWS Secrets Manager
+- Google Cloud Secret Manager
+- Azure Key Vault
+- HashiCorp Vault
+
+**Option 4: Environment Variables (minimal setup)**
+- Set via hosting platform (Heroku, Fly.io, etc.)
+- Use deployment scripts with secure variable injection
+- Never log or expose in error messages
+
+### Rotation Policy
+
+Rotate secrets regularly:
+- **Admin API Token**: Every 90 days
+- **Database Password**: Every 180 days
+- **Reddit OAuth Secrets**: When compromised or annually
+
+## Admin Authentication
+
+Admin endpoints are protected by bearer token authentication:
+
+```bash
+# Example: Access admin endpoint
+curl -H "Authorization: Bearer $ADMIN_API_TOKEN" \
+  http://localhost:8000/api/admin/services
+```
+
+Protected endpoints:
+- `POST /api/admin/services` - Toggle background services
+- `GET /api/admin/services` - Get service status
+- `GET /api/admin/backups` - List database backups
+- `GET /api/admin/backups/{name}` - Download backup file
+
+### Implementation
+
+The admin authentication middleware is in `backend/internal/api/routes.go`:
+
+```go
+adminOnly := func(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if cfg.AdminAPIToken == "" {
+            http.Error(w, "admin token not configured", http.StatusServiceUnavailable)
+            return
+        }
+        auth := r.Header.Get("Authorization")
+        const prefix = "Bearer "
+        if len(auth) <= len(prefix) || auth[:len(prefix)] != prefix || 
+           auth[len(prefix):] != cfg.AdminAPIToken {
+            http.Error(w, "unauthorized", http.StatusUnauthorized)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+```
 
 ## Rate Limiting
 
@@ -255,6 +375,126 @@ CORS_ALLOWED_ORIGINS="*"
 ```
 
 **⚠️ WARNING**: Never disable security features in production!
+
+## Dependency Security
+
+### Automated Scanning
+
+Dependencies are automatically scanned by:
+
+1. **Dependabot** (`.github/dependabot.yml`)
+   - Checks Go modules, npm packages, GitHub Actions, Docker images
+   - Creates PRs for security updates immediately
+   - Groups minor/patch updates to reduce noise
+   - Runs weekly on Monday at 09:00 UTC
+
+2. **Security Workflow** (`.github/workflows/security.yml`)
+   - CodeQL analysis for Go and JavaScript/TypeScript
+   - Go vulnerability scanning with `govulncheck`
+   - npm audit for npm vulnerabilities
+   - Docker image scanning with Trivy
+   - Secret scanning with TruffleHog
+   - Runs on push, PR, and daily at 02:00 UTC
+
+3. **CI Workflow** (`.github/workflows/ci.yml`)
+   - Vulnerability checks integrated into CI pipeline
+   - Fails build on high/critical vulnerabilities
+
+### Manual Checks
+
+#### Backend (Go)
+
+```bash
+cd backend
+
+# Check for vulnerabilities
+go install golang.org/x/vuln/cmd/govulncheck@latest
+govulncheck ./...
+
+# Verify module integrity
+go mod verify
+
+# Update dependencies
+go get -u ./...
+go mod tidy
+```
+
+#### Frontend (npm)
+
+```bash
+cd frontend
+
+# Check for vulnerabilities
+npm audit
+
+# Fix automatically fixable issues
+npm audit fix
+
+# Update dependencies
+npm update
+```
+
+### Dependency Update Policy
+
+- **Critical vulnerabilities**: Fix immediately
+- **High vulnerabilities**: Fix within 7 days
+- **Medium vulnerabilities**: Fix within 30 days
+- **Low vulnerabilities**: Fix within 90 days
+
+## Production Security Checklist
+
+### Pre-Deployment Checklist
+
+- [ ] All secrets are stored in a secrets manager (not in code or .env files)
+- [ ] `ADMIN_API_TOKEN` is set to a strong random value (32+ chars)
+- [ ] Database password is strong (16+ chars, mixed case, numbers, symbols)
+- [ ] `CORS_ALLOWED_ORIGINS` is set to your actual frontend domain(s)
+- [ ] Rate limiting is enabled (`ENABLE_RATE_LIMIT=true`)
+- [ ] HTTPS/TLS is configured and enforced
+- [ ] `ENV=production` is set for proper error handling
+- [ ] All dependencies are up-to-date and scanned
+- [ ] Security scanning workflow passes
+
+### Security Monitoring
+
+1. **Enable observability features**:
+   ```bash
+   OTEL_ENABLED=true
+   OTEL_EXPORTER_OTLP_ENDPOINT=your-collector:4318
+   SENTRY_DSN=your-sentry-dsn
+   SENTRY_ENVIRONMENT=production
+   ```
+
+2. **Monitor security events**:
+   - Failed authentication attempts
+   - Rate limit violations
+   - Database connection errors
+   - Unusual API usage patterns
+
+3. **Regular security audits**:
+   - Review access logs weekly
+   - Audit admin API usage monthly
+   - Run penetration tests quarterly
+   - Review and rotate secrets quarterly
+
+## Incident Response
+
+If a security incident occurs:
+
+1. **Immediately**:
+   - Rotate all compromised credentials
+   - Review access logs for unauthorized access
+   - Block malicious IPs at firewall level
+
+2. **Within 24 hours**:
+   - Investigate root cause
+   - Patch vulnerabilities
+   - Update security documentation
+
+3. **Within 7 days**:
+   - Implement additional safeguards
+   - Conduct post-mortem review
+   - Update incident response procedures
 
 ## Troubleshooting
 

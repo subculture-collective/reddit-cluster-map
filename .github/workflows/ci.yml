@@ -47,6 +47,12 @@ jobs:
         working-directory: ./backend
         run: go vet ./...
 
+      - name: Check for Go vulnerabilities
+        working-directory: ./backend
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
       - name: Run tests
         working-directory: ./backend
         env:
@@ -84,6 +90,10 @@ jobs:
         working-directory: ./frontend
         run: npm run lint || echo "Linting skipped - no lint script"
         continue-on-error: true
+
+      - name: Check for npm vulnerabilities
+        working-directory: ./frontend
+        run: npm audit --audit-level=high
 
       - name: Run tests
         working-directory: ./frontend
