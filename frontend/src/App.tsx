@@ -4,17 +4,30 @@ import Dashboard from "./components/Dashboard";
 import Graph2D from "./components/Graph2D";
 import Graph3D from "./components/Graph3D.tsx";
 import Inspector from "./components/Inspector.tsx";
+import Legend from "./components/Legend.tsx";
+import ShareButton from "./components/ShareButton.tsx";
 import type { TypeFilters } from "./types/ui";
 import type { CommunityResult } from "./utils/communityDetection";
-import { useEffect, useState } from "react";
+import { readStateFromURL, writeStateToURL, type AppState } from "./utils/urlState";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 function App() {
-  const [filters, setFilters] = useState<TypeFilters>({
-    subreddit: true,
-    user: true,
-    post: false,
-    comment: false,
+  // Initialize state from URL if available
+  const urlState = readStateFromURL();
+
+  const [filters, setFilters] = useState<TypeFilters>(() => {
+    if (urlState.filters) return urlState.filters;
+    return {
+      subreddit: true,
+      user: true,
+      post: false,
+      comment: false,
+    };
   });
+  
+  const [minDegree, setMinDegree] = useState<number | undefined>(urlState.minDegree);
+  const [maxDegree, setMaxDegree] = useState<number | undefined>(urlState.maxDegree);
+  
   const [linkOpacity, setLinkOpacity] = useState(0.35);
   const [nodeRelSize, setNodeRelSize] = useState(5);
   const [physics, setPhysics] = useState({
@@ -33,6 +46,8 @@ function App() {
   const [viewMode, setViewMode] = useState<
     "3d" | "2d" | "dashboard" | "communities"
   >(() => {
+    // Prefer URL state over localStorage
+    if (urlState.viewMode) return urlState.viewMode;
     const saved =
       typeof localStorage !== "undefined"
         ? localStorage.getItem("viewMode")
@@ -49,9 +64,13 @@ function App() {
   });
   const [communityResult, setCommunityResult] =
     useState<CommunityResult | null>(null);
-  const [useCommunityColors, setUseCommunityColors] = useState(false);
+  const [useCommunityColors, setUseCommunityColors] = useState(() => {
+    if (urlState.useCommunityColors !== undefined) return urlState.useCommunityColors;
+    return false;
+  });
   const [usePrecomputedLayout, setUsePrecomputedLayout] = useState<boolean>(
     () => {
+      if (urlState.usePrecomputedLayout !== undefined) return urlState.usePrecomputedLayout;
       try {
         const saved = localStorage.getItem("usePrecomputedLayout");
         if (saved === "true" || saved === "false") return saved === "true";
@@ -61,6 +80,9 @@ function App() {
       return true; // default: on
     }
   );
+  
+  const [camera3dRef, setCamera3dRef] = useState<{ x: number; y: number; z: number } | undefined>(urlState.camera3d);
+  const [camera2dRef, setCamera2dRef] = useState<{ x: number; y: number; zoom: number } | undefined>(urlState.camera2d);
 
   // Persist view mode
   useEffect(() => {
@@ -81,6 +103,48 @@ function App() {
       /* ignore */
     }
   }, [usePrecomputedLayout]);
+
+  // Sync state to URL with debouncing to avoid excessive history API calls
+  const urlWriteTimeoutRef = useRef<number | null>(null);
+  
+  useEffect(() => {
+    // Clear any pending timeout
+    if (urlWriteTimeoutRef.current !== null) {
+      clearTimeout(urlWriteTimeoutRef.current);
+    }
+    
+    // Debounce URL writes by 500ms
+    urlWriteTimeoutRef.current = window.setTimeout(() => {
+      writeStateToURL({
+        viewMode,
+        filters,
+        minDegree,
+        maxDegree,
+        camera3d: camera3dRef,
+        camera2d: camera2dRef,
+        useCommunityColors,
+        usePrecomputedLayout,
+      });
+    }, 500);
+
+    return () => {
+      if (urlWriteTimeoutRef.current !== null) {
+        clearTimeout(urlWriteTimeoutRef.current);
+      }
+    };
+  }, [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout]);
+
+  // Callback to get current state for sharing
+  const getShareState = useCallback((): AppState => ({
+    viewMode,
+    filters,
+    minDegree,
+    maxDegree,
+    camera3d: camera3dRef,
+    camera2d: camera2dRef,
+    useCommunityColors,
+    usePrecomputedLayout,
+  }), [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout]);
 
   return (
     <div className="w-full h-screen">
@@ -113,6 +177,10 @@ function App() {
           <Controls
             filters={filters}
             onFiltersChange={setFilters}
+            minDegree={minDegree}
+            onMinDegreeChange={setMinDegree}
+            maxDegree={maxDegree}
+            onMaxDegreeChange={setMaxDegree}
             linkOpacity={linkOpacity}
             onLinkOpacityChange={setLinkOpacity}
             nodeRelSize={nodeRelSize}
@@ -137,9 +205,12 @@ function App() {
               setUsePrecomputedLayout(enabled)
             }
           />
+          <ShareButton getState={getShareState} />
           {viewMode === "3d" ? (
             <Graph3D
               filters={filters}
+              minDegree={minDegree}
+              maxDegree={maxDegree}
               linkOpacity={linkOpacity}
               nodeRelSize={nodeRelSize}
               physics={physics}
@@ -153,10 +224,14 @@ function App() {
               }}
               communityResult={useCommunityColors ? communityResult : null}
               usePrecomputedLayout={usePrecomputedLayout}
+              initialCamera={camera3dRef}
+              onCameraChange={setCamera3dRef}
             />
           ) : (
             <Graph2D
               filters={filters}
+              minDegree={minDegree}
+              maxDegree={maxDegree}
               linkOpacity={linkOpacity}
               nodeRelSize={nodeRelSize}
               physics={physics}
@@ -170,8 +245,15 @@ function App() {
               }}
               communityResult={useCommunityColors ? communityResult : null}
               usePrecomputedLayout={usePrecomputedLayout}
+              initialCamera={camera2dRef}
+              onCameraChange={setCamera2dRef}
             />
           )}
+          <Legend
+            filters={filters}
+            useCommunityColors={useCommunityColors}
+            communityCount={communityResult?.communities.length}
+          />
           <Inspector
             selected={selectedId ? { id: selectedId } : undefined}
             onClear={() => {

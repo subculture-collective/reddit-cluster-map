@@ -19,6 +19,10 @@ type SubredditSize =
 interface Props {
   filters: TypeFilters;
   onFiltersChange: (f: TypeFilters) => void;
+  minDegree?: number;
+  onMinDegreeChange?: (v: number | undefined) => void;
+  maxDegree?: number;
+  onMaxDegreeChange?: (v: number | undefined) => void;
   linkOpacity: number;
   onLinkOpacityChange: (v: number) => void;
   nodeRelSize: number;
@@ -44,6 +48,10 @@ export default function Controls(props: Props) {
   const {
     filters,
     onFiltersChange,
+    minDegree,
+    onMinDegreeChange,
+    maxDegree,
+    onMaxDegreeChange,
     linkOpacity,
     onLinkOpacityChange,
     nodeRelSize,
@@ -403,6 +411,40 @@ export default function Controls(props: Props) {
           </label>
         ))}
       </div>
+
+      {/* Degree threshold filters */}
+      {onMinDegreeChange && (
+        <div className="flex gap-3 items-center">
+          <label className="text-sm whitespace-nowrap">Min degree</label>
+          <input
+            type="number"
+            min={0}
+            value={minDegree ?? ""}
+            placeholder="None"
+            className="bg-black/40 border border-white/20 rounded px-2 py-1 text-sm outline-none w-20"
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              const val = e.target.value;
+              onMinDegreeChange(val === "" ? undefined : parseInt(val, 10) || 0);
+            }}
+          />
+        </div>
+      )}
+      {onMaxDegreeChange && (
+        <div className="flex gap-3 items-center">
+          <label className="text-sm whitespace-nowrap">Max degree</label>
+          <input
+            type="number"
+            min={0}
+            value={maxDegree ?? ""}
+            placeholder="None"
+            className="bg-black/40 border border-white/20 rounded px-2 py-1 text-sm outline-none w-20"
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              const val = e.target.value;
+              onMaxDegreeChange(val === "" ? undefined : parseInt(val, 10) || 0);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
