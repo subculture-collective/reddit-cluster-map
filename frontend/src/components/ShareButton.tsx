@@ -17,6 +17,9 @@ export default function ShareButton({ getState }: Props) {
       const state = getState();
       const url = generateShareURL(state);
       
+      if (!navigator.clipboard) {
+        throw new Error("Clipboard API not available");
+      }
       await navigator.clipboard.writeText(url);
       setCopied(true);
       
