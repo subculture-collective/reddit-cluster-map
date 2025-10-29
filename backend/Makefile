@@ -261,3 +261,14 @@ backups-snapshot-volume: ## Create a snapshot of the Postgres data volume
 	@echo "Snapshotting backend_postgres_data into backend_pgbackups..."
 	@docker run --rm -v backend_postgres_data:/pgdata:ro -v backend_pgbackups:/out alpine sh -c \
 		"apk add --no-cache tar >/dev/null 2>&1 || true; cd /pgdata && ts=$$(date +%Y%m%d_%H%M%S) && tar -czf /out/pgdata_$$ts.tar.gz . && echo Created /out/pgdata_$$ts.tar.gz"
+
+test-integration-docker: ## Run integration tests with dockerized Postgres
+@echo "Starting test database..."
+docker compose -f docker-compose.test.yml up -d
+@echo "Waiting for database to be ready..."
+@sleep 5
+@echo "Running integration tests..."
+TEST_DATABASE_URL="postgres://testuser:testpass@localhost:5433/testdb?sslmode=disable" go test ./internal/graph -run Integration -v || (docker compose -f docker-compose.test.yml down && exit 1)
+@echo "Stopping test database..."
+docker compose -f docker-compose.test.yml down
+@echo "✓ Integration tests complete"
