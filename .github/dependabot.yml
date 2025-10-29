@@ -1,0 +1,107 @@
+# Dependabot configuration for automated dependency updates and security scanning
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # Backend Go dependencies
+  - package-ecosystem: "gomod"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "subculture-collective/maintainers"
+    labels:
+      - "dependencies"
+      - "backend"
+      - "go"
+    # Group non-security updates to reduce PR noise
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Always create PRs for security updates immediately
+    allow:
+      - dependency-type: "all"
+    # Increase priority for security updates
+    target-branch: "develop"
+
+  # Frontend npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "subculture-collective/maintainers"
+    labels:
+      - "dependencies"
+      - "frontend"
+      - "npm"
+    # Group non-security updates
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    allow:
+      - dependency-type: "all"
+    target-branch: "develop"
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "subculture-collective/maintainers"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    target-branch: "develop"
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "subculture-collective/maintainers"
+    labels:
+      - "dependencies"
+      - "docker"
+    target-branch: "develop"
+
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "subculture-collective/maintainers"
+    labels:
+      - "dependencies"
+      - "docker"
+    target-branch: "develop"
