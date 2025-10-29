@@ -78,6 +78,7 @@ See the **[Developer Guide](docs/developer-guide.md)** for detailed workflows, t
 
 - **[Developer Guide](docs/developer-guide.md)** - Comprehensive dev workflows, Makefile targets, testing, and troubleshooting
 - **[Setup Guide](docs/setup.md)** - Full setup instructions for Docker, env vars, and seeding
+- **[Data Integrity Guide](backend/docs/DATA_INTEGRITY.md)** - Database integrity checks, backfill operations, and maintenance
 - **[OAuth Token Management](docs/oauth-token-management.md)** - Token refresh, credential rotation, and secret management
 - **[Performance Documentation](docs/perf.md)** - Graph query performance analysis, benchmarking, and optimization
 - **[Monitoring Guide](docs/monitoring.md)** - Analytics, metrics, Prometheus, and Grafana dashboards
@@ -95,6 +96,8 @@ From `backend/`, run `make help` to see all available targets. Key ones:
 - `make precalculate` - Run graph precalculation
 - `make test` - Run all tests
 - `make benchmark-graph` (from backend/) - Benchmark graph query performance
+- `make integrity-check` - Run data integrity checks
+- `make integrity-clean` - Clean up data integrity issues
 - `make lint` - Check code formatting and run go vet
 - `make fmt` - Auto-format Go code
 - `make smoke-test` - Run API health checks
