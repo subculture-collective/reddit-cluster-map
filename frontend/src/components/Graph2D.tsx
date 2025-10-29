@@ -811,14 +811,14 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
     svg.call(zoomRef.current.transform, transform);
   }, [initialCamera]);
 
-  // Track camera changes for URL state
+  // Track camera changes for URL state using zoom events
   useEffect(() => {
-    if (!onCameraChange || !svgRef.current) return;
+    if (!onCameraChange || !svgRef.current || !zoomRef.current) return;
     
     const svg = d3.select(svgRef.current);
     let lastTransform = { x: 0, y: 0, zoom: 1 };
     
-    const updateCamera = () => {
+    const handleZoomEnd = () => {
       const transform = d3.zoomTransform(svg.node() as Element);
       const newCamera = { x: transform.x, y: transform.y, zoom: transform.k };
       
@@ -833,8 +833,14 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       }
     };
 
-    const interval = setInterval(updateCamera, 1000); // Update every second
-    return () => clearInterval(interval);
+    // Listen to zoom end events instead of polling
+    zoomRef.current.on("end.urlstate", handleZoomEnd);
+
+    return () => {
+      if (zoomRef.current) {
+        zoomRef.current.on("end.urlstate", null);
+      }
+    };
   }, [onCameraChange]);
 
   const isLoading = loading;

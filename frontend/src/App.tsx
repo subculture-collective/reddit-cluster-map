@@ -9,7 +9,7 @@ import ShareButton from "./components/ShareButton.tsx";
 import type { TypeFilters } from "./types/ui";
 import type { CommunityResult } from "./utils/communityDetection";
 import { readStateFromURL, writeStateToURL, type AppState } from "./utils/urlState";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 function App() {
   // Initialize state from URL if available
@@ -104,18 +104,34 @@ function App() {
     }
   }, [usePrecomputedLayout]);
 
-  // Sync state to URL
+  // Sync state to URL with debouncing to avoid excessive history API calls
+  const urlWriteTimeoutRef = useRef<number | null>(null);
+  
   useEffect(() => {
-    writeStateToURL({
-      viewMode,
-      filters,
-      minDegree,
-      maxDegree,
-      camera3d: camera3dRef,
-      camera2d: camera2dRef,
-      useCommunityColors,
-      usePrecomputedLayout,
-    });
+    // Clear any pending timeout
+    if (urlWriteTimeoutRef.current !== null) {
+      clearTimeout(urlWriteTimeoutRef.current);
+    }
+    
+    // Debounce URL writes by 500ms
+    urlWriteTimeoutRef.current = window.setTimeout(() => {
+      writeStateToURL({
+        viewMode,
+        filters,
+        minDegree,
+        maxDegree,
+        camera3d: camera3dRef,
+        camera2d: camera2dRef,
+        useCommunityColors,
+        usePrecomputedLayout,
+      });
+    }, 500);
+
+    return () => {
+      if (urlWriteTimeoutRef.current !== null) {
+        clearTimeout(urlWriteTimeoutRef.current);
+      }
+    };
   }, [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout]);
 
   // Callback to get current state for sharing

@@ -132,13 +132,13 @@ export function writeStateToURL(state: AppState): void {
   }
 
   // Degree thresholds
-  if (state.minDegree !== undefined) {
+  if (state.minDegree !== undefined && state.minDegree >= 0) {
     params.set("minDegree", state.minDegree.toString());
   } else {
     params.delete("minDegree");
   }
 
-  if (state.maxDegree !== undefined) {
+  if (state.maxDegree !== undefined && state.maxDegree >= 0) {
     params.set("maxDegree", state.maxDegree.toString());
   } else {
     params.delete("maxDegree");
