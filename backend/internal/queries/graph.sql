@@ -342,7 +342,7 @@ INSERT INTO graph_community_links (
 ) VALUES (
     $1, $2, $3
 ) ON CONFLICT (source_community_id, target_community_id)
-DO UPDATE SET weight = EXCLUDED.weight;
+DO UPDATE SET weight = EXCLUDED.weight, updated_at = now();
 
 -- name: GetAllCommunities :many
 SELECT * FROM graph_communities

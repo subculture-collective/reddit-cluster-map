@@ -61,6 +61,7 @@ function Admin({ onViewMode }: AdminProps) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [error, setError] = useState<string>("");
+  const [editingPriority, setEditingPriority] = useState<{ [jobId: number]: number }>({});
 
   const apiUrl = import.meta.env.VITE_API_URL || "/api";
 
@@ -78,10 +79,31 @@ function Admin({ onViewMode }: AdminProps) {
     return response;
   };
 
-  const handleLogin = () => {
-    if (token.trim()) {
-      setIsAuthenticated(true);
-      setError("");
+  const handleLogin = async () => {
+    if (!token.trim()) {
+      setError("Please enter an admin token");
+      return;
+    }
+    
+    try {
+      // Validate token by making an authenticated API call
+      const response = await fetch(`${apiUrl}/admin/jobs/stats`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      
+      if (response.status === 200) {
+        setIsAuthenticated(true);
+        setError("");
+      } else if (response.status === 401) {
+        setError("Invalid admin token");
+      } else {
+        setError("Failed to authenticate. Please try again.");
+      }
+    } catch (err) {
+      setError(`Authentication failed: ${err}`);
     }
   };
 
@@ -214,7 +236,11 @@ function Admin({ onViewMode }: AdminProps) {
                 type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && handleLogin()}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter") {
+                    handleLogin();
+                  }
+                }}
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:border-blue-500"
                 placeholder="Enter admin token"
               />
@@ -404,10 +430,19 @@ function Admin({ onViewMode }: AdminProps) {
                       <td className="px-4 py-3 text-sm">
                         <input
                           type="number"
-                          value={job.priority || 0}
+                          value={editingPriority[job.id] ?? job.priority ?? 0}
                           onChange={(e) =>
-                            updateJobPriority(job.id, parseInt(e.target.value))
+                            setEditingPriority({
+                              ...editingPriority,
+                              [job.id]: parseInt(e.target.value) || 0,
+                            })
                           }
+                          onBlur={(e) => {
+                            const newPriority = parseInt(e.target.value) || 0;
+                            if (newPriority !== (job.priority || 0)) {
+                              updateJobPriority(job.id, newPriority);
+                            }
+                          }}
                           className="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"
                         />
                       </td>

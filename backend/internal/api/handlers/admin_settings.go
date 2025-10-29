@@ -93,53 +93,89 @@ func (h *AdminSettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Req
 
 	// Update boolean settings
 	if val, ok := req["crawler_enabled"].(bool); ok {
-		_ = admin.Set(ctx, h.q, "crawler_enabled", boolToString(val))
+		if err := admin.Set(ctx, h.q, "crawler_enabled", boolToString(val)); err != nil {
+			http.Error(w, "Failed to update crawler_enabled: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["crawler_enabled"] = val
 	}
 	if val, ok := req["precalc_enabled"].(bool); ok {
-		_ = admin.Set(ctx, h.q, "precalc_enabled", boolToString(val))
+		if err := admin.Set(ctx, h.q, "precalc_enabled", boolToString(val)); err != nil {
+			http.Error(w, "Failed to update precalc_enabled: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["precalc_enabled"] = val
 	}
 	if val, ok := req["detailed_graph"].(bool); ok {
-		_ = admin.Set(ctx, h.q, "detailed_graph", boolToString(val))
+		if err := admin.Set(ctx, h.q, "detailed_graph", boolToString(val)); err != nil {
+			http.Error(w, "Failed to update detailed_graph: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["detailed_graph"] = val
 	}
 
 	// Update numeric settings
 	if val, ok := req["crawler_rps"].(float64); ok && val > 0 {
-		_ = admin.Set(ctx, h.q, "crawler_rps", floatToString(val))
+		if err := admin.Set(ctx, h.q, "crawler_rps", floatToString(val)); err != nil {
+			http.Error(w, "Failed to update crawler_rps: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["crawler_rps"] = val
 	}
 	if val, ok := req["rate_limit_global"].(float64); ok && val > 0 {
-		_ = admin.Set(ctx, h.q, "rate_limit_global", floatToString(val))
+		if err := admin.Set(ctx, h.q, "rate_limit_global", floatToString(val)); err != nil {
+			http.Error(w, "Failed to update rate_limit_global: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["rate_limit_global"] = val
 	}
 	if val, ok := req["rate_limit_per_ip"].(float64); ok && val > 0 {
-		_ = admin.Set(ctx, h.q, "rate_limit_per_ip", floatToString(val))
+		if err := admin.Set(ctx, h.q, "rate_limit_per_ip", floatToString(val)); err != nil {
+			http.Error(w, "Failed to update rate_limit_per_ip: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["rate_limit_per_ip"] = val
 	}
 	if val, ok := req["layout_max_nodes"].(float64); ok && val > 0 {
-		_ = admin.Set(ctx, h.q, "layout_max_nodes", intToString(int(val)))
+		if err := admin.Set(ctx, h.q, "layout_max_nodes", intToString(int(val))); err != nil {
+			http.Error(w, "Failed to update layout_max_nodes: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["layout_max_nodes"] = int(val)
 	}
 	if val, ok := req["layout_iterations"].(float64); ok && val > 0 {
-		_ = admin.Set(ctx, h.q, "layout_iterations", intToString(int(val)))
+		if err := admin.Set(ctx, h.q, "layout_iterations", intToString(int(val))); err != nil {
+			http.Error(w, "Failed to update layout_iterations: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["layout_iterations"] = int(val)
 	}
 	if val, ok := req["posts_per_sub_in_graph"].(float64); ok && val > 0 {
-		_ = admin.Set(ctx, h.q, "posts_per_sub_in_graph", intToString(int(val)))
+		if err := admin.Set(ctx, h.q, "posts_per_sub_in_graph", intToString(int(val))); err != nil {
+			http.Error(w, "Failed to update posts_per_sub_in_graph: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["posts_per_sub_in_graph"] = int(val)
 	}
 	if val, ok := req["comments_per_post_in_graph"].(float64); ok && val > 0 {
-		_ = admin.Set(ctx, h.q, "comments_per_post_in_graph", intToString(int(val)))
+		if err := admin.Set(ctx, h.q, "comments_per_post_in_graph", intToString(int(val))); err != nil {
+			http.Error(w, "Failed to update comments_per_post_in_graph: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["comments_per_post_in_graph"] = int(val)
 	}
 	if val, ok := req["max_author_content_links"].(float64); ok && val > 0 {
-		_ = admin.Set(ctx, h.q, "max_author_content_links", intToString(int(val)))
+		if err := admin.Set(ctx, h.q, "max_author_content_links", intToString(int(val))); err != nil {
+			http.Error(w, "Failed to update max_author_content_links: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["max_author_content_links"] = int(val)
 	}
 	if val, ok := req["max_posts_per_sub"].(float64); ok && val > 0 {
-		_ = admin.Set(ctx, h.q, "max_posts_per_sub", intToString(int(val)))
+		if err := admin.Set(ctx, h.q, "max_posts_per_sub", intToString(int(val))); err != nil {
+			http.Error(w, "Failed to update max_posts_per_sub: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		changes["max_posts_per_sub"] = int(val)
 	}
 

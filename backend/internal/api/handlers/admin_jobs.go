@@ -293,9 +293,19 @@ func (h *AdminJobsHandler) RetryJob(w http.ResponseWriter, r *http.Request) {
 
 // Helper functions
 func getUserIDFromRequest(r *http.Request) string {
-	// Try to get user from auth header or context
-	// For now, return "admin" as a placeholder
-	return "admin"
+	// Extract user identifier from the authorization header
+	// The admin token itself can serve as a user identifier for audit purposes
+	auth := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if len(auth) > len(prefix) && auth[:len(prefix)] == prefix {
+		// Use the last 8 characters of the token as a user identifier
+		token := auth[len(prefix):]
+		if len(token) > 8 {
+			return "admin_" + token[len(token)-8:]
+		}
+		return "admin_" + token
+	}
+	return "admin_unknown"
 }
 
 func getIPFromRequest(r *http.Request) string {
