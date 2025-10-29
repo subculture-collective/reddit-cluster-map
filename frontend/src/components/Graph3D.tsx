@@ -516,13 +516,26 @@ export default function Graph3D(props: Props) {
   // Track camera changes for URL state
   useEffect(() => {
     if (!onCameraChange || !fgRef.current) return;
-    
+
+    const lastCamPos = { x: NaN, y: NaN, z: NaN };
+    const EPSILON = 1e-3;
+
     const interval = setInterval(() => {
       const fg = fgRef.current as unknown as FGApi | undefined;
       const cam = fg?.camera?.();
       if (cam?.position) {
         const { x, y, z } = cam.position;
-        onCameraChange({ x, y, z });
+        // Only update if position changed significantly
+        if (
+          Math.abs(x - lastCamPos.x) > EPSILON ||
+          Math.abs(y - lastCamPos.y) > EPSILON ||
+          Math.abs(z - lastCamPos.z) > EPSILON
+        ) {
+          onCameraChange({ x, y, z });
+          lastCamPos.x = x;
+          lastCamPos.y = y;
+          lastCamPos.z = z;
+        }
       }
     }, 1000); // Update every second
 
