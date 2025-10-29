@@ -264,9 +264,7 @@ backups-snapshot-volume: ## Create a snapshot of the Postgres data volume
 
 test-integration-docker: ## Run integration tests with dockerized Postgres
 @echo "Starting test database..."
-docker compose -f docker-compose.test.yml up -d
-@echo "Waiting for database to be ready..."
-@sleep 5
+docker compose -f docker-compose.test.yml up -d --wait
 @echo "Running integration tests..."
 TEST_DATABASE_URL="postgres://testuser:testpass@localhost:5433/testdb?sslmode=disable" go test ./internal/graph -run Integration -v || (docker compose -f docker-compose.test.yml down && exit 1)
 @echo "Stopping test database..."

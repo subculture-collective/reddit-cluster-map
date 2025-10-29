@@ -14,7 +14,7 @@ The project has comprehensive test coverage across three categories:
 
 ### Prerequisites
 
-- Go 1.24.9 or later
+- Go 1.23 or later
 - Docker and Docker Compose (for integration tests)
 - PostgreSQL (optional, for local integration tests)
 
