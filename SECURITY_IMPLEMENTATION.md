@@ -158,7 +158,7 @@ frame-ancestors 'none'
 - Prevents merging code with known security issues
 
 **Immediate Action Taken:**
-- Fixed moderate Vite vulnerability (CVE-2025-93m4-6634-74q7)
+- Fixed moderate Vite vulnerability (CVE-2023-49294)
 - Updated Vite from 6.4.0 to 6.4.1
 - All dependencies now clean (0 vulnerabilities)
 
