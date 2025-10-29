@@ -21,28 +21,28 @@ func MaskURL(rawURL string) string {
 	if rawURL == "" {
 		return ""
 	}
-	
+
 	// Find the start of credentials (after ://)
 	schemeEnd := strings.Index(rawURL, "://")
 	if schemeEnd == -1 {
 		return rawURL
 	}
-	
+
 	credStart := schemeEnd + 3
-	
+
 	// Find the last @ symbol (in case password contains @)
 	atIdx := strings.LastIndex(rawURL, "@")
 	if atIdx == -1 || atIdx < credStart {
 		return rawURL
 	}
-	
+
 	// Find colon separating username from password
 	colonIdx := strings.Index(rawURL[credStart:atIdx], ":")
 	if colonIdx == -1 {
 		// No password, just return as-is
 		return rawURL
 	}
-	
+
 	// Build masked URL: scheme://user:***@host
 	return rawURL[:credStart+colonIdx+1] + "***" + rawURL[atIdx:]
 }

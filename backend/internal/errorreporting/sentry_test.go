@@ -11,9 +11,9 @@ import (
 
 func TestScrubPII(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		contains []string // strings that should be present after scrubbing
+		name        string
+		input       string
+		contains    []string // strings that should be present after scrubbing
 		notContains []string // strings that should be removed
 	}{
 		{
@@ -50,13 +50,13 @@ func TestScrubPII(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := scrubPII(tt.input)
-			
+
 			for _, s := range tt.contains {
 				if !strings.Contains(result, s) {
 					t.Errorf("Expected scrubbed text to contain %q, got: %s", s, result)
 				}
 			}
-			
+
 			for _, s := range tt.notContains {
 				if strings.Contains(result, s) {
 					t.Errorf("Expected scrubbed text to not contain %q, got: %s", s, result)
@@ -70,22 +70,22 @@ func TestGetRelease(t *testing.T) {
 	// Test SENTRY_RELEASE
 	os.Setenv("SENTRY_RELEASE", "v1.0.0")
 	defer os.Unsetenv("SENTRY_RELEASE")
-	
+
 	release := getRelease()
 	if release != "v1.0.0" {
 		t.Errorf("Expected release 'v1.0.0', got %s", release)
 	}
-	
+
 	// Test SERVICE_VERSION fallback
 	os.Unsetenv("SENTRY_RELEASE")
 	os.Setenv("SERVICE_VERSION", "v2.0.0")
 	defer os.Unsetenv("SERVICE_VERSION")
-	
+
 	release = getRelease()
 	if release != "v2.0.0" {
 		t.Errorf("Expected release 'v2.0.0', got %s", release)
 	}
-	
+
 	// Test default
 	os.Unsetenv("SERVICE_VERSION")
 	release = getRelease()
@@ -97,7 +97,7 @@ func TestGetRelease(t *testing.T) {
 func TestInit_NotConfigured(t *testing.T) {
 	// Ensure SENTRY_DSN is not set
 	os.Unsetenv("SENTRY_DSN")
-	
+
 	err := Init("test")
 	if err != nil {
 		t.Errorf("Init should not error when Sentry is not configured: %v", err)
@@ -108,12 +108,12 @@ func TestInit_Configured(t *testing.T) {
 	// Set a test DSN (won't actually send data)
 	os.Setenv("SENTRY_DSN", "https://examplePublicKey@o0.ingest.sentry.io/0")
 	defer os.Unsetenv("SENTRY_DSN")
-	
+
 	err := Init("test")
 	if err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
-	
+
 	// Clean up
 	sentry.Flush(0)
 }
@@ -235,15 +235,15 @@ func TestScrubPIIExported(t *testing.T) {
 	// Test the exported ScrubPII function
 	input := "Email: test@example.com, Token: bearer abc123def456ghi789jkl"
 	result := ScrubPII(input)
-	
+
 	if strings.Contains(result, "test@example.com") {
 		t.Error("Email should be scrubbed")
 	}
-	
+
 	if strings.Contains(result, "abc123def456ghi789jkl") {
 		t.Error("Token should be scrubbed")
 	}
-	
+
 	if !strings.Contains(result, "[REDACTED]") {
 		t.Error("Should contain [REDACTED]")
 	}

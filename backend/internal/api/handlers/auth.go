@@ -151,24 +151,24 @@ func refreshAccessToken(ctx context.Context, cfg *config.Config, refreshToken st
 	data := url.Values{}
 	data.Set("grant_type", "refresh_token")
 	data.Set("refresh_token", refreshToken)
-	
+
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://www.reddit.com/api/v1/access_token", bytes.NewBufferString(data.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", cfg.UserAgent)
 	basic := base64.StdEncoding.EncodeToString([]byte(cfg.RedditClientID + ":" + cfg.RedditClientSecret))
 	req.Header.Set("Authorization", "Basic "+basic)
-	
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		return nil, &httpError{Code: resp.StatusCode, Body: string(b)}
 	}
-	
+
 	var tr tokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
 		return nil, err
@@ -181,14 +181,14 @@ func refreshAccessToken(ctx context.Context, cfg *config.Config, refreshToken st
 func (h *AuthHandlers) RefreshUserToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	cfg := config.Load()
-	
+
 	// Get username from query parameter
 	username := r.URL.Query().Get("username")
 	if username == "" {
 		http.Error(w, "username parameter required", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Fetch existing account
 	store := authstore.New(h.q)
 	account, err := store.ByUsername(ctx, username)
@@ -197,7 +197,7 @@ func (h *AuthHandlers) RefreshUserToken(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "account not found", http.StatusNotFound)
 		return
 	}
-	
+
 	// Refresh the token
 	tok, err := refreshAccessToken(ctx, cfg, account.RefreshToken)
 	if err != nil {
@@ -205,7 +205,7 @@ func (h *AuthHandlers) RefreshUserToken(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "token refresh failed", http.StatusBadGateway)
 		return
 	}
-	
+
 	// Update stored token
 	expiresAt := time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second)
 	newRefreshToken := tok.RefreshToken
@@ -213,13 +213,13 @@ func (h *AuthHandlers) RefreshUserToken(w http.ResponseWriter, r *http.Request) 
 		// Reddit may not return a new refresh token, keep the old one
 		newRefreshToken = account.RefreshToken
 	}
-	
+
 	if _, err := store.Upsert(ctx, account.RedditUserID, account.RedditUsername, tok.AccessToken, newRefreshToken, tok.Scope, expiresAt); err != nil {
 		log.Printf("Failed to update token for %s: %v", username, err)
 		http.Error(w, "failed to persist token", http.StatusInternalServerError)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "expires_in": tok.ExpiresIn})
 }

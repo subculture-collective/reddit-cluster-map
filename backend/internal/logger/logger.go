@@ -20,10 +20,10 @@ var defaultLogger *slog.Logger
 // Init initializes the global logger with the specified log level
 func Init(levelStr string) {
 	level := parseLevel(levelStr)
-	
+
 	// Determine output format based on environment
 	var handler slog.Handler
-	
+
 	// Use JSON format in production, text format in development
 	if os.Getenv("ENV") == "production" {
 		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -34,7 +34,7 @@ func Init(levelStr string) {
 			Level: level,
 		})
 	}
-	
+
 	defaultLogger = slog.New(handler)
 	slog.SetDefault(defaultLogger)
 }

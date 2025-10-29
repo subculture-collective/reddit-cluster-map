@@ -10,10 +10,10 @@ import (
 
 func TestInitTokenManager(t *testing.T) {
 	tests := []struct {
-		name        string
-		clientID    string
+		name         string
+		clientID     string
 		clientSecret string
-		expectError bool
+		expectError  bool
 	}{
 		{
 			name:         "valid credentials",
