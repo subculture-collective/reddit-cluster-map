@@ -31,13 +31,13 @@ func RequestID(next http.Handler) http.Handler {
 			// Generate a new request ID
 			requestID = generateRequestID()
 		}
-		
+
 		// Add request ID to response header
 		w.Header().Set(RequestIDHeader, requestID)
-		
+
 		// Add request ID to context
 		ctx := context.WithValue(r.Context(), logger.RequestIDKey, requestID)
-		
+
 		// Call next handler with updated context
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

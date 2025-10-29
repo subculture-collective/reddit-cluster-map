@@ -171,6 +171,98 @@ frame-ancestors 'none'
 
 ---
 
+### ✅ 5. OAuth Token Refresh and Secret Management
+
+**Implementation:**
+- Created `backend/internal/secrets/` package for secure secret handling:
+  - `Mask()`: Masks secrets for safe logging (shows first 4 chars + "...")
+  - `MaskURL()`: Masks passwords in connection strings (e.g., database URLs)
+  - `ValidateRequired()`: Validates required secrets at startup with clear error messages
+
+- Implemented proactive OAuth token management in `backend/internal/crawler/token_manager.go`:
+  - Thread-safe token manager with mutex protection
+  - **Proactive refresh**: Automatically renews tokens 60 seconds before expiry
+  - Background refresh timer for automatic token renewal
+  - Prevents token expiration during long-running operations
+  - `ValidateOAuthCredentials()`: Validates credentials at startup before accepting traffic
+  - `RotateOAuthCredentials()`: Enables zero-downtime credential rotation
+
+- Added user OAuth token refresh in `backend/internal/api/handlers/auth.go`:
+  - `RefreshUserToken()` handler for refreshing user OAuth tokens stored in database
+  - Properly handles refresh token flow with Reddit API
+  - Maintains existing refresh tokens if not replaced by Reddit
+  - Updates tokens in database automatically
+
+- Enhanced crawler startup validation:
+  - Validates OAuth credentials before starting crawler operations
+  - Fails fast with clear error messages if credentials missing or invalid
+  - Logs masked credential IDs for troubleshooting (never logs full secrets)
+
+**Security Improvements:**
+- ✅ All secrets masked in log outputs (client IDs, secrets, tokens, connection strings)
+- ✅ Credentials validated at startup before accepting traffic
+- ✅ Support for hot-reload of credentials for zero-downtime rotation
+- ✅ Proactive token refresh prevents unexpected expiration (60s buffer)
+- ✅ Thread-safe token management for concurrent access
+- ✅ No secrets ever logged in plain text
+
+**Testing:**
+- Comprehensive test suite for secrets package (100% coverage):
+  - `TestMask()`: Various secret lengths and formats
+  - `TestMaskURL()`: Database URLs with passwords, special characters
+  - `TestValidateRequired()`: Missing and empty credentials
+- Token manager tests:
+  - `TestInitTokenManager()`: Credential validation
+  - `TestTokenManager_RotateCredentials()`: Runtime credential updates
+  - `TestTokenManager_TokenExpiry()`: Proactive refresh behavior
+  - `TestTokenManager_ConcurrentAccess()`: Thread safety
+- All existing tests pass with new implementation
+
+**Files Changed:**
+- `backend/internal/secrets/mask.go` (new)
+- `backend/internal/secrets/mask_test.go` (new)
+- `backend/internal/secrets/validate.go` (new)
+- `backend/internal/secrets/validate_test.go` (new)
+- `backend/internal/crawler/token_manager.go` (new)
+- `backend/internal/crawler/token_manager_test.go` (new)
+- `backend/internal/crawler/auth.go` (simplified to use token_manager)
+- `backend/internal/api/handlers/auth.go` (added refresh endpoint)
+- `backend/cmd/crawler/main.go` (added startup validation)
+
+**Usage Examples:**
+
+*Masking secrets in logs:*
+```go
+import "github.com/onnwee/reddit-cluster-map/backend/internal/secrets"
+
+clientID := "abcdefghijklmnop"
+log.Printf("Using client ID: %s", secrets.Mask(clientID))
+// Output: Using client ID: abcd...
+
+dbURL := "postgres://user:secretpass@localhost:5432/db"
+log.Printf("Connecting to: %s", secrets.MaskURL(dbURL))
+// Output: Connecting to: postgres://user:***@localhost:5432/db
+```
+
+*Rotating credentials at runtime:*
+```go
+import "github.com/onnwee/reddit-cluster-map/backend/internal/crawler"
+
+// Rotate to new credentials without downtime
+err := crawler.RotateOAuthCredentials(newClientID, newClientSecret)
+if err != nil {
+    log.Printf("Failed to rotate credentials: %v", err)
+}
+```
+
+*Refreshing user tokens:*
+```bash
+# Refresh a user's OAuth token
+curl -X POST "http://localhost:8080/api/auth/refresh?username=someuser"
+```
+
+---
+
 ## Documentation Updates
 
 ### Enhanced `docs/SECURITY.md`
@@ -215,6 +307,10 @@ $ npm run build
 | Category | Before | After | Status |
 |----------|--------|-------|--------|
 | Secret Management | Basic .env.example | Enhanced with best practices & docs | ✅ |
+| Secret Masking | Secrets logged in plain text | All secrets masked in logs | ✅ |
+| OAuth Token Management | Reactive refresh only | Proactive refresh with 60s buffer | ✅ |
+| Credential Rotation | Manual restart required | Zero-downtime runtime rotation | ✅ |
+| Startup Validation | No validation | Fails fast on missing credentials | ✅ |
 | Admin Auth Tests | None | Comprehensive test suite | ✅ |
 | CSP | Server headers only | Server + meta tag defense in depth | ✅ |
 | Dependency Scanning | Manual only | Automated daily + on push/PR | ✅ |

@@ -52,14 +52,14 @@ type Config struct {
 	LayoutBatchSize  int     // batch size for position updates
 	LayoutEpsilon    float64 // minimum distance threshold for position updates (0 = update all)
 	// Observability settings
-	LogLevel            string  // log level: debug, info, warn, error
-	OTELEnabled         bool    // enable OpenTelemetry tracing
-	OTELEndpoint        string  // OpenTelemetry collector endpoint
-	OTELSampleRate      float64 // trace sampling rate (0.0 to 1.0)
-	SentryDSN           string  // Sentry DSN for error reporting
-	SentryEnvironment   string  // Sentry environment (dev, staging, production)
-	SentryRelease       string  // Sentry release version
-	SentrySampleRate    float64 // Sentry error sampling rate (0.0 to 1.0)
+	LogLevel          string  // log level: debug, info, warn, error
+	OTELEnabled       bool    // enable OpenTelemetry tracing
+	OTELEndpoint      string  // OpenTelemetry collector endpoint
+	OTELSampleRate    float64 // trace sampling rate (0.0 to 1.0)
+	SentryDSN         string  // Sentry DSN for error reporting
+	SentryEnvironment string  // Sentry environment (dev, staging, production)
+	SentryRelease     string  // Sentry release version
+	SentrySampleRate  float64 // Sentry error sampling rate (0.0 to 1.0)
 }
 
 var cached *Config

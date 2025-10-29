@@ -51,6 +51,14 @@ func main() {
 		}()
 	}
 
+	// Validate OAuth credentials at startup
+	logger.Info("Validating OAuth credentials...")
+	if err := crawler.ValidateOAuthCredentials(); err != nil {
+		logger.Error("OAuth credential validation failed", "error", err)
+		log.Fatalf("OAuth credential validation failed: %v", err)
+	}
+	logger.Info("OAuth credentials validated successfully")
+
 	// Get database connection string from environment
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
