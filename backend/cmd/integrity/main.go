@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -240,7 +241,7 @@ func runStats(ctx context.Context, svc *integrity.Service) {
 	fmt.Println()
 	fmt.Printf("%-25s %12s %12s %12s %20s %20s\n",
 		"Table", "Size", "Rows", "Dead Rows", "Last Vacuum", "Last Analyze")
-	fmt.Println(string(make([]byte, 120)))
+	fmt.Println(strings.Repeat("-", 120))
 	for _, stat := range stats {
 		lastVacuum := "Never"
 		if stat.LastVacuum != nil {
@@ -274,7 +275,7 @@ func runBloat(ctx context.Context, svc *integrity.Service) {
 	fmt.Println()
 	fmt.Printf("%-25s %12s %12s %12s %10s\n",
 		"Table", "Size", "Live Rows", "Dead Rows", "% Dead")
-	fmt.Println(string(make([]byte, 80)))
+	fmt.Println(strings.Repeat("-", 80))
 
 	for _, stat := range stats {
 		percentDead := 0.0

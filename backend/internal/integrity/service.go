@@ -110,23 +110,34 @@ func (s *Service) CheckAllIntegrity(ctx context.Context, limit int32, offset int
 func (s *Service) CleanupOrphanPosts(ctx context.Context, batchSize int32) (int64, error) {
 	var totalDeleted int64
 	for {
-		err := s.queries.DeleteOrphanPosts(ctx, batchSize)
+		// Count before deletion
+		countBefore, err := s.queries.CountOrphanPosts(ctx)
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to count orphan posts: %w", err)
+		}
+		if countBefore == 0 {
+			break
+		}
+
+		err = s.queries.DeleteOrphanPosts(ctx, batchSize)
 		if err != nil {
 			return totalDeleted, fmt.Errorf("failed to delete orphan posts: %w", err)
 		}
 
-		// Check if there are more to delete
-		remaining, err := s.queries.CountOrphanPosts(ctx)
+		// Count after deletion to determine actual deleted count
+		countAfter, err := s.queries.CountOrphanPosts(ctx)
 		if err != nil {
 			return totalDeleted, fmt.Errorf("failed to count remaining orphan posts: %w", err)
 		}
 
-		totalDeleted += int64(batchSize)
-		if remaining == 0 {
+		deleted := countBefore - countAfter
+		totalDeleted += deleted
+
+		if countAfter == 0 {
 			break
 		}
 
-		log.Printf("Deleted batch of orphan posts, %d remaining", remaining)
+		log.Printf("Deleted %d orphan posts, %d remaining", deleted, countAfter)
 	}
 	return totalDeleted, nil
 }
@@ -135,22 +146,34 @@ func (s *Service) CleanupOrphanPosts(ctx context.Context, batchSize int32) (int6
 func (s *Service) CleanupOrphanComments(ctx context.Context, batchSize int32) (int64, error) {
 	var totalDeleted int64
 	for {
-		err := s.queries.DeleteOrphanComments(ctx, batchSize)
+		// Count before deletion
+		countBefore, err := s.queries.CountOrphanComments(ctx)
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to count orphan comments: %w", err)
+		}
+		if countBefore == 0 {
+			break
+		}
+
+		err = s.queries.DeleteOrphanComments(ctx, batchSize)
 		if err != nil {
 			return totalDeleted, fmt.Errorf("failed to delete orphan comments: %w", err)
 		}
 
-		remaining, err := s.queries.CountOrphanComments(ctx)
+		// Count after deletion to determine actual deleted count
+		countAfter, err := s.queries.CountOrphanComments(ctx)
 		if err != nil {
 			return totalDeleted, fmt.Errorf("failed to count remaining orphan comments: %w", err)
 		}
 
-		totalDeleted += int64(batchSize)
-		if remaining == 0 {
+		deleted := countBefore - countAfter
+		totalDeleted += deleted
+
+		if countAfter == 0 {
 			break
 		}
 
-		log.Printf("Deleted batch of orphan comments, %d remaining", remaining)
+		log.Printf("Deleted %d orphan comments, %d remaining", deleted, countAfter)
 	}
 	return totalDeleted, nil
 }
@@ -159,22 +182,34 @@ func (s *Service) CleanupOrphanComments(ctx context.Context, batchSize int32) (i
 func (s *Service) CleanupDanglingGraphLinks(ctx context.Context, batchSize int32) (int64, error) {
 	var totalDeleted int64
 	for {
-		err := s.queries.DeleteDanglingGraphLinks(ctx, batchSize)
+		// Count before deletion
+		countBefore, err := s.queries.CountDanglingGraphLinks(ctx)
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to count dangling graph links: %w", err)
+		}
+		if countBefore == 0 {
+			break
+		}
+
+		err = s.queries.DeleteDanglingGraphLinks(ctx, batchSize)
 		if err != nil {
 			return totalDeleted, fmt.Errorf("failed to delete dangling graph links: %w", err)
 		}
 
-		remaining, err := s.queries.CountDanglingGraphLinks(ctx)
+		// Count after deletion to determine actual deleted count
+		countAfter, err := s.queries.CountDanglingGraphLinks(ctx)
 		if err != nil {
 			return totalDeleted, fmt.Errorf("failed to count remaining dangling graph links: %w", err)
 		}
 
-		totalDeleted += int64(batchSize)
-		if remaining == 0 {
+		deleted := countBefore - countAfter
+		totalDeleted += deleted
+
+		if countAfter == 0 {
 			break
 		}
 
-		log.Printf("Deleted batch of dangling graph links, %d remaining", remaining)
+		log.Printf("Deleted %d dangling graph links, %d remaining", deleted, countAfter)
 	}
 	return totalDeleted, nil
 }
@@ -183,22 +218,34 @@ func (s *Service) CleanupDanglingGraphLinks(ctx context.Context, batchSize int32
 func (s *Service) CleanupOrphanGraphNodes(ctx context.Context, batchSize int32) (int64, error) {
 	var totalDeleted int64
 	for {
-		err := s.queries.DeleteOrphanGraphNodes(ctx, batchSize)
+		// Count before deletion
+		countBefore, err := s.queries.CountOrphanGraphNodes(ctx)
+		if err != nil {
+			return totalDeleted, fmt.Errorf("failed to count orphan graph nodes: %w", err)
+		}
+		if countBefore == 0 {
+			break
+		}
+
+		err = s.queries.DeleteOrphanGraphNodes(ctx, batchSize)
 		if err != nil {
 			return totalDeleted, fmt.Errorf("failed to delete orphan graph nodes: %w", err)
 		}
 
-		remaining, err := s.queries.CountOrphanGraphNodes(ctx)
+		// Count after deletion to determine actual deleted count
+		countAfter, err := s.queries.CountOrphanGraphNodes(ctx)
 		if err != nil {
 			return totalDeleted, fmt.Errorf("failed to count remaining orphan graph nodes: %w", err)
 		}
 
-		totalDeleted += int64(batchSize)
-		if remaining == 0 {
+		deleted := countBefore - countAfter
+		totalDeleted += deleted
+
+		if countAfter == 0 {
 			break
 		}
 
-		log.Printf("Deleted batch of orphan graph nodes, %d remaining", remaining)
+		log.Printf("Deleted %d orphan graph nodes, %d remaining", deleted, countAfter)
 	}
 	return totalDeleted, nil
 }
