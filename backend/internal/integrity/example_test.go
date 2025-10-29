@@ -11,8 +11,9 @@ import (
 
 // ExampleService_CheckAllIntegrity demonstrates how to check data integrity
 func ExampleService_CheckAllIntegrity() {
-	// Connect to database (requires DATABASE_URL)
-	db, err := sql.Open("postgres", "postgres://user:pass@localhost:5432/reddit_cluster?sslmode=disable")
+	// Connect to database using DATABASE_URL environment variable
+	// Example: export DATABASE_URL="postgres://user:pass@localhost:5432/reddit_cluster?sslmode=disable"
+	db, err := sql.Open("postgres", "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:5432/${DB_NAME}?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -38,7 +39,8 @@ func ExampleService_CheckAllIntegrity() {
 
 // ExampleService_CleanupOrphanPosts demonstrates how to clean up orphan posts
 func ExampleService_CleanupOrphanPosts() {
-	db, err := sql.Open("postgres", "postgres://user:pass@localhost:5432/reddit_cluster?sslmode=disable")
+	// Use DATABASE_URL from environment
+	db, err := sql.Open("postgres", "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:5432/${DB_NAME}?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -58,7 +60,8 @@ func ExampleService_CleanupOrphanPosts() {
 
 // ExampleService_GetDatabaseStatistics demonstrates how to get database statistics
 func ExampleService_GetDatabaseStatistics() {
-	db, err := sql.Open("postgres", "postgres://user:pass@localhost:5432/reddit_cluster?sslmode=disable")
+	// Use DATABASE_URL from environment
+	db, err := sql.Open("postgres", "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:5432/${DB_NAME}?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -82,7 +85,8 @@ func ExampleService_GetDatabaseStatistics() {
 
 // ExampleService_GetBloatAnalysis demonstrates how to analyze table bloat
 func ExampleService_GetBloatAnalysis() {
-	db, err := sql.Open("postgres", "postgres://user:pass@localhost:5432/reddit_cluster?sslmode=disable")
+	// Use DATABASE_URL from environment
+	db, err := sql.Open("postgres", "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:5432/${DB_NAME}?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -100,8 +104,11 @@ func ExampleService_GetBloatAnalysis() {
 	// Display tables with bloat
 	for _, stat := range stats {
 		if stat.DeadRows > 0 {
-			percentDead := float64(stat.DeadRows) / float64(stat.RowCount+stat.DeadRows) * 100
-			fmt.Printf("Table: %s, Dead tuples: %.2f%%\n", stat.TableName, percentDead)
+			totalRows := stat.RowCount + stat.DeadRows
+			if totalRows > 0 {
+				percentDead := float64(stat.DeadRows) / float64(totalRows) * 100
+				fmt.Printf("Table: %s, Dead tuples: %.2f%%\n", stat.TableName, percentDead)
+			}
 		}
 	}
 }
