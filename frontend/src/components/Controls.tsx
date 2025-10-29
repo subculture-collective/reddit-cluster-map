@@ -38,6 +38,7 @@ interface Props {
   onGraphModeChange?: (m: "3d" | "2d") => void;
   onShowDashboard?: () => void;
   onShowCommunities?: () => void;
+  onShowAdmin?: () => void;
   useCommunityColors?: boolean;
   onToggleCommunityColors?: (enabled: boolean) => void;
   usePrecomputedLayout?: boolean;
@@ -67,6 +68,7 @@ export default function Controls(props: Props) {
     onGraphModeChange,
     onShowDashboard,
     onShowCommunities,
+    onShowAdmin,
     useCommunityColors,
     onToggleCommunityColors,
     usePrecomputedLayout,
@@ -166,6 +168,12 @@ export default function Controls(props: Props) {
           onClick={() => onShowCommunities?.()}
         >
           Communities
+        </button>
+        <button
+          className="px-2 py-1 rounded border bg-red-600 border-red-400 hover:bg-red-700 text-white text-sm"
+          onClick={() => onShowAdmin?.()}
+        >
+          Admin
         </button>
       </div>
       {onToggleCommunityColors && (

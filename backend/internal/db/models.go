@@ -7,7 +7,20 @@ package db
 import (
 	"database/sql"
 	"time"
+
+	"github.com/sqlc-dev/pqtype"
 )
+
+type AdminAuditLog struct {
+	ID           int32
+	Action       string
+	ResourceType string
+	ResourceID   sql.NullString
+	UserID       string
+	Details      pqtype.NullRawMessage
+	IpAddress    sql.NullString
+	CreatedAt    sql.NullTime
+}
 
 type Comment struct {
 	ID          string

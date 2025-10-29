@@ -1,3 +1,4 @@
+import Admin from "./components/Admin";
 import Controls from "./components/Controls.tsx";
 import Communities from "./components/Communities";
 import Dashboard from "./components/Dashboard";
@@ -44,7 +45,7 @@ function App() {
     "subscribers" | "activeUsers" | "contentActivity" | "interSubLinks"
   >("subscribers");
   const [viewMode, setViewMode] = useState<
-    "3d" | "2d" | "dashboard" | "communities"
+    "3d" | "2d" | "dashboard" | "communities" | "admin"
   >(() => {
     // Prefer URL state over localStorage
     if (urlState.viewMode) return urlState.viewMode;
@@ -56,7 +57,8 @@ function App() {
       saved === "2d" ||
       saved === "3d" ||
       saved === "dashboard" ||
-      saved === "communities"
+      saved === "communities" ||
+      saved === "admin"
     ) {
       return saved;
     }
@@ -148,7 +150,13 @@ function App() {
 
   return (
     <div className="w-full h-screen">
-      {viewMode === "dashboard" ? (
+      {viewMode === "admin" ? (
+        <Admin
+          onViewMode={(mode: "3d" | "2d") => {
+            setViewMode(mode);
+          }}
+        />
+      ) : viewMode === "dashboard" ? (
         <Dashboard
           onViewMode={(mode: "3d" | "2d") => {
             setViewMode(mode);
@@ -196,6 +204,7 @@ function App() {
             onGraphModeChange={(mode) => setViewMode(mode)}
             onShowDashboard={() => setViewMode("dashboard")}
             onShowCommunities={() => setViewMode("communities")}
+            onShowAdmin={() => setViewMode("admin")}
             useCommunityColors={useCommunityColors}
             onToggleCommunityColors={(enabled) =>
               setUseCommunityColors(enabled)
