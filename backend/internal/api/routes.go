@@ -128,6 +128,8 @@ func NewRouter(q *db.Queries) *mux.Router {
 	// Services endpoints gated by adminOnly
 	r.Handle("/api/admin/services", adminOnly(http.HandlerFunc(admin.GetServices))).Methods("GET")
 	r.Handle("/api/admin/services", adminOnly(http.HandlerFunc(admin.UpdateServices))).Methods("POST")
+	// User token refresh endpoint (admin-only for security)
+	r.Handle("/api/auth/refresh", adminOnly(http.HandlerFunc(auth.RefreshUserToken))).Methods("POST")
 
 	return r
 }

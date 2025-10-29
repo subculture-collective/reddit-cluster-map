@@ -177,7 +177,7 @@ func refreshAccessToken(ctx context.Context, cfg *config.Config, refreshToken st
 }
 
 // RefreshUserToken refreshes a user's OAuth token and updates it in the database.
-// This is useful for maintaining long-lived user sessions.
+// This endpoint is admin-only for security reasons.
 func (h *AuthHandlers) RefreshUserToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	cfg := config.Load()

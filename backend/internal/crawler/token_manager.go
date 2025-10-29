@@ -179,6 +179,7 @@ func (tm *tokenManager) rotateCredentials(newClientID, newClientSecret string) e
 	defer tm.mu.Unlock()
 
 	oldID := tm.clientID
+	oldSecret := tm.clientSecret
 	tm.clientID = newClientID
 	tm.clientSecret = newClientSecret
 
@@ -187,6 +188,7 @@ func (tm *tokenManager) rotateCredentials(newClientID, newClientSecret string) e
 	if err != nil {
 		// Rollback on failure
 		tm.clientID = oldID
+		tm.clientSecret = oldSecret
 		return fmt.Errorf("failed to authenticate with new credentials: %w", err)
 	}
 

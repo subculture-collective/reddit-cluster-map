@@ -73,11 +73,12 @@ REDDIT_SCOPES=read identity
 **Endpoints:**
 - `GET /api/auth/login` - Initiates OAuth login flow
 - `GET /api/auth/callback` - Handles OAuth callback and stores tokens
-- `POST /api/auth/refresh?username=USERNAME` - Refreshes a user's token
+- `POST /api/auth/refresh?username=USERNAME` - Refreshes a user's token (admin-only)
 
-**Refresh a User Token:**
+**Refresh a User Token (requires admin authentication):**
 ```bash
-curl -X POST "http://localhost:8080/api/auth/refresh?username=someuser"
+curl -X POST "http://localhost:8080/api/auth/refresh?username=someuser" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
 Response:
