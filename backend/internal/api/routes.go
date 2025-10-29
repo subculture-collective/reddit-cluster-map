@@ -131,5 +131,19 @@ func NewRouter(q *db.Queries) *mux.Router {
 	// User token refresh endpoint (admin-only for security)
 	r.Handle("/api/auth/refresh", adminOnly(http.HandlerFunc(auth.RefreshUserToken))).Methods("POST")
 
+	// Admin job management endpoints
+	adminJobs := handlers.NewAdminJobsHandler(q)
+	r.Handle("/api/admin/jobs/stats", adminOnly(http.HandlerFunc(adminJobs.GetJobStats))).Methods("GET")
+	r.Handle("/api/admin/jobs", adminOnly(http.HandlerFunc(adminJobs.ListJobsByStatus))).Methods("GET")
+	r.Handle("/api/admin/jobs/{id}/status", adminOnly(http.HandlerFunc(adminJobs.UpdateJobStatus))).Methods("PUT")
+	r.Handle("/api/admin/jobs/{id}/priority", adminOnly(http.HandlerFunc(adminJobs.UpdateJobPriority))).Methods("PUT")
+	r.Handle("/api/admin/jobs/{id}/retry", adminOnly(http.HandlerFunc(adminJobs.RetryJob))).Methods("POST")
+
+	// Admin settings endpoints
+	adminSettings := handlers.NewAdminSettingsHandler(q)
+	r.Handle("/api/admin/settings", adminOnly(http.HandlerFunc(adminSettings.GetSettings))).Methods("GET")
+	r.Handle("/api/admin/settings", adminOnly(http.HandlerFunc(adminSettings.UpdateSettings))).Methods("PUT")
+	r.Handle("/api/admin/audit-log", adminOnly(http.HandlerFunc(adminSettings.GetAuditLog))).Methods("GET")
+
 	return r
 }

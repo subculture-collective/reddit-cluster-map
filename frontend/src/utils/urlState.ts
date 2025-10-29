@@ -12,7 +12,7 @@ export interface CameraPosition {
 }
 
 export interface AppState {
-  viewMode?: "3d" | "2d" | "dashboard" | "communities";
+  viewMode?: "3d" | "2d" | "dashboard" | "communities" | "admin";
   filters?: TypeFilters;
   minDegree?: number;
   maxDegree?: number;
@@ -33,7 +33,7 @@ export function readStateFromURL(): AppState {
 
   // View mode
   const viewMode = params.get("view");
-  if (viewMode === "3d" || viewMode === "2d" || viewMode === "dashboard" || viewMode === "communities") {
+  if (viewMode === "3d" || viewMode === "2d" || viewMode === "dashboard" || viewMode === "communities" || viewMode === "admin") {
     state.viewMode = viewMode;
   }
 

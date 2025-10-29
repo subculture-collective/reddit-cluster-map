@@ -8,6 +8,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/sqlc-dev/pqtype"
 )
 
 type AdminJobsHandler struct {
@@ -192,7 +193,7 @@ func (h *AdminJobsHandler) UpdateJobStatus(w http.ResponseWriter, r *http.Reques
 		ResourceType: "crawl_job",
 		ResourceID:   sql.NullString{String: jobIDStr, Valid: true},
 		UserID:       userID,
-		Details:      detailsJSON,
+		Details:      pqtype.NullRawMessage{RawMessage: detailsJSON, Valid: true},
 		IpAddress:    sql.NullString{String: ipAddr, Valid: ipAddr != ""},
 	})
 
@@ -243,7 +244,7 @@ func (h *AdminJobsHandler) UpdateJobPriority(w http.ResponseWriter, r *http.Requ
 		ResourceType: "crawl_job",
 		ResourceID:   sql.NullString{String: jobIDStr, Valid: true},
 		UserID:       userID,
-		Details:      detailsJSON,
+		Details:      pqtype.NullRawMessage{RawMessage: detailsJSON, Valid: true},
 		IpAddress:    sql.NullString{String: ipAddr, Valid: ipAddr != ""},
 	})
 
@@ -282,7 +283,7 @@ func (h *AdminJobsHandler) RetryJob(w http.ResponseWriter, r *http.Request) {
 		ResourceType: "crawl_job",
 		ResourceID:   sql.NullString{String: jobIDStr, Valid: true},
 		UserID:       userID,
-		Details:      detailsJSON,
+		Details:      pqtype.NullRawMessage{RawMessage: detailsJSON, Valid: true},
 		IpAddress:    sql.NullString{String: ipAddr, Valid: ipAddr != ""},
 	})
 

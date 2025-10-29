@@ -9,6 +9,7 @@ import (
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/admin"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
+	"github.com/sqlc-dev/pqtype"
 )
 
 type AdminSettingsHandler struct {
@@ -150,7 +151,7 @@ func (h *AdminSettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Req
 			ResourceType: "settings",
 			ResourceID:   sql.NullString{String: "system", Valid: true},
 			UserID:       userID,
-			Details:      detailsJSON,
+			Details:      pqtype.NullRawMessage{RawMessage: detailsJSON, Valid: true},
 			IpAddress:    sql.NullString{String: ipAddr, Valid: ipAddr != ""},
 		})
 	}
