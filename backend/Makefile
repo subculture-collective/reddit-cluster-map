@@ -188,6 +188,33 @@ test-crawl: check-env ## Test crawl endpoint (requires SUB=subreddit_name)
 	  -H "Content-Type: application/json" \
 	  -d '{"subreddit": "$(SUB)"}'
 
+##@ Data Integrity
+
+integrity-check: check-env ## Run data integrity checks
+	@docker compose run --rm -e DATABASE_URL="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)?sslmode=disable" \
+		precalculate go run ./cmd/integrity check
+
+integrity-clean: check-env ## Clean up data integrity issues (use TYPE=all|posts|comments|graph-links|graph-nodes)
+	@docker compose run --rm -e DATABASE_URL="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)?sslmode=disable" \
+		precalculate go run ./cmd/integrity clean -type $${TYPE:-all} -batch $${BATCH:-1000}
+
+integrity-clean-dry-run: check-env ## Dry-run of integrity cleanup
+	@docker compose run --rm -e DATABASE_URL="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)?sslmode=disable" \
+		precalculate go run ./cmd/integrity clean -dry-run
+
+integrity-stats: check-env ## Show database statistics
+	@docker compose run --rm -e DATABASE_URL="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)?sslmode=disable" \
+		precalculate go run ./cmd/integrity stats
+
+integrity-bloat: check-env ## Analyze table bloat
+	@docker compose run --rm -e DATABASE_URL="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)?sslmode=disable" \
+		precalculate go run ./cmd/integrity bloat
+
+maintenance: check-env ## Run maintenance SQL script
+	@echo "Running database maintenance..."
+	@cat ./scripts/maintenance.sql | docker exec -i $(DB_CONTAINER) psql -U $(DB_USER) -d $(DB_NAME)
+	@echo "✓ Maintenance completed"
+
 ##@ Backups
 
 # Trigger a one-off backup (requires db to be running)

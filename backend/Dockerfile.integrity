@@ -1,0 +1,32 @@
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies
+RUN apk add --no-cache git
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the integrity tool
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o integrity ./cmd/integrity
+
+# Final stage
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates postgresql-client
+
+WORKDIR /app
+
+# Copy the binary from builder
+COPY --from=builder /app/integrity .
+
+# Copy scripts for convenience
+COPY scripts/maintenance.sql /app/scripts/
+
+ENTRYPOINT ["/app/integrity"]
+CMD ["check"]
