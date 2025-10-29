@@ -78,6 +78,7 @@ See the **[Developer Guide](docs/developer-guide.md)** for detailed workflows, t
 
 - **[Developer Guide](docs/developer-guide.md)** - Comprehensive dev workflows, Makefile targets, testing, and troubleshooting
 - **[Setup Guide](docs/setup.md)** - Full setup instructions for Docker, env vars, and seeding
+- **[OAuth Token Management](docs/oauth-token-management.md)** - Token refresh, credential rotation, and secret management
 - **[Performance Documentation](docs/perf.md)** - Graph query performance analysis, benchmarking, and optimization
 - **[Monitoring Guide](docs/monitoring.md)** - Analytics, metrics, Prometheus, and Grafana dashboards
 - **[Crawler Resilience](docs/CRAWLER_RESILIENCE.md)** - Rate limiting, retries, metrics, and circuit breaker configuration
