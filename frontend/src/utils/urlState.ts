@@ -64,7 +64,7 @@ export function readStateFromURL(): AppState {
   const maxDegree = params.get("maxDegree");
   if (maxDegree !== null) {
     const val = parseInt(maxDegree, 10);
-    if (!isNaN(val) && val > 0) {
+    if (!isNaN(val) && val >= 0) {
       state.maxDegree = val;
     }
   }
