@@ -441,6 +441,8 @@ LIMIT $2;
 -- Fuzzy search for graph nodes by name or ID
 -- Uses ILIKE for case-insensitive partial matching
 -- Orders results by exact match first, then by relevance (val/weight)
+-- Note: Leading wildcards prevent index usage and cause full table scans.
+-- For large datasets, consider adding a GIN or GiST index with pg_trgm extension.
 SELECT 
     id,
     name,

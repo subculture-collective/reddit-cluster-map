@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
@@ -64,7 +65,7 @@ func ExportGraph(q ExportDataReader) http.HandlerFunc {
 		cfg := config.Load()
 		timeout := cfg.GraphQueryTimeout
 		if timeout <= 0 {
-			timeout = 30000000000 // 30 seconds in nanoseconds
+			timeout = 30 * time.Second
 		}
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
@@ -186,10 +187,12 @@ func exportJSON(w http.ResponseWriter, rows []exportRow) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=graph_export.json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"nodes": nodes,
 		"links": links,
-	})
+	}); err != nil {
+		logger.Error("Failed to encode JSON in exportJSON", "error", err)
+	}
 }
 
 func exportCSV(w http.ResponseWriter, rows []exportRow) {
@@ -200,7 +203,10 @@ func exportCSV(w http.ResponseWriter, rows []exportRow) {
 	defer writer.Flush()
 
 	// Write header
-	writer.Write([]string{"data_type", "id", "name", "val", "type", "source", "target"})
+	if err := writer.Write([]string{"data_type", "id", "name", "val", "type", "source", "target"}); err != nil {
+		logger.Error("Failed to write CSV header", "error", err)
+		return
+	}
 
 	// Write rows
 	for _, row := range rows {

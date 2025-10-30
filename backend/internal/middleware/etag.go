@@ -5,6 +5,12 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"net/http"
+	"time"
+)
+
+const (
+	// etagCacheTTL defines how long clients should cache responses with ETags
+	etagCacheTTL = 60 * time.Second
 )
 
 // etagResponseWriter captures response body to generate ETag.
@@ -53,7 +59,7 @@ func ETag(next http.Handler) http.Handler {
 
 		// Set ETag header and write response
 		w.Header().Set("ETag", etag)
-		w.Header().Set("Cache-Control", "public, max-age=60")
+		w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", int(etagCacheTTL.Seconds())))
 		w.WriteHeader(etw.status)
 		w.Write(buf.Bytes())
 	})
