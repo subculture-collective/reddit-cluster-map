@@ -37,9 +37,11 @@ func SearchNode(q NodeSearcher) http.HandlerFunc {
 		limit := int32(50)
 		if v := r.URL.Query().Get("limit"); v != "" {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				limit = int32(n)
-				if limit > 500 {
+				// Safely convert to int32 with bounds check
+				if n > 500 {
 					limit = 500
+				} else {
+					limit = int32(n)
 				}
 			}
 		}

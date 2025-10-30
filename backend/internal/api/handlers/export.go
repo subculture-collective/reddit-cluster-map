@@ -38,10 +38,11 @@ func ExportGraph(q ExportDataReader) http.HandlerFunc {
 		}
 
 		// Parse caps (default 10000 nodes, 25000 links)
+		// Limits are enforced to be within int32 range for database compatibility
 		maxNodes := parseIntDefault(r.URL.Query().Get("max_nodes"), 10000)
 		maxLinks := parseIntDefault(r.URL.Query().Get("max_links"), 25000)
 
-		// Cap at reasonable limits to prevent excessive exports
+		// Cap at reasonable limits to prevent excessive exports (within int32 range)
 		if maxNodes > 50000 {
 			maxNodes = 50000
 		}
@@ -72,6 +73,7 @@ func ExportGraph(q ExportDataReader) http.HandlerFunc {
 		var rows []exportRow
 
 		if allowAll {
+			// Safe conversion: maxNodes and maxLinks are capped at 50k and 100k (well within int32 max)
 			allRows, err := q.GetPrecalculatedGraphDataCappedAll(ctx, db.GetPrecalculatedGraphDataCappedAllParams{
 				Limit:   int32(maxNodes),
 				Limit_2: int32(maxLinks),
@@ -87,6 +89,7 @@ func ExportGraph(q ExportDataReader) http.HandlerFunc {
 				// Empty filter - return empty result
 				rows = []exportRow{}
 			} else {
+				// Safe conversion: maxNodes and maxLinks are capped at 50k and 100k (well within int32 max)
 				filteredRows, err := q.GetPrecalculatedGraphDataCappedFiltered(ctx, db.GetPrecalculatedGraphDataCappedFilteredParams{
 					Column1: allowedList,
 					Limit:   int32(maxNodes),

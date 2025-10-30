@@ -6,25 +6,26 @@ import (
 	"testing"
 )
 
-// TestSearchEndpointRegistered verifies the search endpoint is registered
+// TestSearchEndpointRegistered verifies the search endpoint is registered.
+// This test only validates route registration; handler functionality
+// is comprehensively tested in the handlers package.
 func TestSearchEndpointRegistered(t *testing.T) {
-	// This test verifies the route is registered
-	// Actual functionality is tested in handlers package
 	router := NewRouter(nil)
 
-	// Test that search endpoint exists (will panic if route not found)
 	req := httptest.NewRequest(http.MethodGet, "/api/search", nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	// With nil queries it will error, but the route should exist
-	// We're just testing route registration, not functionality
+	// A 404 means the route doesn't exist; any other status (even 500)
+	// means the route is registered and we reached the handler
 	if rr.Code == http.StatusNotFound {
 		t.Error("search endpoint not registered")
 	}
 }
 
-// TestExportEndpointRegistered verifies the export endpoint is registered
+// TestExportEndpointRegistered verifies the export endpoint is registered.
+// This test only validates route registration; handler functionality
+// is comprehensively tested in the handlers package.
 func TestExportEndpointRegistered(t *testing.T) {
 	router := NewRouter(nil)
 
@@ -32,7 +33,7 @@ func TestExportEndpointRegistered(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	// With nil queries it will error, but the route should exist
+	// A 404 means the route doesn't exist; any other status means registered
 	if rr.Code == http.StatusNotFound {
 		t.Error("export endpoint not registered")
 	}
