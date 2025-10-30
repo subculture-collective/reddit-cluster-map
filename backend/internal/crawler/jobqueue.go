@@ -72,6 +72,7 @@ func BumpPriority(ctx context.Context, q *db.Queries, subredditID int32, delta i
 }
 
 // ClaimNextJob selects the highest-priority queued job and marks it crawling atomically.
+// Updated to respect visibility timeout.
 func ClaimNextJob(ctx context.Context, q *db.Queries) (db.CrawlJob, error) {
 	rawDB := q.DB()
 	sqlDB, ok := rawDB.(*sql.DB)
@@ -88,21 +89,21 @@ func ClaimNextJob(ctx context.Context, q *db.Queries) (db.CrawlJob, error) {
 		}
 	}()
 	var j db.CrawlJob
-	// Try priority-aware selection first
+	// Select job that is visible (respecting visibility timeout)
 	sel := `SELECT id, subreddit_id, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at
             FROM crawl_jobs
-            WHERE status='queued'
+            WHERE status='queued' AND (visible_at IS NULL OR visible_at <= now())
             ORDER BY priority DESC, created_at ASC
             FOR UPDATE SKIP LOCKED
             LIMIT 1`
 	row := tx.QueryRowContext(ctx, sel)
 	if err = row.Scan(&j.ID, &j.SubredditID, &j.Status, &j.Retries, &j.LastAttempt, &j.DurationMs, &j.EnqueuedBy, &j.CreatedAt, &j.UpdatedAt); err != nil {
-		// Fallback if priority column is missing
+		// Fallback if visibility_at column is missing (backward compatibility)
 		if pqErr, ok := err.(*pq.Error); ok && string(pqErr.Code) == "42703" {
 			sel = `SELECT id, subreddit_id, status, retries, last_attempt, duration_ms, enqueued_by, created_at, updated_at
                    FROM crawl_jobs
                    WHERE status='queued'
-                   ORDER BY created_at ASC
+                   ORDER BY priority DESC, created_at ASC
                    FOR UPDATE SKIP LOCKED
                    LIMIT 1`
 			row = tx.QueryRowContext(ctx, sel)
@@ -132,4 +133,64 @@ func ClaimNextJob(ctx context.Context, q *db.Queries) (db.CrawlJob, error) {
 	}
 	j.Status = "crawling"
 	return j, nil
+}
+
+// CalculateRetryDelay calculates the next retry delay with exponential backoff and jitter
+func CalculateRetryDelay(retryCount int32) time.Duration {
+// Base delay: 1 minute
+baseDelay := 1 * time.Minute
+
+// Exponential backoff: 2^retryCount * baseDelay
+// Capped at 24 hours
+maxDelay := 24 * time.Hour
+delay := baseDelay * time.Duration(1<<uint(retryCount))
+
+if delay > maxDelay {
+delay = maxDelay
+}
+
+// Add jitter: random value between 0 and 20% of the delay
+jitter := time.Duration(float64(delay) * 0.2 * (float64(time.Now().UnixNano()%100) / 100.0))
+
+return delay + jitter
+}
+
+// MarkJobFailedWithRetry marks a job as failed and schedules it for retry if under max retries
+func MarkJobFailedWithRetry(ctx context.Context, q *db.Queries, jobID int32, retryCount int32) error {
+nextRetry := time.Now().Add(CalculateRetryDelay(retryCount))
+
+const stmt = `UPDATE crawl_jobs 
+              SET status = 'failed',
+                  retry_count = retry_count + 1,
+                  next_retry_at = $2,
+                  updated_at = now()
+              WHERE id = $1`
+_, err := q.DB().ExecContext(ctx, stmt, jobID, nextRetry)
+return err
+}
+
+// RequeueRetryableJobs finds failed jobs ready to retry and requeues them
+func RequeueRetryableJobs(ctx context.Context, q *db.Queries) error {
+const stmt = `UPDATE crawl_jobs
+              SET status = 'queued',
+                  visible_at = now(),
+                  updated_at = now()
+              WHERE status = 'failed' 
+                AND next_retry_at IS NOT NULL 
+                AND next_retry_at <= now()
+                AND (retry_count < max_retries OR max_retries IS NULL)`
+_, err := q.DB().ExecContext(ctx, stmt)
+return err
+}
+
+// AgeStarvedJobs increases priority for jobs that have been waiting too long
+func AgeStarvedJobs(ctx context.Context, q *db.Queries, minAge time.Duration, priorityBoost int32) error {
+const stmt = `UPDATE crawl_jobs
+              SET priority = LEAST(priority + $2, 100),
+                  updated_at = now()
+              WHERE status = 'queued'
+                AND created_at < now() - $1::interval
+                AND priority < 100`
+_, err := q.DB().ExecContext(ctx, stmt, minAge.String(), priorityBoost)
+return err
 }

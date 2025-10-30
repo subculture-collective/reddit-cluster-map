@@ -10,6 +10,65 @@ import (
 	"database/sql"
 )
 
+const ageStarvedJobs = `-- name: AgeStarvedJobs :exec
+UPDATE crawl_jobs
+SET priority = priority + $2,
+    updated_at = now()
+WHERE status = 'queued'
+  AND created_at < now() - $1::interval
+  AND priority < 100
+`
+
+type AgeStarvedJobsParams struct {
+	Column1  int64
+	Priority sql.NullInt32
+}
+
+func (q *Queries) AgeStarvedJobs(ctx context.Context, arg AgeStarvedJobsParams) error {
+	_, err := q.db.ExecContext(ctx, ageStarvedJobs, arg.Column1, arg.Priority)
+	return err
+}
+
+const claimNextJobWithTimeout = `-- name: ClaimNextJobWithTimeout :one
+SELECT id, subreddit_id, status, retries, priority, last_attempt, duration_ms, enqueued_by, created_at, updated_at
+FROM crawl_jobs
+WHERE status = 'queued' AND visible_at <= now()
+ORDER BY priority DESC, created_at ASC
+FOR UPDATE SKIP LOCKED
+LIMIT 1
+`
+
+type ClaimNextJobWithTimeoutRow struct {
+	ID          int32
+	SubredditID int32
+	Status      string
+	Retries     sql.NullInt32
+	Priority    sql.NullInt32
+	LastAttempt sql.NullTime
+	DurationMs  sql.NullInt32
+	EnqueuedBy  sql.NullString
+	CreatedAt   sql.NullTime
+	UpdatedAt   sql.NullTime
+}
+
+func (q *Queries) ClaimNextJobWithTimeout(ctx context.Context) (ClaimNextJobWithTimeoutRow, error) {
+	row := q.db.QueryRowContext(ctx, claimNextJobWithTimeout)
+	var i ClaimNextJobWithTimeoutRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubredditID,
+		&i.Status,
+		&i.Retries,
+		&i.Priority,
+		&i.LastAttempt,
+		&i.DurationMs,
+		&i.EnqueuedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const crawlJobExists = `-- name: CrawlJobExists :one
 SELECT EXISTS (
 	SELECT 1
@@ -180,5 +239,56 @@ UPDATE crawl_jobs SET status = 'success', updated_at = now() WHERE id = $1
 
 func (q *Queries) MarkCrawlJobSuccess(ctx context.Context, id int32) error {
 	_, err := q.db.ExecContext(ctx, markCrawlJobSuccess, id)
+	return err
+}
+
+const markJobFailedWithRetry = `-- name: MarkJobFailedWithRetry :exec
+UPDATE crawl_jobs 
+SET status = 'failed',
+    retry_count = retry_count + 1,
+    next_retry_at = $2,
+    updated_at = now()
+WHERE id = $1
+`
+
+type MarkJobFailedWithRetryParams struct {
+	ID          int32
+	NextRetryAt sql.NullTime
+}
+
+func (q *Queries) MarkJobFailedWithRetry(ctx context.Context, arg MarkJobFailedWithRetryParams) error {
+	_, err := q.db.ExecContext(ctx, markJobFailedWithRetry, arg.ID, arg.NextRetryAt)
+	return err
+}
+
+const requeueRetryableJobs = `-- name: RequeueRetryableJobs :exec
+UPDATE crawl_jobs
+SET status = 'queued',
+    visible_at = now(),
+    updated_at = now()
+WHERE status = 'failed' 
+  AND next_retry_at IS NOT NULL 
+  AND next_retry_at <= now()
+  AND retry_count < max_retries
+`
+
+func (q *Queries) RequeueRetryableJobs(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, requeueRetryableJobs)
+	return err
+}
+
+const updateJobVisibilityTimeout = `-- name: UpdateJobVisibilityTimeout :exec
+UPDATE crawl_jobs 
+SET visible_at = $2, updated_at = now() 
+WHERE id = $1
+`
+
+type UpdateJobVisibilityTimeoutParams struct {
+	ID        int32
+	VisibleAt sql.NullTime
+}
+
+func (q *Queries) UpdateJobVisibilityTimeout(ctx context.Context, arg UpdateJobVisibilityTimeoutParams) error {
+	_, err := q.db.ExecContext(ctx, updateJobVisibilityTimeout, arg.ID, arg.VisibleAt)
 	return err
 }

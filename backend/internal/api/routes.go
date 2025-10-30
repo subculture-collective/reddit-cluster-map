@@ -138,6 +138,18 @@ func NewRouter(q *db.Queries) *mux.Router {
 	r.Handle("/api/admin/jobs/{id}/status", adminOnly(http.HandlerFunc(adminJobs.UpdateJobStatus))).Methods("PUT")
 	r.Handle("/api/admin/jobs/{id}/priority", adminOnly(http.HandlerFunc(adminJobs.UpdateJobPriority))).Methods("PUT")
 	r.Handle("/api/admin/jobs/{id}/retry", adminOnly(http.HandlerFunc(adminJobs.RetryJob))).Methods("POST")
+	r.Handle("/api/admin/jobs/{id}/boost", adminOnly(http.HandlerFunc(adminJobs.BoostJobPriority))).Methods("POST")
+	r.Handle("/api/admin/jobs/bulk/status", adminOnly(http.HandlerFunc(adminJobs.BulkUpdateJobStatus))).Methods("PUT")
+	r.Handle("/api/admin/jobs/bulk/retry", adminOnly(http.HandlerFunc(adminJobs.BulkRetryJobs))).Methods("POST")
+
+	// Admin scheduled job management endpoints
+	scheduledJobs := handlers.NewScheduledJobsHandler(q)
+	r.Handle("/api/admin/scheduled-jobs", adminOnly(http.HandlerFunc(scheduledJobs.ListScheduledJobs))).Methods("GET")
+	r.Handle("/api/admin/scheduled-jobs", adminOnly(http.HandlerFunc(scheduledJobs.CreateScheduledJob))).Methods("POST")
+	r.Handle("/api/admin/scheduled-jobs/{id}", adminOnly(http.HandlerFunc(scheduledJobs.GetScheduledJob))).Methods("GET")
+	r.Handle("/api/admin/scheduled-jobs/{id}", adminOnly(http.HandlerFunc(scheduledJobs.UpdateScheduledJob))).Methods("PUT")
+	r.Handle("/api/admin/scheduled-jobs/{id}", adminOnly(http.HandlerFunc(scheduledJobs.DeleteScheduledJob))).Methods("DELETE")
+	r.Handle("/api/admin/scheduled-jobs/{id}/toggle", adminOnly(http.HandlerFunc(scheduledJobs.ToggleScheduledJob))).Methods("POST")
 
 	// Admin settings endpoints
 	adminSettings := handlers.NewAdminSettingsHandler(q)
