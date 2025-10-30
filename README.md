@@ -76,16 +76,36 @@ See the **[Developer Guide](docs/developer-guide.md)** for detailed workflows, t
 
 ### Documentation
 
-- **[Developer Guide](docs/developer-guide.md)** - Comprehensive dev workflows, Makefile targets, testing, and troubleshooting
-- **[Setup Guide](docs/setup.md)** - Full setup instructions for Docker, env vars, and seeding
-- **[Data Integrity Guide](backend/docs/DATA_INTEGRITY.md)** - Database integrity checks, backfill operations, and maintenance
-- **[OAuth Token Management](docs/oauth-token-management.md)** - Token refresh, credential rotation, and secret management
-- **[Performance Documentation](docs/perf.md)** - Graph query performance analysis, benchmarking, and optimization
-- **[Monitoring Guide](docs/monitoring.md)** - Analytics, metrics, Prometheus, and Grafana dashboards
-- **[Crawler Resilience](docs/CRAWLER_RESILIENCE.md)** - Rate limiting, retries, metrics, and circuit breaker configuration
-- **[API Documentation](docs/api.md)** - API endpoints and usage
+#### Getting Started
+
+- **[Setup Guide](docs/setup.md)** - Complete setup with Docker Compose, migrations, environment variables
+- **[Developer Guide](docs/developer-guide.md)** - Development workflows, Makefile targets, testing, and troubleshooting
+- **[Contributing Guide](CONTRIBUTING.md)** - How to contribute, coding standards, PR guidelines
+
+#### Architecture & Design
+
+- **[Architecture Overview](docs/architecture.md)** - System architecture with diagrams, data flow, component interactions
+- **[Overview](docs/overview.md)** - High-level system design and data flow
+
+#### Operations
+
+- **[Runbooks](docs/runbooks.md)** - Operational procedures: backup/restore, maintenance, troubleshooting
+- **[Monitoring Guide](docs/monitoring.md)** - Metrics, Prometheus, Grafana dashboards, and alerts
+- **[Data Integrity Guide](backend/docs/DATA_INTEGRITY.md)** - Database integrity checks and maintenance
+
+#### Features & APIs
+
+- **[API Documentation](docs/api.md)** - Core API endpoints and usage
 - **[Community API](docs/api-communities.md)** - Community aggregation endpoints (supernodes and subgraphs)
-- **[Architecture Overview](docs/overview.md)** - System design and data flow
+- **[Community Detection](docs/community-detection.md)** - Louvain algorithm implementation
+- **[Visualization Modes](docs/visualization-modes.md)** - 3D, 2D, dashboard, and community views
+
+#### Advanced Topics
+
+- **[Performance Documentation](docs/perf.md)** - Query optimization, benchmarking, and scaling
+- **[OAuth Token Management](docs/oauth-token-management.md)** - Token refresh, credential rotation
+- **[Crawler Resilience](docs/CRAWLER_RESILIENCE.md)** - Rate limiting, retries, circuit breakers
+- **[Security Guide](docs/SECURITY.md)** - Security features and best practices
 - **[CI/CD Pipeline](docs/CI-CD.md)** - Continuous integration and deployment
 
 ### Common Development Tasks
