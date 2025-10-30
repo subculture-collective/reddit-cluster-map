@@ -82,14 +82,14 @@ Scheduled jobs enable recurring crawls at specified intervals:
 
 #### Scheduled Job Properties
 
-- **Name**: Unique identifier for the scheduled job
-- **Description**: Human-readable description
-- **Subreddit ID**: Target subreddit to crawl
-- **Cron Expression**: Scheduling pattern
-- **Enabled**: Boolean to enable/disable the job
-- **Priority**: Priority for enqueued crawl jobs
-- **Next Run At**: Calculated next execution time
-- **Last Run At**: Timestamp of last execution
+- **name**: Unique identifier for the scheduled job
+- **description**: Human-readable description
+- **subreddit_id**: Target subreddit to crawl
+- **cron_expression**: Scheduling pattern
+- **enabled**: Boolean to enable/disable the job
+- **priority**: Priority for enqueued crawl jobs
+- **next_run_at**: Calculated next execution time
+- **last_run_at**: Timestamp of last execution
 
 ### 5. Job Lifecycle
 
@@ -257,18 +257,18 @@ Content-Type: application/json
 ```sql
 CREATE TABLE crawl_jobs (
   id SERIAL PRIMARY KEY,
-  subreddit_id INTEGER NOT NULL REFERENCES subreddits(id) UNIQUE,
+  subreddit_id INTEGER NOT NULL UNIQUE REFERENCES subreddits(id),
   status TEXT NOT NULL DEFAULT 'queued',
   priority INT DEFAULT 0,
-  retries INT DEFAULT 0,
+  retries INT DEFAULT 0, -- Legacy field, kept for backward compatibility
   last_attempt TIMESTAMPTZ DEFAULT now(),
   duration_ms INT,
   enqueued_by TEXT DEFAULT 'system',
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
-  -- Visibility timeout and retry fields
+  -- Visibility timeout and retry fields (new)
   visible_at TIMESTAMPTZ DEFAULT now(),
-  retry_count INT DEFAULT 0,
+  retry_count INT DEFAULT 0, -- New retry counter with visibility timeout support
   max_retries INT DEFAULT 3,
   next_retry_at TIMESTAMPTZ
 );
