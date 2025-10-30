@@ -93,6 +93,14 @@ func NewRouter(q *db.Queries) *mux.Router {
 	graphHandler := handlers.NewHandler(q)
 	r.HandleFunc("/api/graph", graphHandler.GetGraphData).Methods("GET")
 
+	// Search endpoint with gzip and ETag: GET /api/search?node=...
+	searchHandler := middleware.ETag(middleware.Gzip(http.HandlerFunc(handlers.SearchNode(q))))
+	r.Handle("/api/search", searchHandler).Methods("GET")
+
+	// Export endpoint with gzip and ETag: GET /api/export?format=json|csv
+	exportHandler := middleware.ETag(middleware.Gzip(http.HandlerFunc(handlers.ExportGraph(q))))
+	r.Handle("/api/export", exportHandler).Methods("GET")
+
 	// Community aggregation endpoints
 	communityHandler := handlers.NewCommunityHandler(q)
 	r.HandleFunc("/api/communities", communityHandler.GetCommunities).Methods("GET")

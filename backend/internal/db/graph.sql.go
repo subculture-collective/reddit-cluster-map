@@ -1278,6 +1278,80 @@ func (q *Queries) ListUsersWithActivity(ctx context.Context) ([]ListUsersWithAct
 	return items, nil
 }
 
+const searchGraphNodes = `-- name: SearchGraphNodes :many
+SELECT 
+    id,
+    name,
+    CAST(val AS TEXT) as val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE 
+    name ILIKE '%' || $1 || '%' 
+    OR id ILIKE '%' || $1 || '%'
+ORDER BY 
+    CASE 
+        WHEN LOWER(name) = LOWER($1) THEN 0
+        WHEN LOWER(id) = LOWER($1) THEN 1
+        ELSE 2
+    END,
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END DESC
+LIMIT $2
+`
+
+type SearchGraphNodesParams struct {
+	Column1 sql.NullString
+	Limit   int32
+}
+
+type SearchGraphNodesRow struct {
+	ID   string
+	Name string
+	Val  string
+	Type sql.NullString
+	PosX sql.NullFloat64
+	PosY sql.NullFloat64
+	PosZ sql.NullFloat64
+}
+
+// Fuzzy search for graph nodes by name or ID
+// Uses ILIKE for case-insensitive partial matching
+// Orders results by exact match first, then by relevance (val/weight)
+// Note: Leading wildcards prevent index usage and cause full table scans.
+// For large datasets, consider adding a GIN or GiST index with pg_trgm extension.
+func (q *Queries) SearchGraphNodes(ctx context.Context, arg SearchGraphNodesParams) ([]SearchGraphNodesRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchGraphNodes, arg.Column1, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchGraphNodesRow
+	for rows.Next() {
+		var i SearchGraphNodesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Val,
+			&i.Type,
+			&i.PosX,
+			&i.PosY,
+			&i.PosZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateGraphNodePositions = `-- name: UpdateGraphNodePositions :exec
 UPDATE graph_nodes g
 SET pos_x = u.x, pos_y = u.y, pos_z = u.z, updated_at = now()
