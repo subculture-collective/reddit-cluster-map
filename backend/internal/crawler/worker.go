@@ -66,8 +66,10 @@ func (c *Crawler) Start(ctx context.Context) {
 	_ = ResetIncompleteJobs(ctx, c.queries, time.Duration(cfg.ResetCrawlingAfterMin)*time.Minute)
 	ticker := time.NewTicker(5 * time.Second)
 	staleTicker := time.NewTicker(6 * time.Hour)
+	maintenanceTicker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	defer staleTicker.Stop()
+	defer maintenanceTicker.Stop()
 
 	for {
 		select {
@@ -87,6 +89,15 @@ func (c *Crawler) Start(ctx context.Context) {
 			// Pull the next queued job, if any, and process it end-to-end.
 			if err := c.processNextJob(ctx); err != nil {
 				log.Printf("⚠️ Error processing job: %v", err)
+			}
+		case <-maintenanceTicker.C:
+			// Requeue jobs that are ready to retry
+			if err := RequeueRetryableJobs(ctx, c.queries); err != nil {
+				log.Printf("⚠️ Failed to requeue retryable jobs: %v", err)
+			}
+			// Age starved jobs (jobs waiting more than 1 hour get +10 priority)
+			if err := AgeStarvedJobs(ctx, c.queries, 1*time.Hour, 10); err != nil {
+				log.Printf("⚠️ Failed to age starved jobs: %v", err)
 			}
 		case <-staleTicker.C:
 			// Periodically requeue subs not crawled in a while to keep data fresh.

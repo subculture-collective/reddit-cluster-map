@@ -41,3 +41,47 @@ SELECT EXISTS (
 	WHERE subreddit_id = $1
 );
 
+-- name: ClaimNextJobWithTimeout :one
+SELECT id, subreddit_id, status, retries, priority, last_attempt, duration_ms, enqueued_by, created_at, updated_at
+FROM crawl_jobs
+WHERE status = 'queued' AND visible_at <= now()
+ORDER BY priority DESC, created_at ASC
+FOR UPDATE SKIP LOCKED
+LIMIT 1;
+
+-- name: UpdateJobVisibilityTimeout :exec
+UPDATE crawl_jobs 
+SET visible_at = $2, updated_at = now() 
+WHERE id = $1;
+
+-- name: MarkJobFailedWithRetry :exec
+UPDATE crawl_jobs 
+SET status = 'failed',
+    retry_count = retry_count + 1,
+    next_retry_at = $2,
+    updated_at = now()
+WHERE id = $1;
+
+-- name: RequeueRetryableJobs :exec
+UPDATE crawl_jobs
+SET status = 'queued',
+    visible_at = now(),
+    updated_at = now()
+WHERE status = 'failed' 
+  AND next_retry_at IS NOT NULL 
+  AND next_retry_at <= now()
+  AND retry_count < max_retries;
+
+-- name: AgeStarvedJobs :exec
+UPDATE crawl_jobs
+SET priority = priority + $2,
+    updated_at = now()
+WHERE status = 'queued'
+  AND created_at < now() - $1::interval
+  AND priority < 100;
+
+-- name: GetCrawlJobBySubredditID :one
+SELECT id, subreddit_id, status, retries, priority, last_attempt, duration_ms, enqueued_by, created_at, updated_at
+FROM crawl_jobs
+WHERE subreddit_id = $1;
+

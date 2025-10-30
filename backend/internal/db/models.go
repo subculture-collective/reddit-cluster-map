@@ -46,6 +46,14 @@ type CrawlJob struct {
 	EnqueuedBy  sql.NullString
 	CreatedAt   sql.NullTime
 	UpdatedAt   sql.NullTime
+	// Timestamp when the job becomes visible/available for processing
+	VisibleAt sql.NullTime
+	// Number of times this job has been retried
+	RetryCount sql.NullInt32
+	// Maximum number of retries before giving up
+	MaxRetries sql.NullInt32
+	// Timestamp for next retry attempt (if failed)
+	NextRetryAt sql.NullTime
 }
 
 type GraphCommunity struct {
@@ -126,6 +134,25 @@ type Post struct {
 	Url         sql.NullString
 	IsSelf      sql.NullBool
 	LastSeen    sql.NullTime
+}
+
+// Scheduled recurring crawl jobs with cron-like scheduling
+type ScheduledJob struct {
+	ID          int32
+	Name        string
+	Description sql.NullString
+	SubredditID sql.NullInt32
+	// Cron expression (standard 5-7 field format) or @every duration
+	CronExpression string
+	Enabled        bool
+	// Last execution time
+	LastRunAt sql.NullTime
+	// Next scheduled execution time
+	NextRunAt time.Time
+	Priority  sql.NullInt32
+	CreatedAt sql.NullTime
+	UpdatedAt sql.NullTime
+	CreatedBy sql.NullString
 }
 
 type ServiceSetting struct {

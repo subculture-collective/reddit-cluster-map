@@ -15,6 +15,7 @@ import (
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/errorreporting"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/logger"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/scheduler"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/tracing"
 )
 
@@ -80,6 +81,9 @@ func main() {
 	// Create crawler instance
 	c := crawler.NewCrawler(queries)
 
+	// Create scheduler instance
+	s := scheduler.NewService(queries)
+
 	// Create context that can be cancelled
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -91,9 +95,14 @@ func main() {
 		<-sigChan
 		logger.Info("Received shutdown signal")
 		cancel()
+		c.Stop()
+		s.Stop()
 	}()
 
-	// Start the crawler
+	// Start the scheduler in a separate goroutine
+	go s.Start(ctx)
+
+	// Start the crawler (blocks until context is cancelled)
 	c.Start(ctx)
 
 	// Wait for context cancellation

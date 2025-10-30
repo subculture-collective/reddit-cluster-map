@@ -46,7 +46,7 @@ func (h *AdminSettingsHandler) GetSettings(w http.ResponseWriter, r *http.Reques
 
 	// Get other settings that might be stored in the database
 	detailedGraph, _ := admin.GetBool(ctx, h.q, "detailed_graph", false)
-	
+
 	// Get numeric settings
 	crawlerRPS := getFloatSetting(ctx, h.q, "crawler_rps", 1.66)
 	rateLimitGlobal := getFloatSetting(ctx, h.q, "rate_limit_global", 100.0)

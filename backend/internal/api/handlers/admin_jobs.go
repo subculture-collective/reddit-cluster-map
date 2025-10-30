@@ -45,7 +45,7 @@ type JobResponse struct {
 // GetJobStats returns statistics about crawl jobs
 func (h *AdminJobsHandler) GetJobStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	
+
 	stats, err := h.q.GetAdminCrawlJobStats(ctx)
 	if err != nil {
 		http.Error(w, "Failed to fetch job stats", http.StatusInternalServerError)
@@ -68,7 +68,7 @@ func (h *AdminJobsHandler) GetJobStats(w http.ResponseWriter, r *http.Request) {
 func (h *AdminJobsHandler) ListJobsByStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	status := r.URL.Query().Get("status")
-	
+
 	if status == "" {
 		http.Error(w, "status parameter is required", http.StatusBadRequest)
 		return
@@ -143,7 +143,7 @@ func (h *AdminJobsHandler) UpdateJobStatus(w http.ResponseWriter, r *http.Reques
 	ctx := r.Context()
 	vars := mux.Vars(r)
 	jobIDStr := vars["id"]
-	
+
 	jobID, err := strconv.Atoi(jobIDStr)
 	if err != nil {
 		http.Error(w, "Invalid job ID", http.StatusBadRequest)
@@ -206,7 +206,7 @@ func (h *AdminJobsHandler) UpdateJobPriority(w http.ResponseWriter, r *http.Requ
 	ctx := r.Context()
 	vars := mux.Vars(r)
 	jobIDStr := vars["id"]
-	
+
 	jobID, err := strconv.Atoi(jobIDStr)
 	if err != nil {
 		http.Error(w, "Invalid job ID", http.StatusBadRequest)
@@ -257,7 +257,7 @@ func (h *AdminJobsHandler) RetryJob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 	jobIDStr := vars["id"]
-	
+
 	jobID, err := strconv.Atoi(jobIDStr)
 	if err != nil {
 		http.Error(w, "Invalid job ID", http.StatusBadRequest)
@@ -289,6 +289,191 @@ func (h *AdminJobsHandler) RetryJob(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "job_id": jobID})
+}
+
+// BulkUpdateJobStatus updates status for multiple jobs at once
+func (h *AdminJobsHandler) BulkUpdateJobStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req struct {
+		JobIDs []int32 `json:"job_ids"`
+		Status string  `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate status
+	validStatuses := map[string]bool{
+		"queued":   true,
+		"crawling": true,
+		"success":  true,
+		"failed":   true,
+	}
+	if !validStatuses[req.Status] {
+		http.Error(w, "Invalid status value", http.StatusBadRequest)
+		return
+	}
+
+	successCount := 0
+	for _, jobID := range req.JobIDs {
+		err := h.q.UpdateCrawlJobStatus(ctx, db.UpdateCrawlJobStatusParams{
+			ID:     jobID,
+			Status: req.Status,
+		})
+		if err == nil {
+			successCount++
+		}
+	}
+
+	// Log the action
+	userID := getUserIDFromRequest(r)
+	ipAddr := getIPFromRequest(r)
+	details := map[string]interface{}{
+		"job_ids":       req.JobIDs,
+		"new_status":    req.Status,
+		"success_count": successCount,
+	}
+	detailsJSON, _ := json.Marshal(details)
+	_ = h.q.LogAdminAction(ctx, db.LogAdminActionParams{
+		Action:       "bulk_update_job_status",
+		ResourceType: "crawl_job",
+		ResourceID:   sql.NullString{String: "bulk", Valid: true},
+		UserID:       userID,
+		Details:      pqtype.NullRawMessage{RawMessage: detailsJSON, Valid: true},
+		IpAddress:    sql.NullString{String: ipAddr, Valid: ipAddr != ""},
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":            true,
+		"success_count": successCount,
+		"total_count":   len(req.JobIDs),
+	})
+}
+
+// BulkRetryJobs retries multiple failed jobs at once
+func (h *AdminJobsHandler) BulkRetryJobs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req struct {
+		JobIDs []int32 `json:"job_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	successCount := 0
+	for _, jobID := range req.JobIDs {
+		err := h.q.RetryCrawlJob(ctx, jobID)
+		if err == nil {
+			successCount++
+		}
+	}
+
+	// Log the action
+	userID := getUserIDFromRequest(r)
+	ipAddr := getIPFromRequest(r)
+	details := map[string]interface{}{
+		"job_ids":       req.JobIDs,
+		"success_count": successCount,
+	}
+	detailsJSON, _ := json.Marshal(details)
+	_ = h.q.LogAdminAction(ctx, db.LogAdminActionParams{
+		Action:       "bulk_retry_jobs",
+		ResourceType: "crawl_job",
+		ResourceID:   sql.NullString{String: "bulk", Valid: true},
+		UserID:       userID,
+		Details:      pqtype.NullRawMessage{RawMessage: detailsJSON, Valid: true},
+		IpAddress:    sql.NullString{String: ipAddr, Valid: ipAddr != ""},
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":            true,
+		"success_count": successCount,
+		"total_count":   len(req.JobIDs),
+	})
+}
+
+// BoostJobPriority boosts priority for a specific job
+func (h *AdminJobsHandler) BoostJobPriority(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	vars := mux.Vars(r)
+	jobIDStr := vars["id"]
+
+	jobID, err := strconv.Atoi(jobIDStr)
+	if err != nil {
+		http.Error(w, "Invalid job ID", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Boost int32 `json:"boost"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Get current job to calculate new priority
+	job, err := h.q.GetCrawlJobByID(ctx, int32(jobID))
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Job not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to get job", http.StatusInternalServerError)
+		return
+	}
+
+	currentPriority := int32(0)
+	if job.Priority.Valid {
+		currentPriority = job.Priority.Int32
+	}
+
+	newPriority := currentPriority + req.Boost
+	if newPriority > 100 {
+		newPriority = 100
+	}
+
+	// Update the job priority
+	err = h.q.UpdateCrawlJobPriority(ctx, db.UpdateCrawlJobPriorityParams{
+		ID:       int32(jobID),
+		Priority: sql.NullInt32{Int32: newPriority, Valid: true},
+	})
+	if err != nil {
+		http.Error(w, "Failed to boost job priority", http.StatusInternalServerError)
+		return
+	}
+
+	// Log the action
+	userID := getUserIDFromRequest(r)
+	ipAddr := getIPFromRequest(r)
+	details := map[string]interface{}{
+		"job_id":            jobID,
+		"boost":             req.Boost,
+		"previous_priority": currentPriority,
+		"new_priority":      newPriority,
+	}
+	detailsJSON, _ := json.Marshal(details)
+	_ = h.q.LogAdminAction(ctx, db.LogAdminActionParams{
+		Action:       "boost_job_priority",
+		ResourceType: "crawl_job",
+		ResourceID:   sql.NullString{String: jobIDStr, Valid: true},
+		UserID:       userID,
+		Details:      pqtype.NullRawMessage{RawMessage: detailsJSON, Valid: true},
+		IpAddress:    sql.NullString{String: ipAddr, Valid: ipAddr != ""},
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":           true,
+		"job_id":       jobID,
+		"new_priority": newPriority,
+	})
 }
 
 // Helper functions
