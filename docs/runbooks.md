@@ -87,10 +87,13 @@ Backup completed: backups/reddit_cluster_20251030_123045.sql (size=15728640 byte
 3. **Restore using docker exec:**
    
    ```bash
-   # Copy backup from volume to container
-   docker compose run --rm -v backend_pgbackups:/backups precalculate \
-     cat /backups/reddit_cluster_20251030_120000.sql | \
-     docker compose exec -T db psql -U postgres -d reddit_cluster
+   # Method 1: Restore from backup volume
+   # First, extract the backup file to a local path
+   docker run --rm -v backend_pgbackups:/backups -v $(pwd):/out alpine \
+     cp /backups/reddit_cluster_20251030_120000.sql /out/restore.sql
+   
+   # Then restore it
+   cat restore.sql | docker compose exec -T db psql -U postgres -d reddit_cluster
    ```
    
    Or if you have a local backup file:
@@ -129,6 +132,8 @@ For a clean restore when there are schema conflicts:
 docker compose down
 
 # 2. Remove database volume (destructive!)
+# Note: Volume name format is typically <directory>_<volume_name>
+# Verify with: docker volume ls | grep postgres_data
 docker volume rm backend_postgres_data
 
 # 3. Start database
@@ -176,12 +181,14 @@ By default, `backup.sh` keeps the last 7 backups. To adjust:
 
 Edit `backend/scripts/backup.sh`:
 ```bash
-# Change this line:
-ls -t backups/reddit_cluster_*.sql 2>/dev/null | tail -n +8 | xargs -r rm --
+# Change this line (portable version without -r flag):
+ls -t backups/reddit_cluster_*.sql 2>/dev/null | tail -n +8 | xargs rm -- 2>/dev/null || true
 
 # To keep last 14 backups:
-ls -t backups/reddit_cluster_*.sql 2>/dev/null | tail -n +15 | xargs -r rm --
+ls -t backups/reddit_cluster_*.sql 2>/dev/null | tail -n +15 | xargs rm -- 2>/dev/null || true
 ```
+
+> **Note:** The `-r` flag for `xargs` is GNU-specific and not available on macOS/BSD. The portable version omits `-r` and redirects errors to `/dev/null` or uses `|| true` to avoid errors when no files match.
 
 Or use the tidy command:
 ```bash

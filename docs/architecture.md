@@ -410,9 +410,14 @@ ON crawl_jobs(status, priority DESC, created_at);
 
 -- Graph queries
 CREATE INDEX idx_graph_nodes_type ON graph_nodes(type);
-CREATE INDEX idx_graph_nodes_val ON graph_nodes(val DESC);
-CREATE INDEX idx_graph_links_source ON graph_links(source);
-CREATE INDEX idx_graph_links_target ON graph_links(target);
+
+-- Complex expression index for numeric sorting on val column
+-- The actual index handles the CASE expression used in queries
+CREATE INDEX idx_graph_nodes_val_numeric ON graph_nodes(
+    (CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END) DESC NULLS LAST, id
+);
+
+CREATE INDEX idx_graph_links_target_source ON graph_links(target, source);
 
 -- User activity lookups
 CREATE INDEX idx_user_subreddit_activity_user 
