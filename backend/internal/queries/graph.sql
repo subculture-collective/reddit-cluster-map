@@ -436,3 +436,28 @@ WHERE gl.source IN (SELECT node_id FROM member_nodes)
     AND gl.target IN (SELECT node_id FROM member_nodes)
 ORDER BY data_type, id
 LIMIT $2;
+
+-- name: SearchGraphNodes :many
+-- Fuzzy search for graph nodes by name or ID
+-- Uses ILIKE for case-insensitive partial matching
+-- Orders results by exact match first, then by relevance (val/weight)
+SELECT 
+    id,
+    name,
+    CAST(val AS TEXT) as val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE 
+    name ILIKE '%' || $1 || '%' 
+    OR id ILIKE '%' || $1 || '%'
+ORDER BY 
+    CASE 
+        WHEN LOWER(name) = LOWER($1) THEN 0
+        WHEN LOWER(id) = LOWER($1) THEN 1
+        ELSE 2
+    END,
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END DESC
+LIMIT $2;
