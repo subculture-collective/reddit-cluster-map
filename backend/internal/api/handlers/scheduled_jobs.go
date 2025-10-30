@@ -70,10 +70,15 @@ func (h *ScheduledJobsHandler) CreateScheduledJob(w http.ResponseWriter, r *http
 
 	createdBy := getUserIDFromRequest(r)
 
+	var subredditID sql.NullInt32
+	if req.SubredditID != nil {
+		subredditID = sql.NullInt32{Int32: *req.SubredditID, Valid: true}
+	}
+
 	job, err := h.q.CreateScheduledJob(ctx, db.CreateScheduledJobParams{
 		Name:           req.Name,
 		Description:    sql.NullString{String: req.Description, Valid: req.Description != ""},
-		SubredditID:    sql.NullInt32{Int32: *req.SubredditID, Valid: req.SubredditID != nil},
+		SubredditID:    subredditID,
 		CronExpression: req.CronExpression,
 		Enabled:        req.Enabled,
 		NextRunAt:      nextRun,

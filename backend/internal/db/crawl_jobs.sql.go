@@ -100,6 +100,43 @@ func (q *Queries) EnqueueCrawlJob(ctx context.Context, arg EnqueueCrawlJobParams
 	return err
 }
 
+const getCrawlJobBySubredditID = `-- name: GetCrawlJobBySubredditID :one
+SELECT id, subreddit_id, status, retries, priority, last_attempt, duration_ms, enqueued_by, created_at, updated_at
+FROM crawl_jobs
+WHERE subreddit_id = $1
+`
+
+type GetCrawlJobBySubredditIDRow struct {
+	ID          int32
+	SubredditID int32
+	Status      string
+	Retries     sql.NullInt32
+	Priority    sql.NullInt32
+	LastAttempt sql.NullTime
+	DurationMs  sql.NullInt32
+	EnqueuedBy  sql.NullString
+	CreatedAt   sql.NullTime
+	UpdatedAt   sql.NullTime
+}
+
+func (q *Queries) GetCrawlJobBySubredditID(ctx context.Context, subredditID int32) (GetCrawlJobBySubredditIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getCrawlJobBySubredditID, subredditID)
+	var i GetCrawlJobBySubredditIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubredditID,
+		&i.Status,
+		&i.Retries,
+		&i.Priority,
+		&i.LastAttempt,
+		&i.DurationMs,
+		&i.EnqueuedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listCrawlJobs = `-- name: ListCrawlJobs :many
 SELECT
   id,

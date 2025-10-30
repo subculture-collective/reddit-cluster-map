@@ -80,3 +80,8 @@ WHERE status = 'queued'
   AND created_at < now() - $1::interval
   AND priority < 100;
 
+-- name: GetCrawlJobBySubredditID :one
+SELECT id, subreddit_id, status, retries, priority, last_attempt, duration_ms, enqueued_by, created_at, updated_at
+FROM crawl_jobs
+WHERE subreddit_id = $1;
+

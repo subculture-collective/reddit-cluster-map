@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/lib/pq"
@@ -150,7 +151,7 @@ func CalculateRetryDelay(retryCount int32) time.Duration {
 	}
 
 	// Add jitter: random value between 0 and 20% of the delay
-	jitter := time.Duration(float64(delay) * 0.2 * (float64(time.Now().UnixNano()%100) / 100.0))
+	jitter := time.Duration(float64(delay) * 0.2 * rand.Float64())
 
 	return delay + jitter
 }

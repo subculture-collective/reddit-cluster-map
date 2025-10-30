@@ -93,14 +93,19 @@ func (s *Service) executeScheduledJob(ctx context.Context, job db.ScheduledJob) 
 			return err
 		}
 
-		// If priority is set, update the job priority
+		// If priority is set, update the job priority by querying for the job ID first
 		if job.Priority.Valid && job.Priority.Int32 > 0 {
-			err = s.queries.UpdateCrawlJobPriority(ctx, db.UpdateCrawlJobPriorityParams{
-				ID:       job.SubredditID.Int32,
-				Priority: job.Priority,
-			})
+			crawlJob, err := s.queries.GetCrawlJobBySubredditID(ctx, job.SubredditID.Int32)
 			if err != nil {
-				logger.WarnContext(ctx, "Failed to set priority for scheduled job", "error", err)
+				logger.WarnContext(ctx, "Failed to get crawl job for priority update", "error", err)
+			} else {
+				err = s.queries.UpdateCrawlJobPriority(ctx, db.UpdateCrawlJobPriorityParams{
+					ID:       crawlJob.ID,
+					Priority: job.Priority,
+				})
+				if err != nil {
+					logger.WarnContext(ctx, "Failed to set priority for scheduled job", "error", err)
+				}
 			}
 		}
 	}
