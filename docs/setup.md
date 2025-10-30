@@ -45,6 +45,8 @@ cp frontend/.env.example frontend/.env
 ```
 
 Then edit `backend/.env` with:
+
+```bash
 REDDIT_CLIENT_SECRET=<from reddit app>
 REDDIT_REDIRECT_URI=<your callback, e.g. https://your.domain/oauth/reddit/callback>
 REDDIT_SCOPES="identity read"
@@ -69,7 +71,7 @@ GRAPH_PROGRESS_INTERVAL=10000
 
 Then edit `frontend/.env` with:
 
-```
+```bash
 VITE_API_URL=/api
 ```
 
