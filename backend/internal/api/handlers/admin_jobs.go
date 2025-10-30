@@ -45,7 +45,7 @@ type JobResponse struct {
 // GetJobStats returns statistics about crawl jobs
 func (h *AdminJobsHandler) GetJobStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	
+
 	stats, err := h.q.GetAdminCrawlJobStats(ctx)
 	if err != nil {
 		http.Error(w, "Failed to fetch job stats", http.StatusInternalServerError)
@@ -68,7 +68,7 @@ func (h *AdminJobsHandler) GetJobStats(w http.ResponseWriter, r *http.Request) {
 func (h *AdminJobsHandler) ListJobsByStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	status := r.URL.Query().Get("status")
-	
+
 	if status == "" {
 		http.Error(w, "status parameter is required", http.StatusBadRequest)
 		return
@@ -143,7 +143,7 @@ func (h *AdminJobsHandler) UpdateJobStatus(w http.ResponseWriter, r *http.Reques
 	ctx := r.Context()
 	vars := mux.Vars(r)
 	jobIDStr := vars["id"]
-	
+
 	jobID, err := strconv.Atoi(jobIDStr)
 	if err != nil {
 		http.Error(w, "Invalid job ID", http.StatusBadRequest)
@@ -206,7 +206,7 @@ func (h *AdminJobsHandler) UpdateJobPriority(w http.ResponseWriter, r *http.Requ
 	ctx := r.Context()
 	vars := mux.Vars(r)
 	jobIDStr := vars["id"]
-	
+
 	jobID, err := strconv.Atoi(jobIDStr)
 	if err != nil {
 		http.Error(w, "Invalid job ID", http.StatusBadRequest)
@@ -257,7 +257,7 @@ func (h *AdminJobsHandler) RetryJob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vars := mux.Vars(r)
 	jobIDStr := vars["id"]
-	
+
 	jobID, err := strconv.Atoi(jobIDStr)
 	if err != nil {
 		http.Error(w, "Invalid job ID", http.StatusBadRequest)
@@ -403,7 +403,7 @@ func (h *AdminJobsHandler) BoostJobPriority(w http.ResponseWriter, r *http.Reque
 	ctx := r.Context()
 	vars := mux.Vars(r)
 	jobIDStr := vars["id"]
-	
+
 	jobID, err := strconv.Atoi(jobIDStr)
 	if err != nil {
 		http.Error(w, "Invalid job ID", http.StatusBadRequest)
@@ -453,10 +453,10 @@ func (h *AdminJobsHandler) BoostJobPriority(w http.ResponseWriter, r *http.Reque
 	userID := getUserIDFromRequest(r)
 	ipAddr := getIPFromRequest(r)
 	details := map[string]interface{}{
-		"job_id":           jobID,
-		"boost":            req.Boost,
+		"job_id":            jobID,
+		"boost":             req.Boost,
 		"previous_priority": currentPriority,
-		"new_priority":     newPriority,
+		"new_priority":      newPriority,
 	}
 	detailsJSON, _ := json.Marshal(details)
 	_ = h.q.LogAdminAction(ctx, db.LogAdminActionParams{
@@ -470,8 +470,8 @@ func (h *AdminJobsHandler) BoostJobPriority(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":          true,
-		"job_id":      jobID,
+		"ok":           true,
+		"job_id":       jobID,
 		"new_priority": newPriority,
 	})
 }
