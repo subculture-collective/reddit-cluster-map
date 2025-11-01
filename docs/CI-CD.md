@@ -135,16 +135,36 @@ docker build -t reddit-cluster-frontend:local frontend/
 
 ### Creating a Release
 
-1. Ensure all changes are committed and pushed
-2. Create and push a tag:
+**For maintainers:** See the detailed [Release Process in CONTRIBUTING.md](../CONTRIBUTING.md#release-process) for the complete release checklist.
+
+**Quick overview:**
+
+1. Update `VERSION` file with the new version (following [Semantic Versioning](https://semver.org/))
+2. Update `CHANGELOG.md` (move unreleased changes to versioned section)
+3. Commit changes:
    ```bash
-   git tag -a v1.0.0 -m "Release v1.0.0"
-   git push origin v1.0.0
+   git add VERSION CHANGELOG.md
+   git commit -m "chore: release vX.Y.Z"
    ```
-3. The release workflow will automatically:
-   - Generate a changelog
-   - Create a GitHub release
-   - Trigger the publish workflow to build and push Docker images
+4. Create and push an annotated tag:
+   ```bash
+   git tag -a vX.Y.Z -m "Release vX.Y.Z"
+   git push origin main
+   git push origin vX.Y.Z
+   ```
+5. The release workflow will automatically:
+   - Generate a changelog from commits
+   - Create a GitHub release with release notes
+   - Trigger the publish workflow to build and push Docker images to GHCR
+
+**Version format:**
+- Production releases: `v1.2.3` (following SemVer: MAJOR.MINOR.PATCH)
+- Pre-releases: `v1.2.3-beta.1`, `v1.2.3-rc.1` (automatically marked as pre-release)
+
+**See also:**
+- [CHANGELOG.md](../CHANGELOG.md) - Project changelog
+- [VERSION](../VERSION) - Current version number
+- [Release Process Documentation](../CONTRIBUTING.md#release-process) - Complete release guidelines
 
 ### Pulling Published Images
 
