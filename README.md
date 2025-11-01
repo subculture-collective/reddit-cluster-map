@@ -111,6 +111,8 @@ See the **[Developer Guide](docs/developer-guide.md)** for detailed workflows, t
 - **[OAuth Token Management](docs/oauth-token-management.md)** - Token refresh, credential rotation
 - **[Crawler Resilience](docs/CRAWLER_RESILIENCE.md)** - Rate limiting, retries, circuit breakers
 - **[Security Guide](docs/SECURITY.md)** - Security features and best practices
+- **[Security Audit Guide](docs/SECURITY_AUDIT.md)** - Comprehensive security auditing and penetration testing procedures
+- **[Penetration Testing Checklist](docs/PENETRATION_TESTING_CHECKLIST.md)** - Detailed penetration testing checklist
 - **[CI/CD Pipeline](docs/CI-CD.md)** - Continuous integration and deployment
 
 ### Common Development Tasks
