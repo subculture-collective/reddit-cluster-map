@@ -20,8 +20,8 @@ func (m *MockGraphDataReader) GetGraphData(ctx context.Context) ([]json.RawMessa
 }
 
 func (m *MockGraphDataReader) GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error) {
-	// Generate mock nodes
-	nodes := make([]db.GetPrecalculatedGraphDataCappedAllRow, 1000)
+	// Generate mock nodes and links - pre-allocate for both
+	nodes := make([]db.GetPrecalculatedGraphDataCappedAllRow, 0, 2000)
 	for i := 0; i < 1000; i++ {
 		node := db.GetPrecalculatedGraphDataCappedAllRow{
 			DataType: "node",
@@ -30,7 +30,7 @@ func (m *MockGraphDataReader) GetPrecalculatedGraphDataCappedAll(ctx context.Con
 			Val:      "100",
 			Type:     sql.NullString{String: "subreddit", Valid: true},
 		}
-		nodes[i] = node
+		nodes = append(nodes, node)
 	}
 
 	// Generate mock links

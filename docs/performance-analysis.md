@@ -224,7 +224,7 @@ File: `backend/internal/crawler/`
 
 5. **Struct Alignment**
    - Review struct field ordering
-   - Use `go run golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest ./...`
+   - Use `go run golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest -fix ./...`
 
 ## 5. Frontend Integration
 

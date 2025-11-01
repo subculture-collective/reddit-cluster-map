@@ -12,11 +12,18 @@
 
 set -e
 
-# Load .env if it exists
+# Load .env if it exists (safe parser: only export lines matching KEY=VALUE, ignore comments/commands)
 if [ -f .env ]; then
-    set -a
-    source .env
-    set +a
+    while IFS= read -r line; do
+        # Skip comments and blank lines
+        if [[ "$line" =~ ^[[:space:]]*# ]] || [[ "$line" =~ ^[[:space:]]*$ ]]; then
+            continue
+        fi
+        # Only export lines that look like KEY=VALUE (no spaces, no shell metacharacters)
+        if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            export "$line"
+        fi
+    done < .env
 fi
 
 # Configuration
