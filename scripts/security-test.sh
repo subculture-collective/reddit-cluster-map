@@ -14,7 +14,18 @@ NC='\033[0m' # No Color
 
 # Configuration
 API_URL="${API_URL:-http://localhost:8080}"
-ADMIN_TOKEN="${ADMIN_API_TOKEN:-test-admin-token}"
+ADMIN_TOKEN="${ADMIN_API_TOKEN:-test-admin-token-FOR-TESTING-ONLY-change-in-production}"
+
+# Warn if using HTTP
+if [[ "$API_URL" == http://* ]]; then
+    log_warn "Using HTTP (not HTTPS). Ensure this is only for local testing."
+    log_warn "Production deployments should use HTTPS to protect sensitive data."
+fi
+
+# Warn if using default test token
+if [[ "$ADMIN_TOKEN" == *"FOR-TESTING-ONLY"* ]]; then
+    log_warn "Using default test token. Set ADMIN_API_TOKEN environment variable for real testing."
+fi
 RESULTS_DIR="./security-test-results"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 REPORT_FILE="${RESULTS_DIR}/security-test-${TIMESTAMP}.log"
@@ -206,15 +217,19 @@ test_rate_limiting() {
     log_info "=== Rate Limiting Tests ==="
     
     # Test 1: Rapid requests to trigger rate limit
+    # Note: This test sends rapid requests to verify rate limiting.
+    # Default rate limit is 10 rps per IP. Adjust REQUEST_COUNT and DELAY if needed.
     run_test "Global rate limiting"
+    REQUEST_COUNT="${RATE_LIMIT_TEST_COUNT:-20}"
+    DELAY="${RATE_LIMIT_TEST_DELAY:-0.05}"
     rate_limited=false
-    for i in {1..15}; do
+    for ((i=1; i<=REQUEST_COUNT; i++)); do
         response=$(curl -s -w "%{http_code}" -o /dev/null "${API_URL}/api/graph")
         if [ "$response" = "429" ]; then
             rate_limited=true
             break
         fi
-        sleep 0.05
+        sleep "$DELAY"
     done
     
     if [ "$rate_limited" = true ]; then
