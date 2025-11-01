@@ -22,7 +22,6 @@ func TestSecurityHeaders(t *testing.T) {
 	
 	// This test always passes as it's documentation
 	return
-
 }
 
 // TestSQLInjectionProtection tests SQL injection prevention
