@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/http/pprof"
 
 	"github.com/gorilla/mux"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/api/handlers"
@@ -164,6 +165,26 @@ func NewRouter(q *db.Queries) *mux.Router {
 	r.Handle("/api/admin/settings", adminOnly(http.HandlerFunc(adminSettings.GetSettings))).Methods("GET")
 	r.Handle("/api/admin/settings", adminOnly(http.HandlerFunc(adminSettings.UpdateSettings))).Methods("PUT")
 	r.Handle("/api/admin/audit-log", adminOnly(http.HandlerFunc(adminSettings.GetAuditLog))).Methods("GET")
+
+	// Performance profiling endpoints (admin-only for security)
+	// These endpoints expose runtime profiling data for performance analysis
+	if cfg.EnableProfiling {
+		pprofRouter := r.PathPrefix("/debug/pprof").Subrouter()
+		pprofRouter.Use(func(next http.Handler) http.Handler {
+			return adminOnly(next)
+		})
+		pprofRouter.HandleFunc("/", pprof.Index)
+		pprofRouter.HandleFunc("/cmdline", pprof.Cmdline)
+		pprofRouter.HandleFunc("/profile", pprof.Profile)
+		pprofRouter.HandleFunc("/symbol", pprof.Symbol)
+		pprofRouter.HandleFunc("/trace", pprof.Trace)
+		pprofRouter.Handle("/goroutine", pprof.Handler("goroutine"))
+		pprofRouter.Handle("/heap", pprof.Handler("heap"))
+		pprofRouter.Handle("/threadcreate", pprof.Handler("threadcreate"))
+		pprofRouter.Handle("/block", pprof.Handler("block"))
+		pprofRouter.Handle("/mutex", pprof.Handler("mutex"))
+		pprofRouter.Handle("/allocs", pprof.Handler("allocs"))
+	}
 
 	return r
 }
