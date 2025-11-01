@@ -58,4 +58,4 @@ To ensure automatic categorization in release notes, use conventional commit pre
 
 Example: `feat: add support for multiple subreddit crawling`
 
-[Unreleased]: https://github.com/subculture-collective/reddit-cluster-map/compare/HEAD...HEAD
+[Unreleased]: https://github.com/subculture-collective/reddit-cluster-map/compare/v0.1.0...HEAD

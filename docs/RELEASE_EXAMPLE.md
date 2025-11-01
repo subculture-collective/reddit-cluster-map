@@ -216,10 +216,13 @@ cd backend && make test
 echo "1.0.1" > VERSION
 # Edit CHANGELOG.md to add hotfix section
 
-# Commit
-git add .
-git commit -m "fix: critical bug in crawler rate limiter"
-git commit -m "chore: release v1.0.1"
+# Commit all changes together
+git add VERSION CHANGELOG.md
+git commit -m "fix: critical bug in crawler rate limiter
+
+- Fixed race condition in rate limiter
+- Updated version to 1.0.1
+- Updated CHANGELOG.md"
 
 # Merge to main and tag
 git checkout main
