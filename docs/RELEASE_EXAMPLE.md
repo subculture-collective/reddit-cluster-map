@@ -288,4 +288,4 @@ git push origin :refs/tags/v1.0.0
 - [CHANGELOG.md](../CHANGELOG.md) - Project changelog
 - [VERSION](../VERSION) - Current version number
 - [CONTRIBUTING.md](../CONTRIBUTING.md#release-process) - Full release process documentation
-- [CI-CD.md](CI-CD.md) - CI/CD pipeline documentation
+- [CI-CD.md](../CI-CD.md) - CI/CD pipeline documentation
