@@ -217,6 +217,12 @@ profile-all: check-env ## Collect all profiles (CPU, memory, goroutines)
 	@echo "To view Memory: go tool pprof -http=:8080 heap.prof"
 	@echo "To view Goroutines: go tool pprof -http=:8080 goroutine.prof"
 
+performance-baseline: ## Collect comprehensive performance baseline (benchmarks + profiles)
+	@echo "Collecting performance baseline..."
+	@./scripts/performance_baseline.sh
+	@echo ""
+	@echo "Baseline collection complete"
+
 ##@ Crawling
 
 test-crawl: check-env ## Test crawl endpoint (requires SUB=subreddit_name)

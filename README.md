@@ -103,6 +103,8 @@ See the **[Developer Guide](docs/developer-guide.md)** for detailed workflows, t
 #### Advanced Topics
 
 - **[Performance Documentation](docs/perf.md)** - Query optimization, benchmarking, and scaling
+- **[Performance Profiling Guide](docs/profiling.md)** - Runtime profiling, benchmarks, and optimization
+- **[Performance Analysis](docs/performance-analysis.md)** - Performance review and optimization recommendations
 - **[OAuth Token Management](docs/oauth-token-management.md)** - Token refresh, credential rotation
 - **[Crawler Resilience](docs/CRAWLER_RESILIENCE.md)** - Rate limiting, retries, circuit breakers
 - **[Security Guide](docs/SECURITY.md)** - Security features and best practices
@@ -115,7 +117,12 @@ From `backend/`, run `make help` to see all available targets. Key ones:
 - `make generate` - Regenerate sqlc code after editing SQL
 - `make precalculate` - Run graph precalculation
 - `make test` - Run all tests
-- `make benchmark-graph` (from backend/) - Benchmark graph query performance
+- `make benchmark` - Run Go benchmark tests
+- `make benchmark-graph` - Benchmark graph query performance
+- `make performance-baseline` - Collect comprehensive performance baseline
+- `make profile-cpu` - Collect CPU profile (requires ENABLE_PROFILING=true)
+- `make profile-memory` - Collect memory profile (requires ENABLE_PROFILING=true)
+- `make profile-all` - Collect all profiles (CPU, memory, goroutines)
 - `make integrity-check` - Run data integrity checks
 - `make integrity-clean` - Clean up data integrity issues
 - `make lint` - Check code formatting and run go vet
