@@ -10,6 +10,7 @@ Thank you for your interest in contributing to Reddit Cluster Map! This document
 - [Pull Request Guidelines](#pull-request-guidelines)
 - [Testing Requirements](#testing-requirements)
 - [Documentation](#documentation)
+- [Release Process](#release-process)
 - [Community Guidelines](#community-guidelines)
 
 ## Getting Started
@@ -675,6 +676,206 @@ Update documentation when you:
 - Add screenshots for UI features
 - Keep examples up to date
 - Link to related documentation
+
+---
+
+## Release Process
+
+This section is intended for **maintainers** who create official releases. Regular contributors should focus on creating pull requests (see above).
+
+### Versioning
+
+This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (SemVer):
+
+```
+MAJOR.MINOR.PATCH
+```
+
+- **MAJOR** - Incompatible API changes or breaking changes
+- **MINOR** - New functionality in a backward-compatible manner
+- **PATCH** - Backward-compatible bug fixes
+
+**Examples:**
+- `1.0.0` → `1.0.1` - Bug fix release
+- `1.0.1` → `1.1.0` - New feature release
+- `1.5.3` → `2.0.0` - Breaking change release
+
+**Pre-release versions:**
+- `1.0.0-alpha.1` - Alpha release (early development)
+- `1.0.0-beta.1` - Beta release (feature complete, testing)
+- `1.0.0-rc.1` - Release candidate (ready for release, final testing)
+
+### Release Checklist
+
+Follow these steps to create a new release:
+
+#### 1. Prepare the Release
+
+```bash
+# Ensure you're on main and up to date
+git checkout main
+git pull origin main
+
+# Ensure all tests pass
+cd backend
+make test
+make test-integration-docker
+cd ../frontend
+npm ci
+npm run build
+npm run lint
+```
+
+#### 2. Update Version and Changelog
+
+**Update VERSION file:**
+```bash
+# At repository root
+echo "1.2.3" > VERSION
+```
+
+**Update CHANGELOG.md:**
+
+1. Move all items from `[Unreleased]` section to a new version section
+2. Add the release date
+3. Create a new empty `[Unreleased]` section at the top
+
+Example:
+```markdown
+## [Unreleased]
+
+## [1.2.3] - 2024-01-15
+
+### Added
+- New search functionality for graph nodes
+- Export graph data to JSON/CSV
+
+### Fixed
+- Fixed crawler rate limiting issue
+- Corrected graph layout calculations
+
+[Unreleased]: https://github.com/subculture-collective/reddit-cluster-map/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/subculture-collective/reddit-cluster-map/compare/v1.2.2...v1.2.3
+```
+
+#### 3. Commit and Tag
+
+```bash
+# From repository root
+git add VERSION CHANGELOG.md
+git commit -m "chore: release v1.2.3"
+
+# Create an annotated tag
+git tag -a v1.2.3 -m "Release v1.2.3"
+
+# Push commits and tags
+git push origin main
+git push origin v1.2.3
+```
+
+#### 4. Automated Release Process
+
+Once you push the tag, GitHub Actions automatically:
+
+1. **Creates a GitHub Release** (`.github/workflows/release.yml`):
+   - Generates changelog from commit messages
+   - Categorizes changes (Features, Bug Fixes, Documentation, Other)
+   - Creates release notes
+   - Marks pre-releases for tags containing `-` (e.g., `v1.0.0-beta`)
+
+2. **Builds and Publishes Docker Images** (`.github/workflows/publish.yml`):
+   - Builds all backend services (server, crawler, precalculate)
+   - Builds frontend
+   - Multi-architecture support (linux/amd64, linux/arm64)
+   - Publishes to GitHub Container Registry (ghcr.io)
+   - Tags with: version, major.minor, major, sha, and latest
+
+**Published images:**
+- `ghcr.io/subculture-collective/reddit-cluster-map-server:v1.2.3`
+- `ghcr.io/subculture-collective/reddit-cluster-map-crawler:v1.2.3`
+- `ghcr.io/subculture-collective/reddit-cluster-map-precalculate:v1.2.3`
+- `ghcr.io/subculture-collective/reddit-cluster-map-frontend:v1.2.3`
+
+#### 5. Verify the Release
+
+1. Check the [GitHub Releases page](https://github.com/subculture-collective/reddit-cluster-map/releases)
+2. Verify release notes are correct
+3. Verify Docker images are published:
+   ```bash
+   docker pull ghcr.io/subculture-collective/reddit-cluster-map-server:v1.2.3
+   ```
+4. Test the release in a staging environment
+
+#### 6. Announce the Release
+
+- Update README.md badges if needed
+- Announce in project discussions
+- Update any external documentation
+- Notify users of breaking changes (if any)
+
+### Hotfix Releases
+
+For critical bug fixes that need immediate release:
+
+1. Create a hotfix branch from the release tag:
+   ```bash
+   git checkout -b hotfix/1.2.4 v1.2.3
+   ```
+
+2. Make the fix and test thoroughly:
+   ```bash
+   # Make changes
+   git commit -m "fix: critical issue with crawler"
+   ```
+
+3. Update VERSION and CHANGELOG.md:
+   ```bash
+   echo "1.2.4" > VERSION
+   # Update CHANGELOG.md with hotfix details
+   git commit -m "chore: release v1.2.4"
+   ```
+
+4. Merge to main and tag:
+   ```bash
+   git checkout main
+   git merge hotfix/1.2.4
+   git tag -a v1.2.4 -m "Release v1.2.4 - Hotfix"
+   git push origin main
+   git push origin v1.2.4
+   ```
+
+### Pre-release Testing
+
+Before creating a release, consider:
+
+1. **Create a release candidate:**
+   ```bash
+   echo "1.3.0-rc.1" > VERSION
+   git tag -a v1.3.0-rc.1 -m "Release candidate 1.3.0-rc.1"
+   git push origin v1.3.0-rc.1
+   ```
+
+2. **Deploy to staging environment** and test thoroughly
+
+3. **Address any issues** found during testing
+
+4. **Create the final release** once testing is complete
+
+### Release Cadence
+
+- **Major releases** - As needed for breaking changes
+- **Minor releases** - Monthly or when significant features are ready
+- **Patch releases** - As needed for bug fixes
+- **Security releases** - Immediately for critical security issues
+
+### Post-Release Tasks
+
+After each release:
+
+1. Monitor error tracking and logs for issues
+2. Respond to user feedback and bug reports
+3. Plan next release based on roadmap
+4. Update project roadmap if needed
 
 ---
 
