@@ -135,9 +135,17 @@ test-integration: ## Run integration tests (requires TEST_DATABASE_URL)
 
 test-all: test ## Run all tests (alias for 'test')
 
+benchmark: ## Run Go benchmark tests
+	@echo "Running Go benchmarks..."
+	@go test -bench=. -benchmem ./...
+
 benchmark-graph: check-env ## Benchmark graph query performance
 	@echo "Running graph query benchmarks..."
 	@./scripts/benchmark_graph_queries.sh
+
+benchmark-handlers: ## Benchmark API handlers
+	@echo "Running handler benchmarks..."
+	@go test -bench=. -benchmem ./internal/api/handlers
 
 lint: ## Run Go linters (go vet and gofmt check)
 	@echo "Running go vet..."
@@ -175,6 +183,45 @@ sqlc: ## Generate sqlc code from SQL files
 	@echo "✓ sqlc code generated"
 
 generate: sqlc ## Alias for sqlc
+
+##@ Performance Profiling
+
+profile-cpu: check-env ## Collect CPU profile (requires ENABLE_PROFILING=true, use DURATION=seconds)
+	@echo "Collecting CPU profile..."
+	@./scripts/profile_cpu.sh $${DURATION:-30} cpu.prof
+	@echo ""
+	@echo "To view: go tool pprof -http=:8080 cpu.prof"
+
+profile-memory: check-env ## Collect memory/heap profile (requires ENABLE_PROFILING=true)
+	@echo "Collecting memory profile..."
+	@./scripts/profile_memory.sh heap.prof
+	@echo ""
+	@echo "To view: go tool pprof -http=:8080 heap.prof"
+
+profile-goroutines: check-env ## Collect goroutine profile (requires ENABLE_PROFILING=true)
+	@echo "Collecting goroutine profile..."
+	@./scripts/profile_goroutines.sh goroutine.prof
+	@echo ""
+	@echo "To view: go tool pprof -http=:8080 goroutine.prof"
+
+profile-all: check-env ## Collect all profiles (CPU, memory, goroutines)
+	@echo "Collecting all profiles..."
+	@./scripts/profile_cpu.sh 30 cpu.prof
+	@./scripts/profile_memory.sh heap.prof
+	@./scripts/profile_goroutines.sh goroutine.prof
+	@echo ""
+	@echo "Profiles saved:"
+	@ls -lh *.prof
+	@echo ""
+	@echo "To view CPU: go tool pprof -http=:8080 cpu.prof"
+	@echo "To view Memory: go tool pprof -http=:8080 heap.prof"
+	@echo "To view Goroutines: go tool pprof -http=:8080 goroutine.prof"
+
+performance-baseline: ## Collect comprehensive performance baseline (benchmarks + profiles)
+	@echo "Collecting performance baseline..."
+	@./scripts/performance_baseline.sh
+	@echo ""
+	@echo "Baseline collection complete"
 
 ##@ Crawling
 

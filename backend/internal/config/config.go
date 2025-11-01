@@ -60,6 +60,8 @@ type Config struct {
 	SentryEnvironment string  // Sentry environment (dev, staging, production)
 	SentryRelease     string  // Sentry release version
 	SentrySampleRate  float64 // Sentry error sampling rate (0.0 to 1.0)
+	// Performance profiling
+	EnableProfiling bool // enable pprof endpoints for performance profiling
 }
 
 var cached *Config
@@ -119,6 +121,8 @@ func Load() *Config {
 		SentryEnvironment: strings.TrimSpace(os.Getenv("SENTRY_ENVIRONMENT")),
 		SentryRelease:     strings.TrimSpace(os.Getenv("SENTRY_RELEASE")),
 		SentrySampleRate:  utils.GetEnvAsFloat("SENTRY_SAMPLE_RATE", 1.0),
+		// Performance profiling: disabled by default for security
+		EnableProfiling: utils.GetEnvAsBool("ENABLE_PROFILING", false),
 	}
 	if cached.PostsSort == "" {
 		cached.PostsSort = "top"
