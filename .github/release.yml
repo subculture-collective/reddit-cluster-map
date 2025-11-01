@@ -1,0 +1,45 @@
+# Configuration for GitHub automatic release notes generation
+# See: https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes
+
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+      - dependencies
+      - duplicate
+      - invalid
+      - wontfix
+    authors:
+      - octocat
+      - dependabot
+
+  categories:
+    - title: 🚀 Features
+      labels:
+        - feature
+        - enhancement
+        - feat
+    - title: 🐛 Bug Fixes
+      labels:
+        - bug
+        - fix
+        - bugfix
+    - title: 📚 Documentation
+      labels:
+        - documentation
+        - docs
+    - title: 🔒 Security
+      labels:
+        - security
+    - title: ⚡ Performance
+      labels:
+        - performance
+        - perf
+    - title: 🧹 Maintenance
+      labels:
+        - chore
+        - refactor
+        - test
+    - title: 🔧 Other Changes
+      labels:
+        - "*"
