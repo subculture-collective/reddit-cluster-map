@@ -14,7 +14,9 @@ set -e
 
 # Load .env if it exists
 if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
+    set -a
+    source .env
+    set +a
 fi
 
 # Configuration

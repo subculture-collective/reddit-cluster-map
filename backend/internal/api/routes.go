@@ -171,7 +171,11 @@ func NewRouter(q *db.Queries) *mux.Router {
 	if cfg.EnableProfiling {
 		pprofRouter := r.PathPrefix("/debug/pprof").Subrouter()
 		pprofRouter.Use(func(next http.Handler) http.Handler {
-			return adminOnly(next)
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Log pprof access attempts for security monitoring
+				handlers.LogPprofAccess(r.Context(), r.URL.Path, r.RemoteAddr)
+				adminOnly(next).ServeHTTP(w, r)
+			})
 		})
 		pprofRouter.HandleFunc("/", pprof.Index)
 		pprofRouter.HandleFunc("/cmdline", pprof.Cmdline)
