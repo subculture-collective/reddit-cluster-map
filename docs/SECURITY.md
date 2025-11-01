@@ -527,9 +527,67 @@ If a security incident occurs:
 - Adjust CSP policy if needed for your frontend
 - Consider using CSP report-only mode during development
 
+## Security Auditing and Penetration Testing
+
+### Documentation
+
+For comprehensive security auditing and penetration testing guidance, see:
+
+- **[Security Audit Guide](SECURITY_AUDIT.md)** - Complete security audit procedures, testing methodologies, and vulnerability assessment
+- **[Penetration Testing Checklist](PENETRATION_TESTING_CHECKLIST.md)** - Detailed checklist for conducting penetration tests
+- **[Security Audit Report Template](SECURITY_AUDIT_REPORT_TEMPLATE.md)** - Template for documenting security audit findings
+
+### Automated Security Testing
+
+Run automated security tests using the provided script:
+
+```bash
+# Run all security tests
+./scripts/security-test.sh
+
+# Run specific test suite
+./scripts/security-test.sh --suite auth
+./scripts/security-test.sh --suite input
+./scripts/security-test.sh --suite rate-limit
+./scripts/security-test.sh --suite headers
+```
+
+### Regular Security Assessment Schedule
+
+**Weekly:**
+- Review Dependabot alerts
+- Check security workflow results
+- Review access logs for anomalies
+
+**Monthly:**
+- Run automated security test script
+- Review and rotate credentials
+- Update security documentation
+
+**Quarterly:**
+- Comprehensive manual security audit
+- External penetration test (recommended)
+- Security training for team
+- Review and update security policies
+
+**Annually:**
+- Third-party security assessment
+- Compliance audit
+- Incident response plan review
+- Security architecture review
+
 ## Additional Resources
 
+### Security Documentation
+- [Security Audit Guide](SECURITY_AUDIT.md)
+- [Penetration Testing Checklist](PENETRATION_TESTING_CHECKLIST.md)
+- [Security Audit Report Template](SECURITY_AUDIT_REPORT_TEMPLATE.md)
+
+### External Resources
 - [OWASP Security Headers](https://owasp.org/www-project-secure-headers/)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [OWASP API Security Top 10](https://owasp.org/www-project-api-security/)
 - [MDN CORS Guide](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)
 - [Rate Limiting Best Practices](https://cloud.google.com/architecture/rate-limiting-strategies-techniques)
 - [Content Security Policy Reference](https://content-security-policy.com/)
+- [NIST Cybersecurity Framework](https://www.nist.gov/cyberframework)
