@@ -43,6 +43,8 @@ services:
     environment:
       - POSTGRES_INITDB_ARGS=--data-checksums
       - PGDATA=/var/lib/postgresql/pgdata-volume
+    ports:
+      - "5432:5432"
     volumes:
       # Mount the named volume at an alternate path to avoid overlay mount issues
       - postgres_data:/var/lib/postgresql/pgdata-volume
