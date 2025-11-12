@@ -2,6 +2,7 @@
 # GLOBAL IGNORES (ALL PROJECTS)
 # ========================
 *.log
+logs/
 *.pid
 *.seed
 *.pid.lock

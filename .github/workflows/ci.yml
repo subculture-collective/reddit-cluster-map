@@ -2,15 +2,15 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, uplink/deploy-branch ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 jobs:
   test-backend:
     name: Test Backend
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:17
@@ -33,7 +33,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.9'
+          go-version: '1.24'
           cache: true
           cache-dependency-path: backend/go.sum
 
@@ -108,7 +108,7 @@ jobs:
     name: Build Backend Docker Images
     runs-on: ubuntu-latest
     needs: [test-backend]
-    
+
     strategy:
       matrix:
         component: [server, crawler, precalculate]
