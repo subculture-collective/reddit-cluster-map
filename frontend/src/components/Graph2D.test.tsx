@@ -42,7 +42,7 @@ describe('Graph2D', () => {
       />
     );
     // Graph2D renders a div container that will eventually have a canvas
-    expect(container.querySelector('div')).toBeInTheDocument();
+    expect(container.querySelector('div')).toBeTruthy();
   });
 
   it('accepts precomputed layout option', () => {

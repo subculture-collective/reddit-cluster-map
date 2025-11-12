@@ -51,7 +51,7 @@ describe('Graph3D', () => {
         subredditSize="subscribers"
       />
     );
-    expect(getByTestId('force-graph-3d')).toBeInTheDocument();
+    expect(getByTestId('force-graph-3d')).toBeTruthy();
   });
 
   it('accepts optional props', () => {
