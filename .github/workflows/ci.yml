@@ -10,7 +10,7 @@ jobs:
   test-backend:
     name: Test Backend
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:17
@@ -108,7 +108,7 @@ jobs:
     name: Build Backend Docker Images
     runs-on: ubuntu-latest
     needs: [test-backend]
-    
+
     strategy:
       matrix:
         component: [server, crawler, precalculate]

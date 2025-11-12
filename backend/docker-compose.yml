@@ -64,10 +64,10 @@ services:
       while :; do
           # Run precalculation
           /app/precalculate || echo 'Precalculation failed at $(date)'
-          
+
           # Run database backup
           /app/scripts/backup.sh || echo 'Backup failed at $(date)'
-          
+
           # Sleep for an hour
           sleep 3600
       done"
