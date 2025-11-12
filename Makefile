@@ -50,7 +50,7 @@ setup: ## Initial setup - install dependencies and configure environment
 	@echo "✓ Backend dependencies installed"
 	@echo ""
 	@echo "==> Installing frontend dependencies..."
-	@cd frontend && npm ci
+	@cd frontend && npm install
 	@echo "✓ Frontend dependencies installed"
 	@echo ""
 	@echo "✓ Setup complete! Next steps:"
