@@ -293,6 +293,32 @@ precalculate: check-env ## Run graph precalculation
 	@cd backend && docker compose run --rm precalculate /app/precalculate
 	@echo "✓ Precalculation complete"
 
+##@ Deployment
+
+deploy: ## Rebuild services and run migrations
+	@echo "==> Deploying: rebuild + migrations"
+	@$(MAKE) rebuild
+	@sleep 2
+	@$(MAKE) migrate-up
+	@echo "✓ Deploy complete"
+
+deploy-build: ## Build images and start services
+	@echo "==> Building and starting services"
+	@docker compose -f $(COMPOSE_FILE_PATH) build
+	@docker compose -f $(COMPOSE_FILE_PATH) up -d
+	@echo "✓ Services built and started"
+
+##@ Migrations - Utilities
+
+migrate-status: ## Show migration version/status (container)
+	@echo "==> Migration status"
+	@docker run --rm \
+		--network web \
+		--env-file backend/.env \
+		-v $(MIGRATIONS_DIR):/migrations:ro \
+		$(MIGRATE_IMAGE) \
+		-path=/migrations -database "$$DATABASE_URL" version
+
 ##@ Backups
 
 backup-now: check-env ## Create a database backup

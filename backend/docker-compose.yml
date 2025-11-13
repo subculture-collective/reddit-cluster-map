@@ -1,6 +1,7 @@
 services:
   api:
     container_name: reddit-cluster-api
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile
@@ -27,6 +28,7 @@ services:
 
   crawler:
     container_name: reddit-cluster-crawler
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile.crawler
@@ -40,6 +42,7 @@ services:
   db:
     container_name: reddit-cluster-db
     image: postgres:17
+    restart: unless-stopped
     environment:
       - POSTGRES_INITDB_ARGS=--data-checksums
       - PGDATA=/var/lib/postgresql/pgdata-volume
@@ -58,6 +61,7 @@ services:
 
   precalculate:
     container_name: reddit-cluster-precalculate
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile.precalculate
@@ -86,6 +90,7 @@ services:
 
   backup:
     container_name: reddit-cluster-backup
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile.precalculate
@@ -104,6 +109,7 @@ services:
 
   reddit_frontend:
     container_name: reddit-cluster-frontend
+    restart: unless-stopped
     build:
       context: ../frontend
       dockerfile: Dockerfile
@@ -119,6 +125,7 @@ services:
   prometheus:
     container_name: reddit-cluster-prometheus
     image: prom/prometheus:latest
+    restart: unless-stopped
     volumes:
       - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../monitoring/prometheus/alerts:/etc/prometheus/alerts:ro
@@ -132,11 +139,11 @@ services:
       - web
     ports:
       - "9090:9090"
-    restart: unless-stopped
 
   grafana:
     container_name: reddit-cluster-grafana
     image: grafana/grafana:latest
+    restart: unless-stopped
     volumes:
       - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
@@ -151,7 +158,6 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
-    restart: unless-stopped
 
 volumes:
   postgres_data:
