@@ -388,7 +388,7 @@ export class EdgeBundler {
     const mesh = new THREE.Mesh(geometry, material);
     
     // Store bundle data for interaction using THREE.Object3D.userData
-    mesh.userData = { ...(mesh.userData || {}), bundle };
+    mesh.userData.bundle = bundle;
 
     return mesh;
   }

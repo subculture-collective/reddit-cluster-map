@@ -844,8 +844,9 @@ export default function Graph3D(props: Props) {
       communityColors.set(community.id, community.color);
     }
 
-    // Reusable position map to avoid allocating new Map on each update
-    const nodePositions = new Map<string, { x: number; y: number; z: number }>();
+    // Reusable Maps to avoid allocating new instances on each update
+    const nodeRefs = new Map<string, any>();
+    const vector3Positions = new Map<string, THREE.Vector3>();
 
     // Function to update bundles based on current node positions
     const updateBundles = () => {
@@ -853,25 +854,25 @@ export default function Graph3D(props: Props) {
       if (!scene) return;
 
       // Extract current node positions from the force graph
-      // Reuse the Map, just clear and repopulate instead of allocating new
-      nodePositions.clear();
+      // Store node references directly to avoid intermediate object allocation
+      nodeRefs.clear();
       const graphData = (fgRef.current as any)?.graphData?.();
       
       if (graphData?.nodes) {
         for (const node of graphData.nodes) {
           const id = String(node.id);
           if (typeof node.x === 'number' && typeof node.y === 'number' && typeof node.z === 'number') {
-            nodePositions.set(id, { x: node.x, y: node.y, z: node.z });
+            nodeRefs.set(id, node);
           }
         }
       }
 
       // Skip if we don't have enough position data
-      if (nodePositions.size < filtered.nodes.length * MIN_NODES_WITH_POSITIONS_RATIO) {
+      if (nodeRefs.size < filtered.nodes.length * MIN_NODES_WITH_POSITIONS_RATIO) {
         return;
       }
 
-      // Convert positions to Vector3 only for nodes that participate in bundles
+      // Identify nodes that participate in bundles
       const bundleNodeIds = new Set<string>();
       for (const link of filtered.links) {
         const sourceCommunity = communityResult.nodeCommunities.get(link.source);
@@ -882,10 +883,17 @@ export default function Graph3D(props: Props) {
         }
       }
 
-      const vector3Positions = new Map<string, THREE.Vector3>();
-      for (const [id, pos] of nodePositions) {
+      // Convert to Vector3 only for bundle nodes, reusing Vector3 instances
+      vector3Positions.clear();
+      for (const [id, node] of nodeRefs) {
         if (bundleNodeIds.has(id)) {
-          vector3Positions.set(id, new THREE.Vector3(pos.x, pos.y, pos.z));
+          // Reuse or create Vector3 instances
+          let vec = vector3Positions.get(id);
+          if (!vec) {
+            vec = new THREE.Vector3();
+            vector3Positions.set(id, vec);
+          }
+          vec.set(node.x, node.y, node.z);
         }
       }
 
