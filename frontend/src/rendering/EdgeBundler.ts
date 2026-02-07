@@ -2,6 +2,41 @@ import type { GraphLink } from '../types/graph';
 import * as THREE from 'three';
 
 /**
+ * EdgeBundler - Reduces visual clutter in dense graphs by bundling links
+ * 
+ * This module groups links between the same communities into aggregated curved paths,
+ * reducing the number of rendered lines and improving graph readability.
+ * 
+ * Key features:
+ * - Groups links by source/target community pairs
+ * - Renders bundles as curved tubes using THREE.js
+ * - Bundle thickness scales logarithmically with link count
+ * - Blends community colors for bundle visualization
+ * 
+ * Performance impact:
+ * - Can reduce link count by 10-50x for dense graphs
+ * - Reduces draw calls significantly
+ * - Uses GPU-efficient THREE.TubeGeometry
+ * 
+ * @example
+ * ```typescript
+ * const bundler = new EdgeBundler({ minLinksForBundle: 3 });
+ * const { bundles, unbundledLinks } = bundler.bundleLinks(
+ *   links,
+ *   nodeCommunities,
+ *   communityColors,
+ *   nodePositions
+ * );
+ * 
+ * // Create THREE.js meshes for rendering
+ * bundles.forEach(bundle => {
+ *   const mesh = bundler.createBundleMesh(bundle, 0.6);
+ *   scene.add(mesh);
+ * });
+ * ```
+ */
+
+/**
  * Represents a bundle of links between two communities
  */
 export interface LinkBundle {
