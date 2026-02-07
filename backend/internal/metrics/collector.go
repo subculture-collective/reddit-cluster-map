@@ -72,8 +72,7 @@ func (c *Collector) collectGraphMetrics(ctx context.Context) {
 
 // collectCommunityMetrics collects community-related metrics
 func (c *Collector) collectCommunityMetrics(ctx context.Context) {
-	// Count communities by checking distinct community IDs in user_subreddit_activity
-	// This is a placeholder - adjust based on your actual community detection schema
+	// Count communities from graph_communities (created by migration 000019)
 	count, err := c.queries.CountCommunities(ctx)
 	if err != nil {
 		log.Printf("Error counting communities: %v", err)

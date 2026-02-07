@@ -8,6 +8,13 @@ ON CONFLICT (name) DO UPDATE SET
   last_seen = now()
 RETURNING id;
 
+-- name: EnsureSubreddit :one
+INSERT INTO subreddits (name, title, description, subscribers, created_at, last_seen)
+VALUES ($1, $2, $3, $4, now(), now())
+ON CONFLICT (name) DO UPDATE SET
+  name = EXCLUDED.name
+RETURNING id;
+
 -- name: GetSubreddit :one
 SELECT * FROM subreddits WHERE name = $1;
 

@@ -48,12 +48,12 @@ type CrawlJob struct {
 	UpdatedAt   sql.NullTime
 	// Timestamp when the job becomes visible/available for processing
 	VisibleAt sql.NullTime
+	// Timestamp for next retry attempt (if failed)
+	NextRetryAt sql.NullTime
 	// Number of times this job has been retried
 	RetryCount sql.NullInt32
 	// Maximum number of retries before giving up
 	MaxRetries sql.NullInt32
-	// Timestamp for next retry attempt (if failed)
-	NextRetryAt sql.NullTime
 }
 
 type GraphCommunity struct {

@@ -38,7 +38,7 @@ func FetchAndQueueUserSubreddits(ctx context.Context, q *db.Queries, username st
 
 	for _, sub := range shuffled {
 		// Get or create subreddit
-		subredditID, err := q.UpsertSubreddit(ctx, db.UpsertSubredditParams{
+		subredditID, err := q.EnsureSubreddit(ctx, db.EnsureSubredditParams{
 			Name:        sub,
 			Title:       sql.NullString{String: sub, Valid: true},
 			Description: sql.NullString{String: "", Valid: true},

@@ -100,7 +100,12 @@ func (s *Server) Start(ctx context.Context) error {
 		if err == nil && len(jobs) == 0 {
 			defaults := []string{"AskReddit", "worldnews", "technology"}
 			for _, name := range defaults {
-				id, err := s.DB.UpsertSubreddit(ctx, db.UpsertSubredditParams{Name: name})
+				id, err := s.DB.EnsureSubreddit(ctx, db.EnsureSubredditParams{
+					Name:        name,
+					Title:       sql.NullString{String: name, Valid: true},
+					Description: sql.NullString{String: "", Valid: true},
+					Subscribers: sql.NullInt32{Int32: 0, Valid: true},
+				})
 				if err == nil {
 					_ = s.DB.EnqueueCrawlJob(ctx, db.EnqueueCrawlJobParams{SubredditID: id})
 				}
