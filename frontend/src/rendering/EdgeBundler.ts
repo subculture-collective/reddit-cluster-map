@@ -190,8 +190,20 @@ export class EdgeBundler {
     const distance = direction.length();
     direction.normalize();
 
-    // Create a perpendicular vector for the control point offset
-    const perpendicular = new THREE.Vector3(-direction.y, direction.x, direction.z);
+    // Create a perpendicular vector using cross product
+    // Use the world up vector as reference, but handle the case where direction is parallel to up
+    const up = new THREE.Vector3(0, 1, 0);
+    const perpendicular = new THREE.Vector3();
+    
+    // Check if direction is nearly parallel to up vector
+    if (Math.abs(direction.dot(up)) > 0.99) {
+      // Use right vector instead
+      perpendicular.crossVectors(direction, new THREE.Vector3(1, 0, 0));
+    } else {
+      perpendicular.crossVectors(direction, up);
+    }
+    
+    perpendicular.normalize();
     const offset = perpendicular.multiplyScalar(distance * this.config.curvature);
 
     const controlPoint = new THREE.Vector3().addVectors(midpoint, offset);

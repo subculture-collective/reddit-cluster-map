@@ -732,6 +732,10 @@ export default function Graph3D(props: Props) {
     curvature: 0.3,
   }), []);
 
+  // Constants for bundle updates
+  const MIN_NODES_WITH_POSITIONS_RATIO = 0.5; // Require 50% of nodes to have positions
+  const BUNDLE_UPDATE_INTERVAL_MS = 1000; // Update bundles every second during simulation
+
   const bundledData = useMemo(() => {
     if (!useBundling || !communityResult) {
       return { bundles: [], unbundledLinks: filtered.links };
@@ -749,9 +753,10 @@ export default function Graph3D(props: Props) {
         continue;
       }
       
-      const key = sourceCommunity <= targetCommunity 
-        ? `${sourceCommunity}-${targetCommunity}` 
-        : `${targetCommunity}-${sourceCommunity}`;
+      // Use EdgeBundler's method to create consistent keys
+      const c1 = sourceCommunity;
+      const c2 = targetCommunity;
+      const key = c1 <= c2 ? `${c1}-${c2}` : `${c2}-${c1}`;
       
       if (!communityPairs.has(key)) {
         communityPairs.set(key, []);
@@ -882,7 +887,7 @@ export default function Graph3D(props: Props) {
       }
 
       // Skip if we don't have enough position data
-      if (nodePositions.size < filtered.nodes.length * 0.5) {
+      if (nodePositions.size < filtered.nodes.length * MIN_NODES_WITH_POSITIONS_RATIO) {
         return;
       }
 
@@ -922,7 +927,7 @@ export default function Graph3D(props: Props) {
     updateBundles();
 
     // Set up interval to update bundles periodically during simulation
-    const intervalId = setInterval(updateBundles, 1000);
+    const intervalId = setInterval(updateBundles, BUNDLE_UPDATE_INTERVAL_MS);
 
     return () => {
       clearInterval(intervalId);
