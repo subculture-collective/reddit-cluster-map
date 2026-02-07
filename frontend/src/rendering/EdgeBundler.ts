@@ -89,9 +89,7 @@ export class EdgeBundler {
         // Calculate bundle path control points
         const controlPoints = this.calculateBundlePath(
           pairLinks,
-          nodePositions,
-          sourceCommunity,
-          targetCommunity
+          nodePositions
         );
 
         // Blend colors from both communities
@@ -123,9 +121,7 @@ export class EdgeBundler {
    */
   private calculateBundlePath(
     links: GraphLink[],
-    nodePositions: Map<string, THREE.Vector3>,
-    sourceCommunity: number,
-    targetCommunity: number
+    nodePositions: Map<string, THREE.Vector3>
   ): THREE.Vector3[] {
     // Calculate average positions for source and target nodes
     const sourcePositions: THREE.Vector3[] = [];

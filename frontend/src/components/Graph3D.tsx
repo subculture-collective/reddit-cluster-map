@@ -14,6 +14,8 @@ import {
   shouldShowLabels,
   DEFAULT_LOD_CONFIG,
 } from "../utils/levelOfDetail";
+import { EdgeBundler } from "../rendering/EdgeBundler";
+import * as THREE from "three";
 
 type Filters = {
   subreddit: boolean;
@@ -293,6 +295,7 @@ export default function Graph3D(props: Props) {
   } = props;
 
   const [onlyLinked, setOnlyLinked] = useState(true);
+  const [useBundling, setUseBundling] = useState(false);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -304,6 +307,7 @@ export default function Graph3D(props: Props) {
   const frameThrottlerRef = useRef<FrameThrottler | null>(null);
   const [adaptiveLinkOpacity, setAdaptiveLinkOpacity] = useState(linkOpacity);
   const [adaptiveShowLabels, setAdaptiveShowLabels] = useState(showLabels);
+  const bundleMeshesRef = useRef<THREE.Mesh[]>([]);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -720,6 +724,52 @@ export default function Graph3D(props: Props) {
     return byName?.id;
   }, [selectedId, filtered]);
 
+  // Edge bundling logic
+  const edgeBundler = useMemo(() => new EdgeBundler({
+    minLinksForBundle: 3,
+    baseWidth: 0.5,
+    curveSegments: 16,
+    curvature: 0.3,
+  }), []);
+
+  const bundledData = useMemo(() => {
+    if (!useBundling || !communityResult) {
+      return { bundles: [], unbundledLinks: filtered.links };
+    }
+
+    // Extract node positions from the force graph
+    const nodePositions = new Map<string, THREE.Vector3>();
+    for (const node of filtered.nodes as Array<GraphNode & { x?: number; y?: number; z?: number }>) {
+      if (typeof node.x === 'number' && typeof node.y === 'number' && typeof node.z === 'number') {
+        nodePositions.set(node.id, new THREE.Vector3(node.x, node.y, node.z));
+      }
+    }
+
+    // Build community color map
+    const communityColors = new Map<number, string>();
+    for (const community of communityResult.communities) {
+      communityColors.set(community.id, community.color);
+    }
+
+    return edgeBundler.bundleLinks(
+      filtered.links,
+      communityResult.nodeCommunities,
+      communityColors,
+      nodePositions
+    );
+  }, [useBundling, communityResult, filtered, edgeBundler]);
+
+  // Create a link visibility function that hides bundled links
+  const bundledLinkIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const bundle of bundledData.bundles) {
+      for (const link of bundle.links) {
+        ids.add(`${link.source}-${link.target}`);
+      }
+    }
+    return ids;
+  }, [bundledData]);
+
   const EDGE_VIS_THRESHOLD = 1200;
   const linkVisibilityFn = useCallback(
     (l?: { source?: string | number; target?: string | number }) => {
@@ -728,9 +778,18 @@ export default function Graph3D(props: Props) {
         const t = String(l.target ?? "");
         if (s === selectedActiveId || t === selectedActiveId) return true;
       }
+      
+      // Hide bundled links when bundling is enabled
+      if (useBundling && l) {
+        const s = String(l.source ?? "");
+        const t = String(l.target ?? "");
+        const linkId = `${s}-${t}`;
+        if (bundledLinkIds.has(linkId)) return false;
+      }
+      
       return cameraDistRef.current < EDGE_VIS_THRESHOLD;
     },
-    [selectedActiveId]
+    [selectedActiveId, useBundling, bundledLinkIds]
   );
 
   const hasPrecomputedPositions = useMemo(() => {
@@ -774,6 +833,47 @@ export default function Graph3D(props: Props) {
     return set;
   }, [adaptiveShowLabels, filtered, degreeMap]);
 
+  // Effect to manage bundle meshes in the THREE.js scene
+  useEffect(() => {
+    if (!fgRef.current || !useBundling) {
+      // Clean up existing bundle meshes
+      const scene = (fgRef.current as any)?.scene?.();
+      if (scene) {
+        for (const mesh of bundleMeshesRef.current) {
+          scene.remove(mesh);
+          mesh.geometry.dispose();
+          (mesh.material as THREE.Material).dispose();
+        }
+      }
+      bundleMeshesRef.current = [];
+      return;
+    }
+
+    // Get the THREE.js scene from the force graph
+    const scene = (fgRef.current as any)?.scene?.();
+    if (!scene || bundledData.bundles.length === 0) return;
+
+    // Remove old bundle meshes
+    for (const mesh of bundleMeshesRef.current) {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    }
+    bundleMeshesRef.current = [];
+
+    // Add new bundle meshes
+    for (const bundle of bundledData.bundles) {
+      if (bundle.controlPoints.length < 2) continue;
+      
+      const mesh = edgeBundler.createBundleMesh(bundle, adaptiveLinkOpacity);
+      scene.add(mesh);
+      bundleMeshesRef.current.push(mesh);
+    }
+
+    // Trigger a re-render
+    (fgRef.current as any)?.refresh?.();
+  }, [useBundling, bundledData, edgeBundler, adaptiveLinkOpacity]);
+
   return (
     <div 
       className="w-full h-screen relative"
@@ -814,6 +914,17 @@ export default function Graph3D(props: Props) {
           />
           <span className="opacity-80">Only show linked nodes</span>
         </label>
+        {communityResult && (
+          <label className="ml-2 flex items-center gap-1 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useBundling}
+              onChange={() => setUseBundling((v) => !v)}
+              className="accent-purple-400"
+            />
+            <span className="opacity-80">Bundle edges</span>
+          </label>
+        )}
         <span
           title={
             usePrecomputedLayout
@@ -846,11 +957,11 @@ export default function Graph3D(props: Props) {
         nodeVal={nodeValFn as unknown as (n: unknown) => number}
         nodeRelSize={nodeRelSize}
         nodeThreeObject={
-          adaptiveShowLabels
+          (adaptiveShowLabels
             ? (node: unknown) => {
                 const n = node as GraphNode;
                 const id = String(n.id);
-                if (!labelSet.has(id)) return undefined as unknown as object;
+                if (!labelSet.has(id)) return undefined;
                 const name = (n.name || id).toString();
                 const st = new SpriteText(
                   name.length > 28 ? name.slice(0, 27) + "…" : name
@@ -862,9 +973,9 @@ export default function Graph3D(props: Props) {
                 st.textHeight = 6 + Math.min(10, base);
                 st.backgroundColor = "rgba(0,0,0,0.35)";
                 st.padding = 2;
-                return st as unknown as object;
+                return st;
               }
-            : (undefined as unknown as (n: unknown) => object)
+            : undefined) as any
         }
         linkWidth={1}
         linkColor={() => "#999"}
