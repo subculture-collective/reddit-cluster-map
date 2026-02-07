@@ -164,7 +164,7 @@ describe('EdgeBundler', () => {
     const mesh = bundler.createBundleMesh(bundle, 0.5);
     expect(mesh).toBeDefined();
     expect(mesh).toBeInstanceOf(THREE.Mesh);
-    expect((mesh as any).bundleData).toBe(bundle);
+    expect(mesh.userData.bundle).toBe(bundle);
   });
 
   it('should update bundler config', () => {

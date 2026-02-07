@@ -6,7 +6,7 @@ import type {
   NodeObject as RFNodeObject,
 } from "react-force-graph-3d";
 import ForceGraph3D from "react-force-graph-3d";
-import type { GraphData, GraphNode } from "../types/graph";
+import type { GraphData, GraphNode, GraphLink } from "../types/graph";
 import SpriteText from "three-spritetext";
 import { FrameThrottler } from "../utils/frameThrottle";
 import {
@@ -738,53 +738,23 @@ export default function Graph3D(props: Props) {
 
   const bundledData = useMemo(() => {
     if (!useBundling || !communityResult) {
-      return { bundles: [], unbundledLinks: filtered.links };
+      return { bundledLinks: new Set<GraphLink>() };
     }
 
-    // For now, just identify which links would be bundled (based on communities)
-    // Actual bundle geometry will be calculated in the useEffect with real positions
-    const communityPairs = new Map<string, typeof filtered.links>();
-    
-    for (const link of filtered.links) {
-      const sourceCommunity = communityResult.nodeCommunities.get(link.source);
-      const targetCommunity = communityResult.nodeCommunities.get(link.target);
-      
-      if (sourceCommunity === undefined || targetCommunity === undefined) {
-        continue;
-      }
-      
-      // Use EdgeBundler's method to create consistent keys
-      const c1 = sourceCommunity;
-      const c2 = targetCommunity;
-      const key = c1 <= c2 ? `${c1}-${c2}` : `${c2}-${c1}`;
-      
-      if (!communityPairs.has(key)) {
-        communityPairs.set(key, []);
-      }
-      communityPairs.get(key)!.push(link);
-    }
+    // Use EdgeBundler's method to identify which links would be bundled
+    const bundledLinks = edgeBundler.identifyBundledLinks(
+      filtered.links,
+      communityResult.nodeCommunities
+    );
 
-    const unbundledLinks = [];
-    const bundles = [];
-
-    for (const [, pairLinks] of communityPairs) {
-      if (pairLinks.length >= 3) {
-        bundles.push({ links: pairLinks, count: pairLinks.length });
-      } else {
-        unbundledLinks.push(...pairLinks);
-      }
-    }
-
-    return { bundles, unbundledLinks };
-  }, [useBundling, communityResult, filtered]);
+    return { bundledLinks };
+  }, [useBundling, communityResult, filtered, edgeBundler]);
 
   // Create a link visibility function that hides bundled links
   const bundledLinkIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const bundle of bundledData.bundles) {
-      for (const link of bundle.links) {
-        ids.add(`${link.source}-${link.target}`);
-      }
+    for (const link of bundledData.bundledLinks) {
+      ids.add(`${link.source}-${link.target}`);
     }
     return ids;
   }, [bundledData]);
@@ -868,20 +838,30 @@ export default function Graph3D(props: Props) {
       return;
     }
 
+    // Build community color map once (reused across updates)
+    const communityColors = new Map<number, string>();
+    for (const community of communityResult.communities) {
+      communityColors.set(community.id, community.color);
+    }
+
+    // Reusable position map to avoid allocating new Map on each update
+    const nodePositions = new Map<string, { x: number; y: number; z: number }>();
+
     // Function to update bundles based on current node positions
     const updateBundles = () => {
       const scene = (fgRef.current as any)?.scene?.();
       if (!scene) return;
 
       // Extract current node positions from the force graph
-      const nodePositions = new Map<string, THREE.Vector3>();
+      // Reuse the Map, just clear and repopulate instead of allocating new
+      nodePositions.clear();
       const graphData = (fgRef.current as any)?.graphData?.();
       
       if (graphData?.nodes) {
         for (const node of graphData.nodes) {
           const id = String(node.id);
           if (typeof node.x === 'number' && typeof node.y === 'number' && typeof node.z === 'number') {
-            nodePositions.set(id, new THREE.Vector3(node.x, node.y, node.z));
+            nodePositions.set(id, { x: node.x, y: node.y, z: node.z });
           }
         }
       }
@@ -891,10 +871,22 @@ export default function Graph3D(props: Props) {
         return;
       }
 
-      // Build community color map
-      const communityColors = new Map<number, string>();
-      for (const community of communityResult.communities) {
-        communityColors.set(community.id, community.color);
+      // Convert positions to Vector3 only for nodes that participate in bundles
+      const bundleNodeIds = new Set<string>();
+      for (const link of filtered.links) {
+        const sourceCommunity = communityResult.nodeCommunities.get(link.source);
+        const targetCommunity = communityResult.nodeCommunities.get(link.target);
+        if (sourceCommunity !== undefined && targetCommunity !== undefined) {
+          bundleNodeIds.add(link.source);
+          bundleNodeIds.add(link.target);
+        }
+      }
+
+      const vector3Positions = new Map<string, THREE.Vector3>();
+      for (const [id, pos] of nodePositions) {
+        if (bundleNodeIds.has(id)) {
+          vector3Positions.set(id, new THREE.Vector3(pos.x, pos.y, pos.z));
+        }
       }
 
       // Calculate bundles
@@ -902,7 +894,7 @@ export default function Graph3D(props: Props) {
         filtered.links,
         communityResult.nodeCommunities,
         communityColors,
-        nodePositions
+        vector3Positions
       );
 
       // Remove old bundle meshes

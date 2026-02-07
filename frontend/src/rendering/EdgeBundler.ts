@@ -80,6 +80,45 @@ export class EdgeBundler {
   }
 
   /**
+   * Identify which links would be bundled (without calculating geometry)
+   * Useful for hiding individual bundled links in the UI
+   */
+  public identifyBundledLinks(
+    links: GraphLink[],
+    nodeCommunities: Map<string, number>
+  ): Set<GraphLink> {
+    const communityPairs = new Map<string, GraphLink[]>();
+    
+    for (const link of links) {
+      const sourceCommunity = nodeCommunities.get(link.source);
+      const targetCommunity = nodeCommunities.get(link.target);
+      
+      if (sourceCommunity === undefined || targetCommunity === undefined) {
+        continue;
+      }
+      
+      const key = this.getCommunityPairKey(sourceCommunity, targetCommunity);
+      
+      if (!communityPairs.has(key)) {
+        communityPairs.set(key, []);
+      }
+      communityPairs.get(key)!.push(link);
+    }
+    
+    const bundledLinks = new Set<GraphLink>();
+    
+    for (const [, pairLinks] of communityPairs) {
+      if (pairLinks.length >= this.config.minLinksForBundle) {
+        for (const link of pairLinks) {
+          bundledLinks.add(link);
+        }
+      }
+    }
+    
+    return bundledLinks;
+  }
+
+  /**
    * Bundle links based on their source and target communities
    */
   public bundleLinks(
@@ -114,6 +153,16 @@ export class EdgeBundler {
 
     const bundles: LinkBundle[] = [];
     const unbundledLinks: GraphLink[] = [];
+
+    // Add links without community assignments to unbundledLinks
+    for (const link of links) {
+      const sourceCommunity = nodeCommunities.get(link.source);
+      const targetCommunity = nodeCommunities.get(link.target);
+      
+      if (sourceCommunity === undefined || targetCommunity === undefined) {
+        unbundledLinks.push(link);
+      }
+    }
 
     // Process each community pair
     for (const [key, pairLinks] of communityPairs) {
@@ -274,7 +323,8 @@ export class EdgeBundler {
    * Parse HSL color string
    */
   private parseHSL(colorStr: string): { h: number; s: number; l: number } | null {
-    const match = colorStr.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+    // Support decimal hue values (e.g., 137.5 from golden-angle community colors)
+    const match = colorStr.match(/hsl\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%\)/);
     if (!match) return null;
 
     return {
@@ -337,8 +387,8 @@ export class EdgeBundler {
 
     const mesh = new THREE.Mesh(geometry, material);
     
-    // Store bundle data for interaction
-    (mesh as any).bundleData = bundle;
+    // Store bundle data for interaction using THREE.Object3D.userData
+    mesh.userData = { ...(mesh.userData || {}), bundle };
 
     return mesh;
   }
