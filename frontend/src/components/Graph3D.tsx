@@ -737,27 +737,41 @@ export default function Graph3D(props: Props) {
       return { bundles: [], unbundledLinks: filtered.links };
     }
 
-    // Extract node positions from the force graph
-    const nodePositions = new Map<string, THREE.Vector3>();
-    for (const node of filtered.nodes as Array<GraphNode & { x?: number; y?: number; z?: number }>) {
-      if (typeof node.x === 'number' && typeof node.y === 'number' && typeof node.z === 'number') {
-        nodePositions.set(node.id, new THREE.Vector3(node.x, node.y, node.z));
+    // For now, just identify which links would be bundled (based on communities)
+    // Actual bundle geometry will be calculated in the useEffect with real positions
+    const communityPairs = new Map<string, typeof filtered.links>();
+    
+    for (const link of filtered.links) {
+      const sourceCommunity = communityResult.nodeCommunities.get(link.source);
+      const targetCommunity = communityResult.nodeCommunities.get(link.target);
+      
+      if (sourceCommunity === undefined || targetCommunity === undefined) {
+        continue;
+      }
+      
+      const key = sourceCommunity <= targetCommunity 
+        ? `${sourceCommunity}-${targetCommunity}` 
+        : `${targetCommunity}-${sourceCommunity}`;
+      
+      if (!communityPairs.has(key)) {
+        communityPairs.set(key, []);
+      }
+      communityPairs.get(key)!.push(link);
+    }
+
+    const unbundledLinks = [];
+    const bundles = [];
+
+    for (const [, pairLinks] of communityPairs) {
+      if (pairLinks.length >= 3) {
+        bundles.push({ links: pairLinks, count: pairLinks.length });
+      } else {
+        unbundledLinks.push(...pairLinks);
       }
     }
 
-    // Build community color map
-    const communityColors = new Map<number, string>();
-    for (const community of communityResult.communities) {
-      communityColors.set(community.id, community.color);
-    }
-
-    return edgeBundler.bundleLinks(
-      filtered.links,
-      communityResult.nodeCommunities,
-      communityColors,
-      nodePositions
-    );
-  }, [useBundling, communityResult, filtered, edgeBundler]);
+    return { bundles, unbundledLinks };
+  }, [useBundling, communityResult, filtered]);
 
   // Create a link visibility function that hides bundled links
   const bundledLinkIds = useMemo(() => {
@@ -835,7 +849,7 @@ export default function Graph3D(props: Props) {
 
   // Effect to manage bundle meshes in the THREE.js scene
   useEffect(() => {
-    if (!fgRef.current || !useBundling) {
+    if (!fgRef.current || !useBundling || !communityResult) {
       // Clean up existing bundle meshes
       const scene = (fgRef.current as any)?.scene?.();
       if (scene) {
@@ -849,30 +863,81 @@ export default function Graph3D(props: Props) {
       return;
     }
 
-    // Get the THREE.js scene from the force graph
-    const scene = (fgRef.current as any)?.scene?.();
-    if (!scene || bundledData.bundles.length === 0) return;
+    // Function to update bundles based on current node positions
+    const updateBundles = () => {
+      const scene = (fgRef.current as any)?.scene?.();
+      if (!scene) return;
 
-    // Remove old bundle meshes
-    for (const mesh of bundleMeshesRef.current) {
-      scene.remove(mesh);
-      mesh.geometry.dispose();
-      (mesh.material as THREE.Material).dispose();
-    }
-    bundleMeshesRef.current = [];
-
-    // Add new bundle meshes
-    for (const bundle of bundledData.bundles) {
-      if (bundle.controlPoints.length < 2) continue;
+      // Extract current node positions from the force graph
+      const nodePositions = new Map<string, THREE.Vector3>();
+      const graphData = (fgRef.current as any)?.graphData?.();
       
-      const mesh = edgeBundler.createBundleMesh(bundle, adaptiveLinkOpacity);
-      scene.add(mesh);
-      bundleMeshesRef.current.push(mesh);
-    }
+      if (graphData?.nodes) {
+        for (const node of graphData.nodes) {
+          const id = String(node.id);
+          if (typeof node.x === 'number' && typeof node.y === 'number' && typeof node.z === 'number') {
+            nodePositions.set(id, new THREE.Vector3(node.x, node.y, node.z));
+          }
+        }
+      }
 
-    // Trigger a re-render
-    (fgRef.current as any)?.refresh?.();
-  }, [useBundling, bundledData, edgeBundler, adaptiveLinkOpacity]);
+      // Skip if we don't have enough position data
+      if (nodePositions.size < filtered.nodes.length * 0.5) {
+        return;
+      }
+
+      // Build community color map
+      const communityColors = new Map<number, string>();
+      for (const community of communityResult.communities) {
+        communityColors.set(community.id, community.color);
+      }
+
+      // Calculate bundles
+      const { bundles } = edgeBundler.bundleLinks(
+        filtered.links,
+        communityResult.nodeCommunities,
+        communityColors,
+        nodePositions
+      );
+
+      // Remove old bundle meshes
+      for (const mesh of bundleMeshesRef.current) {
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        (mesh.material as THREE.Material).dispose();
+      }
+      bundleMeshesRef.current = [];
+
+      // Add new bundle meshes
+      for (const bundle of bundles) {
+        if (bundle.controlPoints.length < 2) continue;
+        
+        const mesh = edgeBundler.createBundleMesh(bundle, adaptiveLinkOpacity);
+        scene.add(mesh);
+        bundleMeshesRef.current.push(mesh);
+      }
+    };
+
+    // Initial bundle creation
+    updateBundles();
+
+    // Set up interval to update bundles periodically during simulation
+    const intervalId = setInterval(updateBundles, 1000);
+
+    return () => {
+      clearInterval(intervalId);
+      // Clean up bundle meshes
+      const scene = (fgRef.current as any)?.scene?.();
+      if (scene) {
+        for (const mesh of bundleMeshesRef.current) {
+          scene.remove(mesh);
+          mesh.geometry.dispose();
+          (mesh.material as THREE.Material).dispose();
+        }
+      }
+      bundleMeshesRef.current = [];
+    };
+  }, [useBundling, communityResult, filtered, edgeBundler, adaptiveLinkOpacity]);
 
   return (
     <div 
