@@ -1177,7 +1177,7 @@ function Graph3DOriginal(props: Props) {
         nodeCount={filtered.nodes.length}
         totalNodeCount={graphData?.nodes.length || 0}
         simulationState={hasPrecomputedPositions ? 'precomputed' : 'active'}
-        lodLevel={currentLODRef.current}
+        lodLevel={0}
       />
     </div>
   );
