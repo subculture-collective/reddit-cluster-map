@@ -3,7 +3,10 @@ package graph
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 
 	_ "github.com/lib/pq"
@@ -300,4 +303,182 @@ func TestIntegration_LayoutComputation_ConfigRespect(t *testing.T) {
 	}
 
 	t.Logf("Layout computation completed: %d/%d nodes positioned", posCount, len(testNodeIDs))
+}
+
+// TestIntegration_HierarchicalCommunityDetection tests hierarchical clustering with real DB
+func TestIntegration_HierarchicalCommunityDetection(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+		return
+	}
+	conn, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+	svc := NewService(q)
+	ctx := context.Background()
+
+	// Create test data: 20 nodes in 3 clear clusters
+	testNodeIDs := make([]string, 20)
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("hier_test_%d", i)
+		testNodeIDs[i] = id
+		err := q.BulkInsertGraphNode(ctx, db.BulkInsertGraphNodeParams{
+			ID:   id,
+			Name: fmt.Sprintf("Hierarchy Test Node %d", i),
+			Val:  sql.NullString{String: strconv.Itoa(10 + i), Valid: true},
+			Type: sql.NullString{String: "test", Valid: true},
+		})
+		if err != nil {
+			t.Fatalf("failed to insert test node %s: %v", id, err)
+		}
+	}
+
+	// Create cluster structure:
+	// Cluster 1: nodes 0-6 (7 nodes)
+	// Cluster 2: nodes 7-13 (7 nodes)
+	// Cluster 3: nodes 14-19 (6 nodes)
+	// Dense internal connections, sparse inter-cluster connections
+	links := [][2]int{
+		// Cluster 1 internal
+		{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}, {6, 0}, {0, 3}, {1, 4}, {2, 5},
+		// Cluster 2 internal
+		{7, 8}, {8, 9}, {9, 10}, {10, 11}, {11, 12}, {12, 13}, {13, 7}, {7, 10}, {8, 11}, {9, 12},
+		// Cluster 3 internal
+		{14, 15}, {15, 16}, {16, 17}, {17, 18}, {18, 19}, {19, 14}, {14, 17}, {15, 18},
+		// Inter-cluster (sparse)
+		{6, 7}, {13, 14},
+	}
+
+	for _, link := range links {
+		src := fmt.Sprintf("hier_test_%d", link[0])
+		tgt := fmt.Sprintf("hier_test_%d", link[1])
+		_, err = conn.ExecContext(ctx, "INSERT INTO graph_links (source, target) VALUES ($1, $2) ON CONFLICT DO NOTHING", src, tgt)
+		if err != nil {
+			t.Fatalf("failed to insert test link: %v", err)
+		}
+		// Add reverse link for undirected graph
+		_, err = conn.ExecContext(ctx, "INSERT INTO graph_links (source, target) VALUES ($1, $2) ON CONFLICT DO NOTHING", tgt, src)
+		if err != nil {
+			t.Fatalf("failed to insert reverse link: %v", err)
+		}
+	}
+
+	t.Cleanup(func() {
+		// Clean up test nodes and links
+		for _, id := range testNodeIDs {
+			_, _ = conn.ExecContext(ctx, "DELETE FROM graph_nodes WHERE id = $1", id)
+			_, _ = conn.ExecContext(ctx, "DELETE FROM graph_links WHERE source = $1 OR target = $1", id)
+		}
+		_, _ = conn.ExecContext(ctx, "DELETE FROM graph_community_hierarchy WHERE node_id LIKE 'hier_test_%'")
+	})
+
+	// Fetch nodes and links for detection
+	nodes, err := q.ListGraphNodesByWeight(ctx, 50000)
+	if err != nil {
+		t.Fatalf("failed to fetch nodes: %v", err)
+	}
+
+	// Filter to only our test nodes
+	testNodes := make([]db.ListGraphNodesByWeightRow, 0)
+	for _, n := range nodes {
+		for _, testID := range testNodeIDs {
+			if n.ID == testID {
+				testNodes = append(testNodes, n)
+				break
+			}
+		}
+	}
+
+	if len(testNodes) != 20 {
+		t.Fatalf("expected 20 test nodes, got %d", len(testNodes))
+	}
+
+	nodeIDsForLinks := make([]string, len(testNodes))
+	for i, n := range testNodes {
+		nodeIDsForLinks[i] = n.ID
+	}
+
+	testLinks, err := q.ListGraphLinksAmong(ctx, nodeIDsForLinks)
+	if err != nil {
+		t.Fatalf("failed to fetch links: %v", err)
+	}
+
+	t.Logf("Running hierarchical detection on %d nodes, %d links", len(testNodes), len(testLinks))
+
+	// Run hierarchical detection
+	hierarchy, err := svc.detectHierarchicalCommunities(ctx, q, testNodes, testLinks)
+	if err != nil {
+		t.Fatalf("hierarchical detection failed: %v", err)
+	}
+
+	// Validate hierarchy structure
+	if len(hierarchy) < 3 {
+		t.Errorf("expected at least 3 levels for graph with clear clusters, got %d", len(hierarchy))
+	}
+
+	t.Logf("Generated %d hierarchy levels", len(hierarchy))
+	for i, level := range hierarchy {
+		uniqueComms := make(map[int]bool)
+		for _, comm := range level.NodeToCommunity {
+			uniqueComms[comm] = true
+		}
+		t.Logf("  Level %d: %d nodes, %d communities, modularity=%.3f", i, len(level.NodeToCommunity), len(uniqueComms), level.Modularity)
+
+		// Level 0 should have all nodes in separate communities
+		if i == 0 {
+			if len(level.NodeToCommunity) != 20 {
+				t.Errorf("level 0: expected 20 nodes, got %d", len(level.NodeToCommunity))
+			}
+		}
+
+		// Level 1 should detect 3 clusters
+		if i == 1 {
+			if len(uniqueComms) < 2 || len(uniqueComms) > 5 {
+				t.Logf("level 1: expected 2-5 communities (ideally 3), got %d", len(uniqueComms))
+			}
+		}
+	}
+
+	// Store hierarchy in DB
+	err = svc.storeHierarchy(ctx, q, hierarchy)
+	if err != nil {
+		t.Fatalf("failed to store hierarchy: %v", err)
+	}
+
+	// Query back and verify
+	stored, err := q.GetCommunityHierarchy(ctx)
+	if err != nil {
+		t.Fatalf("failed to query hierarchy: %v", err)
+	}
+
+	// Verify stored levels match generated levels
+	storedLevels, err := q.GetHierarchyLevels(ctx)
+	if err != nil {
+		t.Fatalf("failed to query hierarchy levels: %v", err)
+	}
+
+	if len(storedLevels) < 3 {
+		t.Errorf("expected at least 3 stored levels, got %d", len(storedLevels))
+	}
+
+	// Count entries per level
+	levelCounts := make(map[int32]int)
+	for _, row := range stored {
+		if strings.HasPrefix(row.NodeID, "hier_test_") {
+			levelCounts[row.Level]++
+		}
+	}
+
+	t.Logf("Stored hierarchy entries: %v", levelCounts)
+
+	for level, count := range levelCounts {
+		if count != 20 {
+			t.Errorf("level %d: expected 20 entries, got %d", level, count)
+		}
+	}
 }

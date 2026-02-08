@@ -64,6 +64,19 @@ func (q *Queries) BulkInsertGraphNode(ctx context.Context, arg BulkInsertGraphNo
 	return err
 }
 
+const clearCommunityHierarchy = `-- name: ClearCommunityHierarchy :exec
+
+TRUNCATE TABLE graph_community_hierarchy
+`
+
+// ============================================================
+// Community Hierarchy Queries
+// ============================================================
+func (q *Queries) ClearCommunityHierarchy(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearCommunityHierarchy)
+	return err
+}
+
 const clearCommunityTables = `-- name: ClearCommunityTables :exec
 
 TRUNCATE TABLE graph_communities CASCADE
@@ -510,6 +523,56 @@ func (q *Queries) GetAllUsers(ctx context.Context) ([]GetAllUsersRow, error) {
 	return items, nil
 }
 
+const getCommunitiesAtLevel = `-- name: GetCommunitiesAtLevel :many
+SELECT 
+    community_id,
+    COUNT(*) as member_count,
+    AVG(centroid_x) as avg_x,
+    AVG(centroid_y) as avg_y,
+    AVG(centroid_z) as avg_z
+FROM graph_community_hierarchy
+WHERE level = $1
+GROUP BY community_id
+ORDER BY member_count DESC
+`
+
+type GetCommunitiesAtLevelRow struct {
+	CommunityID int32
+	MemberCount int64
+	AvgX        float64
+	AvgY        float64
+	AvgZ        float64
+}
+
+func (q *Queries) GetCommunitiesAtLevel(ctx context.Context, level int32) ([]GetCommunitiesAtLevelRow, error) {
+	rows, err := q.db.QueryContext(ctx, getCommunitiesAtLevel, level)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCommunitiesAtLevelRow
+	for rows.Next() {
+		var i GetCommunitiesAtLevelRow
+		if err := rows.Scan(
+			&i.CommunityID,
+			&i.MemberCount,
+			&i.AvgX,
+			&i.AvgY,
+			&i.AvgZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getCommunity = `-- name: GetCommunity :one
 SELECT id, label, size, modularity, created_at, updated_at FROM graph_communities
 WHERE id = $1
@@ -527,6 +590,60 @@ func (q *Queries) GetCommunity(ctx context.Context, id int32) (GraphCommunity, e
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getCommunityHierarchy = `-- name: GetCommunityHierarchy :many
+SELECT 
+    node_id,
+    level,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+FROM graph_community_hierarchy
+ORDER BY level, community_id, node_id
+`
+
+type GetCommunityHierarchyRow struct {
+	NodeID            string
+	Level             int32
+	CommunityID       int32
+	ParentCommunityID sql.NullInt32
+	CentroidX         sql.NullFloat64
+	CentroidY         sql.NullFloat64
+	CentroidZ         sql.NullFloat64
+}
+
+func (q *Queries) GetCommunityHierarchy(ctx context.Context) ([]GetCommunityHierarchyRow, error) {
+	rows, err := q.db.QueryContext(ctx, getCommunityHierarchy)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCommunityHierarchyRow
+	for rows.Next() {
+		var i GetCommunityHierarchyRow
+		if err := rows.Scan(
+			&i.NodeID,
+			&i.Level,
+			&i.CommunityID,
+			&i.ParentCommunityID,
+			&i.CentroidX,
+			&i.CentroidY,
+			&i.CentroidZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getCommunityLinks = `-- name: GetCommunityLinks :many
@@ -773,6 +890,87 @@ func (q *Queries) GetCommunitySupernodesWithPositions(ctx context.Context) ([]Ge
 			&i.PosZ,
 			&i.Source,
 			&i.Target,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getHierarchyLevels = `-- name: GetHierarchyLevels :many
+SELECT DISTINCT level
+FROM graph_community_hierarchy
+ORDER BY level
+`
+
+func (q *Queries) GetHierarchyLevels(ctx context.Context) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, getHierarchyLevels)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int32
+	for rows.Next() {
+		var level int32
+		if err := rows.Scan(&level); err != nil {
+			return nil, err
+		}
+		items = append(items, level)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getNodesAtLevel = `-- name: GetNodesAtLevel :many
+SELECT 
+    node_id,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+FROM graph_community_hierarchy
+WHERE level = $1
+ORDER BY community_id, node_id
+`
+
+type GetNodesAtLevelRow struct {
+	NodeID            string
+	CommunityID       int32
+	ParentCommunityID sql.NullInt32
+	CentroidX         sql.NullFloat64
+	CentroidY         sql.NullFloat64
+	CentroidZ         sql.NullFloat64
+}
+
+func (q *Queries) GetNodesAtLevel(ctx context.Context, level int32) ([]GetNodesAtLevelRow, error) {
+	rows, err := q.db.QueryContext(ctx, getNodesAtLevel, level)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetNodesAtLevelRow
+	for rows.Next() {
+		var i GetNodesAtLevelRow
+		if err := rows.Scan(
+			&i.NodeID,
+			&i.CommunityID,
+			&i.ParentCommunityID,
+			&i.CentroidX,
+			&i.CentroidY,
+			&i.CentroidZ,
 		); err != nil {
 			return nil, err
 		}
@@ -1164,6 +1362,48 @@ func (q *Queries) GetUserTotalActivity(ctx context.Context, authorID int32) (int
 	return total_activity, err
 }
 
+const insertCommunityHierarchy = `-- name: InsertCommunityHierarchy :exec
+INSERT INTO graph_community_hierarchy (
+    node_id,
+    level,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+) ON CONFLICT (node_id, level) DO UPDATE SET
+    community_id = EXCLUDED.community_id,
+    parent_community_id = EXCLUDED.parent_community_id,
+    centroid_x = EXCLUDED.centroid_x,
+    centroid_y = EXCLUDED.centroid_y,
+    centroid_z = EXCLUDED.centroid_z
+`
+
+type InsertCommunityHierarchyParams struct {
+	NodeID            string
+	Level             int32
+	CommunityID       int32
+	ParentCommunityID sql.NullInt32
+	CentroidX         sql.NullFloat64
+	CentroidY         sql.NullFloat64
+	CentroidZ         sql.NullFloat64
+}
+
+func (q *Queries) InsertCommunityHierarchy(ctx context.Context, arg InsertCommunityHierarchyParams) error {
+	_, err := q.db.ExecContext(ctx, insertCommunityHierarchy,
+		arg.NodeID,
+		arg.Level,
+		arg.CommunityID,
+		arg.ParentCommunityID,
+		arg.CentroidX,
+		arg.CentroidY,
+		arg.CentroidZ,
+	)
+	return err
+}
+
 const listGraphLinksAmong = `-- name: ListGraphLinksAmong :many
 SELECT source, target
 FROM graph_links
@@ -1199,7 +1439,7 @@ func (q *Queries) ListGraphLinksAmong(ctx context.Context, dollar_1 []string) ([
 }
 
 const listGraphNodesByWeight = `-- name: ListGraphNodesByWeight :many
-SELECT id, name, val, type
+SELECT id, name, val, type, pos_x, pos_y, pos_z
 FROM graph_nodes gn
 ORDER BY (
     CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
@@ -1212,6 +1452,9 @@ type ListGraphNodesByWeightRow struct {
 	Name string
 	Val  sql.NullString
 	Type sql.NullString
+	PosX sql.NullFloat64
+	PosY sql.NullFloat64
+	PosZ sql.NullFloat64
 }
 
 func (q *Queries) ListGraphNodesByWeight(ctx context.Context, limit int32) ([]ListGraphNodesByWeightRow, error) {
@@ -1228,6 +1471,9 @@ func (q *Queries) ListGraphNodesByWeight(ctx context.Context, limit int32) ([]Li
 			&i.Name,
 			&i.Val,
 			&i.Type,
+			&i.PosX,
+			&i.PosY,
+			&i.PosZ,
 		); err != nil {
 			return nil, err
 		}

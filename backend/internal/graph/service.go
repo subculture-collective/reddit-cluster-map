@@ -664,12 +664,38 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 
 	log.Printf("🎉 Graph data precalculation completed successfully")
 
-	// Run community detection and store results
+	// Run hierarchical community detection and store results
 	if queries, ok := s.store.(*db.Queries); ok {
-		if result, nodes, links, err := s.detectCommunities(ctx, queries); err != nil {
-			log.Printf("⚠️ community detection failed: %v", err)
-		} else if err := s.storeCommunities(ctx, queries, result, nodes, links); err != nil {
-			log.Printf("⚠️ failed to store communities: %v", err)
+		// Fetch nodes and links for community detection
+		nodes, err := queries.ListGraphNodesByWeight(ctx, 50000)
+		if err != nil {
+			log.Printf("⚠️ failed to fetch nodes for community detection: %v", err)
+		} else if len(nodes) == 0 {
+			log.Printf("ℹ️ No nodes found for community detection")
+		} else {
+			nodeIDs := make([]string, len(nodes))
+			for i, n := range nodes {
+				nodeIDs[i] = n.ID
+			}
+			links, err := queries.ListGraphLinksAmong(ctx, nodeIDs)
+			if err != nil {
+				log.Printf("⚠️ failed to fetch links for community detection: %v", err)
+			} else {
+				// Run hierarchical community detection
+				hierarchy, err := s.detectHierarchicalCommunities(ctx, queries, nodes, links)
+				if err != nil {
+					log.Printf("⚠️ hierarchical community detection failed: %v", err)
+				} else if err := s.storeHierarchy(ctx, queries, hierarchy); err != nil {
+					log.Printf("⚠️ failed to store hierarchy: %v", err)
+				}
+
+				// Also run flat community detection for backward compatibility (reuse same nodes/links)
+				if result, err := s.detectCommunitiesFromData(nodes, links); err != nil {
+					log.Printf("⚠️ community detection failed: %v", err)
+				} else if err := s.storeCommunities(ctx, queries, result, nodes, links); err != nil {
+					log.Printf("⚠️ failed to store communities: %v", err)
+				}
+			}
 		}
 	} else {
 		log.Printf("ℹ️ community detection skipped: store is not *db.Queries")
@@ -739,8 +765,9 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	iterations := cfg.LayoutIterations
 	batchSize := cfg.LayoutBatchSize
 	epsilon := cfg.LayoutEpsilon
+	theta := cfg.LayoutTheta
 
-	log.Printf("⚙️ layout configuration: max_nodes=%d, iterations=%d, batch_size=%d, epsilon=%.2f", maxNodes, iterations, batchSize, epsilon)
+	log.Printf("⚙️ layout configuration: max_nodes=%d, iterations=%d, batch_size=%d, epsilon=%.2f, theta=%.2f", maxNodes, iterations, batchSize, epsilon, theta)
 
 	if maxNodes <= 0 || iterations <= 0 {
 		log.Printf("ℹ️ layout computation disabled via configuration")
@@ -815,7 +842,8 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	cool := R / float64(iterations)
 	dispX := make([]float64, N)
 	dispY := make([]float64, N)
-	var rep = func(dist float64) float64 { return (k * k) / dist }
+	repX := make([]float64, N) // Reusable buffer for Barnes-Hut forces
+	repY := make([]float64, N)
 	var attr = func(dist float64) float64 { return (dist * dist) / k }
 
 	layoutComputeStart := time.Now()
@@ -823,23 +851,16 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 		for i := 0; i < N; i++ {
 			dispX[i], dispY[i] = 0, 0
 		}
-		for v := 0; v < N; v++ {
-			for u := v + 1; u < N; u++ {
-				dx := X[v] - X[u]
-				dy := Y[v] - Y[u]
-				dist := math.Hypot(dx, dy)
-				if dist < 1e-6 {
-					dx, dy, dist = (randFloat() - 0.5), (randFloat() - 0.5), 1
-				}
-				force := rep(dist)
-				rx := dx / dist * force
-				ry := dy / dist * force
-				dispX[v] += rx
-				dispY[v] += ry
-				dispX[u] -= rx
-				dispY[u] -= ry
-			}
+
+		// Use Barnes-Hut for O(n log n) repulsive forces (writes into repX, repY)
+		repStrength := k * k
+		calculateBarnesHutForces(X, Y, repX, repY, theta, repStrength)
+		for i := 0; i < N; i++ {
+			dispX[i] += repX[i]
+			dispY[i] += repY[i]
 		}
+
+		// Attractive forces along edges (still O(E))
 		for _, e := range E {
 			dx := X[e.a] - X[e.b]
 			dy := Y[e.a] - Y[e.b]
