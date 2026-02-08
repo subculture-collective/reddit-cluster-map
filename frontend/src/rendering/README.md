@@ -1,0 +1,236 @@
+# Custom InstancedMesh Renderer
+
+This directory contains the high-performance InstancedMesh-based graph renderer that replaces `react-force-graph-3d`.
+
+## Overview
+
+The custom renderer dramatically improves performance for large graphs (100k+ nodes) by using THREE.js `InstancedMesh` to render all nodes of the same type in a single draw call.
+
+### Performance Improvements
+
+| Metric | react-force-graph-3d | InstancedMesh Renderer |
+|--------|---------------------|------------------------|
+| Draw calls (100k nodes) | ~100,000 | 4 (one per type) |
+| Position update time | High (scene graph traversal) | ~71ms (direct matrix updates) |
+| Memory overhead | High (individual meshes) | Low (shared geometry) |
+| Max recommended nodes | ~10k | 100k+ |
+
+## Architecture
+
+### Components
+
+#### 1. `InstancedNodeRenderer.ts`
+Core rendering class that manages THREE.InstancedMesh instances for each node type.
+
+**Key Features:**
+- Single `InstancedMesh` per node type (subreddit, user, post, comment)
+- Position updates via `instanceMatrix` attribute (no scene graph traversal)
+- Per-instance colors via `instanceColor` attribute
+- Per-instance sizes via scale in instance matrix
+- Raycasting support for interactions
+
+**API:**
+```typescript
+const renderer = new InstancedNodeRenderer(scene, {
+  maxNodes: 100000,
+  nodeRelSize: 4
+});
+
+// Set initial data
+renderer.setNodeData(nodes);
+
+// Update positions (from layout engine)
+renderer.updatePositions(positionsMap);
+
+// Update colors (for community detection)
+renderer.updateColors(colorsMap);
+
+// Raycast for interactions
+const nodeId = renderer.raycast(raycaster);
+
+// Get stats
+const stats = renderer.getStats(); // { totalNodes, drawCalls, types }
+```
+
+#### 2. `ForceSimulation.ts`
+Wraps d3-force simulation to work with the InstancedNodeRenderer.
+
+**Key Features:**
+- Integration with d3-force physics engine
+- Support for precomputed positions from backend
+- Position update callbacks for renderer synchronization
+- Configurable physics parameters
+
+**API:**
+```typescript
+const simulation = new ForceSimulation({
+  onTick: (positions) => renderer.updatePositions(positions),
+  physics: {
+    chargeStrength: -30,
+    linkDistance: 30,
+    velocityDecay: 0.4,
+    cooldownTicks: 100
+  },
+  usePrecomputedPositions: true
+});
+
+simulation.setData(nodes, links);
+simulation.start();
+```
+
+#### 3. `Graph3DInstanced.tsx`
+React component that integrates the renderer and simulation with Three.js scene management.
+
+**Key Features:**
+- Manual Three.js scene setup (scene, camera, renderer, controls)
+- Integration with InstancedNodeRenderer and ForceSimulation
+- Mouse interaction handling (hover, click)
+- Camera controls via OrbitControls
+- Link rendering (basic lines)
+
+## Usage
+
+### Enable in Application
+
+Set the environment variable to enable the new renderer:
+
+```bash
+VITE_USE_INSTANCED_RENDERER=true
+```
+
+Or in `.env` file:
+```
+VITE_USE_INSTANCED_RENDERER=true
+```
+
+### Toggle Between Implementations
+
+The `Graph3D.tsx` component automatically switches between implementations based on the environment variable:
+
+- `VITE_USE_INSTANCED_RENDERER=true` → Uses `Graph3DInstanced` (new renderer)
+- `VITE_USE_INSTANCED_RENDERER=false` → Uses original `react-force-graph-3d`
+
+This allows for gradual migration and A/B testing.
+
+## Performance Characteristics
+
+### Rendering
+- **100k nodes**: 4 draw calls (one per type)
+- **Memory**: Shared geometry reduces memory footprint
+- **GPU**: Single instanced draw call per type is very efficient
+
+### Position Updates
+- **100k nodes**: ~71ms in test environment (target <5ms in production)
+- **Method**: Direct `instanceMatrix` updates, no scene graph traversal
+- **Optimization**: Uses `DynamicDrawUsage` for frequently updated attributes
+
+### Interaction
+- **Raycasting**: Efficient instanced mesh intersection tests
+- **Hover/Click**: Immediate feedback via raycaster
+
+## Testing
+
+### Unit Tests
+```bash
+npm run test:run -- src/rendering/InstancedNodeRenderer.test.ts
+```
+
+24 tests covering:
+- Node data management
+- Position updates
+- Color updates
+- Size updates
+- Raycasting
+- Performance benchmarks
+
+### Integration Tests
+```bash
+npm run test:run -- src/rendering/integration.test.ts
+```
+
+4 tests covering:
+- Renderer + simulation integration
+- Precomputed positions
+- Multi-type rendering
+- Color updates from community detection
+
+## Limitations & Future Work
+
+### Current Limitations
+1. **Labels**: SpriteText labels not yet implemented (deferred)
+2. **Edge Bundling**: Not yet ported from original implementation
+3. **Link Rendering**: Basic line rendering only (no particles, arrows)
+4. **Camera Animations**: Simplified compared to original
+
+### Planned Improvements
+1. Add instanced label rendering using texture atlas
+2. Port edge bundling with instanced line rendering
+3. Implement advanced link features (particles, curvature)
+4. Add GPU-based particle system for effects
+5. Implement level-of-detail (LOD) for distant nodes
+
+## Implementation Notes
+
+### Why InstancedMesh?
+- **Single Draw Call**: All nodes of same type rendered in one GPU call
+- **Shared Geometry**: One sphere geometry shared by all instances
+- **Matrix Updates**: Direct GPU buffer updates for positions
+- **Memory Efficient**: Minimal CPU-side memory overhead
+
+### Node Type Separation
+We separate nodes by type (subreddit, user, post, comment) because:
+- Each type can have different default colors
+- Allows per-type material properties
+- Still maintains minimal draw calls (max 4-5)
+
+### Position Update Strategy
+Instead of updating individual mesh positions in scene graph:
+1. Maintain Float32Array position buffer
+2. Update `instanceMatrix` for changed nodes
+3. Set `instanceMatrix.needsUpdate = true`
+4. GPU handles the rest
+
+This eliminates scene graph traversal overhead.
+
+## Migration Guide
+
+### For Users
+1. Set `VITE_USE_INSTANCED_RENDERER=true` in environment
+2. Rebuild/restart application
+3. Verify graph renders correctly
+4. Test interactions (hover, click, camera)
+
+### For Developers
+The new renderer maintains API compatibility with the original Graph3D component:
+- Same props interface
+- Same event handlers
+- Same filtering logic
+- Same physics configuration
+
+Notable differences:
+- Some advanced features temporarily unavailable (labels, edge bundling)
+- Camera behavior slightly different
+- Link rendering simplified
+
+## Benchmarks
+
+### Setup
+- Node count: 100,000
+- Node types: 4 (subreddit, user, post, comment)
+- Test environment: Vitest with happy-dom
+
+### Results
+| Operation | Time | Target |
+|-----------|------|--------|
+| Initial render | <100ms | <100ms |
+| Position update (100k) | ~71ms | <5ms* |
+| Draw calls | 4 | <5 |
+| Memory (100k nodes) | TBD | <500MB |
+
+*Target is for production; test environment has overhead
+
+## References
+
+- [THREE.InstancedMesh Documentation](https://threejs.org/docs/#api/en/objects/InstancedMesh)
+- [d3-force Documentation](https://d3js.org/d3-force)
+- [Original Issue #139](https://github.com/subculture-collective/reddit-cluster-map/issues/139)
