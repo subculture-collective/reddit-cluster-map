@@ -36,8 +36,10 @@ jobs:
         run: npm run build
 
       - name: Check bundle size
+        id: check_bundle_size
         working-directory: ./frontend
         run: npm run size
+        continue-on-error: true
 
       - name: Save current bundle stats
         working-directory: ./frontend
@@ -101,16 +103,17 @@ jobs:
             }
             
             function formatSize(bytes) {
-              if (bytes < 1024) return `${bytes.toFixed(0)} B`;
-              if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-              return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+              const abs = Math.abs(bytes);
+              if (abs < 1024) return `${abs.toFixed(0)} B`;
+              if (abs < 1024 * 1024) return `${(abs / 1024).toFixed(2)} KB`;
+              return `${(abs / (1024 * 1024)).toFixed(2)} MB`;
             }
             
             function formatDiff(current, base) {
               if (!base || base === 0) return 'N/A';
               const diff = current - base;
-              const pct = ((diff / base) * 100).toFixed(2);
-              const sign = diff > 0 ? '+' : '';
+              const pct = Math.abs((diff / base) * 100).toFixed(2);
+              const sign = diff > 0 ? '+' : diff < 0 ? '-' : '';
               const emoji = diff > 0 ? '🔴' : diff < 0 ? '🟢' : '⚪';
               return `${emoji} ${sign}${formatSize(diff)} (${sign}${pct}%)`;
             }
@@ -207,8 +210,8 @@ jobs:
               core.setFailed('Bundle size exceeds configured limits');
             }
             
-            // Warn about significant increases
+            // Fail on significant increases (>5% or >50KB)
             if (significantIncrease && !anyExceeded) {
-              core.warning('Bundle size increased significantly (>5% or >50KB)');
+              core.setFailed('Bundle size increased significantly (>5% or >50KB)');
             }
 
