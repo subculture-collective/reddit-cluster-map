@@ -13,6 +13,8 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { detectWebGLSupport } from '../utils/webglDetect';
 import LoadingSkeleton from './LoadingSkeleton';
+import NodeTooltip from './NodeTooltip';
+import { perfMonitor } from '../utils/performance';
 
 /**
  * Graph3DInstanced - High-performance 3D graph visualization using InstancedMesh
@@ -72,6 +74,7 @@ export default function Graph3DInstanced(props: Props) {
         nodeRelSize,
         physics,
         focusNodeId,
+        selectedId,
         onNodeSelect,
         communityResult,
         usePrecomputedLayout,
@@ -99,7 +102,20 @@ export default function Graph3DInstanced(props: Props) {
     const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
     const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
     const hoveredNodeRef = useRef<string | null>(null);
+    const selectedNodeRef = useRef<string | null>(null);
     const labelsGroupRef = useRef<THREE.Group | null>(null);
+    const lastRaycastTimeRef = useRef<number>(0);
+    const hoverThrottleRef = useRef<number | null>(null);
+    const cameraAnimationRef = useRef<number | null>(null);
+    
+    // State for tooltip
+    const [hoveredNode, setHoveredNode] = useState<{
+        id: string;
+        name?: string;
+        type?: string;
+        mouseX: number;
+        mouseY: number;
+    } | null>(null);
 
     const MAX_RENDER_NODES = useMemo(() => {
         const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -717,7 +733,17 @@ export default function Graph3DInstanced(props: Props) {
                     <span className='opacity-80'>Only show linked nodes</span>
                 </label>
             </div>
-            <div ref={containerRef} className='w-full h-full' />
+            <div 
+                ref={containerRef} 
+                className='w-full h-full'
+            />
+            <NodeTooltip
+                nodeId={hoveredNode?.id || null}
+                nodeName={hoveredNode?.name}
+                nodeType={hoveredNode?.type}
+                mouseX={hoveredNode?.mouseX || 0}
+                mouseY={hoveredNode?.mouseY || 0}
+            />
         </div>
     );
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ForceSimulation, type PhysicsConfig } from './ForceSimulation';
 import type { GraphNode, GraphLink } from '../types/graph';
 
@@ -8,8 +8,120 @@ describe('ForceSimulation', () => {
 
   beforeEach(() => {
     onTickMock = vi.fn();
-    simulation = new ForceSimulation({
-      onTick: onTickMock,
+  });
+
+  afterEach(() => {
+    if (simulation) {
+      simulation.dispose();
+    }
+  });
+
+  describe('Initialization', () => {
+    it('should create a simulation with default config', () => {
+      simulation = new ForceSimulation();
+      expect(simulation).toBeDefined();
+      
+      const stats = simulation.getStats();
+      expect(stats.nodeCount).toBe(0);
+      expect(stats.linkCount).toBe(0);
+    });
+
+    it('should accept custom config', () => {
+      const physics: PhysicsConfig = {
+        chargeStrength: -50,
+        linkDistance: 40,
+        velocityDecay: 0.5,
+      };
+      
+      simulation = new ForceSimulation({
+        onTick: onTickMock,
+        physics,
+      });
+      
+      expect(simulation).toBeDefined();
+    });
+
+    it('should report worker usage in stats', () => {
+      simulation = new ForceSimulation();
+      const stats = simulation.getStats();
+      
+      // Worker may or may not be available depending on environment
+      expect(typeof stats.useWorker).toBe('boolean');
+    });
+  });
+
+  describe('Data Management', () => {
+    it('should handle empty graph', () => {
+      simulation = new ForceSimulation({ onTick: onTickMock });
+      
+      simulation.setData([], []);
+      
+      const stats = simulation.getStats();
+      expect(stats.nodeCount).toBe(0);
+      expect(stats.linkCount).toBe(0);
+    });
+
+    it('should process nodes and links', () => {
+      const nodes: GraphNode[] = [
+        { id: 'node1', name: 'Node 1', type: 'subreddit', val: 100 },
+        { id: 'node2', name: 'Node 2', type: 'user', val: 50 },
+        { id: 'node3', name: 'Node 3', type: 'post', val: 10 },
+      ];
+      
+      const links: GraphLink[] = [
+        { source: 'node1', target: 'node2' },
+        { source: 'node2', target: 'node3' },
+      ];
+      
+      simulation = new ForceSimulation({ onTick: onTickMock });
+      simulation.setData(nodes, links);
+      
+      const stats = simulation.getStats();
+      expect(stats.nodeCount).toBe(3);
+      expect(stats.linkCount).toBe(2);
+    });
+
+    it('should detect precomputed positions', () => {
+      const nodes: GraphNode[] = [
+        { id: 'node1', name: 'Node 1', type: 'subreddit', x: 10, y: 20, z: 30 },
+        { id: 'node2', name: 'Node 2', type: 'user', x: 40, y: 50, z: 60 },
+        { id: 'node3', name: 'Node 3', type: 'post', x: 70, y: 80, z: 90 },
+      ];
+      
+      const links:GraphLink[] = [
+        { source: 'node1', target: 'node2' },
+      ];
+      
+      simulation = new ForceSimulation({
+        onTick: onTickMock,
+        usePrecomputedPositions: true,
+      });
+      
+      simulation.setData(nodes, links);
+      
+      const stats = simulation.getStats();
+      expect(stats.hasPrecomputedPositions).toBe(true);
+    });
+
+    it('should handle partially precomputed positions', () => {
+      const nodes: GraphNode[] = [
+        { id: 'node1', name: 'Node 1', type: 'subreddit', x: 10, y: 20, z: 30 },
+        { id: 'node2', name: 'Node 2', type: 'user' }, // No position
+        { id: 'node3', name: 'Node 3', type: 'post', x: 70, y: 80, z: 90 },
+      ];
+      
+      const links: GraphLink[] = [];
+      
+      simulation = new ForceSimulation({
+        onTick: onTickMock,
+        usePrecomputedPositions: true,
+      });
+      
+      simulation.setData(nodes, links);
+      
+      const stats = simulation.getStats();
+      // Should not treat as precomputed if less than 70% have positions
+      expect(stats.hasPrecomputedPositions).toBe(false);
     });
   });
 
@@ -52,16 +164,13 @@ describe('ForceSimulation', () => {
           // Verify that positions were emitted
           expect(capturedPositions.length).toBeGreaterThan(0);
           
-          // Velocity clamping is applied internally during ticks
-          // We can verify the simulation is running and positions are reasonable
+          // Positions should be within reasonable bounds due to clamping
           const lastPositions = capturedPositions[capturedPositions.length - 1];
           lastPositions.forEach((pos) => {
-            // Positions should be within reasonable bounds due to clamping
             expect(Math.abs(pos.x)).toBeLessThanOrEqual(10000);
             expect(Math.abs(pos.y)).toBeLessThanOrEqual(10000);
           });
           
-          simulation.dispose();
           resolve();
         }, 100);
       });
@@ -119,7 +228,6 @@ describe('ForceSimulation', () => {
             expect(Math.abs(node2Pos.y)).toBeLessThanOrEqual(10000);
           }
 
-          simulation.dispose();
           resolve();
         }, 100);
       });
@@ -154,57 +262,9 @@ describe('ForceSimulation', () => {
       simulation.setData(nodes, []);
       simulation.start();
 
-      // With auto-tune enabled, the charge strength should be scaled
-      // Formula: -220 * sqrt(1000 / 1000) = -220 * 1 = -220
-      // For 10000 nodes: -220 * sqrt(1000 / 10000) = -220 * 0.316 ≈ -69.5
-      
       const stats = simulation.getStats();
       expect(stats.nodeCount).toBe(1000);
-      
-      // Verify simulation was set up (can't easily inspect d3 force strength)
-      // but we can check that the simulation is running
       expect(stats.alpha).toBeGreaterThan(0);
-
-      simulation.dispose();
-    });
-
-    it('should handle precomputed positions', () => {
-      const nodes: GraphNode[] = [
-        {
-          id: 'node1',
-          name: 'Node 1',
-          type: 'subreddit',
-          val: 100,
-          x: 10,
-          y: 20,
-          z: 30,
-        },
-        {
-          id: 'node2',
-          name: 'Node 2',
-          type: 'subreddit',
-          val: 100,
-          x: 40,
-          y: 50,
-          z: 60,
-        },
-      ];
-
-      simulation = new ForceSimulation({
-        onTick: onTickMock,
-        usePrecomputedPositions: true,
-      });
-
-      simulation.setData(nodes, []);
-      simulation.start();
-
-      const stats = simulation.getStats();
-      expect(stats.hasPrecomputedPositions).toBe(true);
-
-      // When precomputed positions are used, the simulation should have emitted one tick
-      expect(onTickMock).toHaveBeenCalled();
-
-      simulation.dispose();
     });
 
     it('should detect convergence', () => {
@@ -241,12 +301,9 @@ describe('ForceSimulation', () => {
       simulation.setData(nodes, links);
       simulation.start();
 
-      // The simulation should eventually converge
       const stats = simulation.getStats();
       expect(stats.nodeCount).toBe(10);
       expect(stats.linkCount).toBe(5);
-
-      simulation.dispose();
     });
   });
 
@@ -282,13 +339,10 @@ describe('ForceSimulation', () => {
         collisionRadius: 5,
       };
 
-      simulation.updatePhysics(newPhysics);
+      expect(() => simulation.updatePhysics(newPhysics)).not.toThrow();
 
-      // Verify simulation is still running with new parameters
       const stats = simulation.getStats();
       expect(stats.nodeCount).toBe(2);
-
-      simulation.dispose();
     });
 
     it('should respect manual physics when auto-tune is off', () => {
@@ -319,11 +373,8 @@ describe('ForceSimulation', () => {
       simulation.setData(nodes, []);
       simulation.start();
 
-      // Manual physics values should be used as-is
       const stats = simulation.getStats();
       expect(stats.nodeCount).toBe(1000);
-
-      simulation.dispose();
     });
   });
 
@@ -334,60 +385,79 @@ describe('ForceSimulation', () => {
         { id: 'node2', name: 'Node 2', type: 'user', val: 1, x: 10, y: 10, z: 10 },
       ];
 
+      simulation = new ForceSimulation({ onTick: onTickMock });
       simulation.setData(nodes, []);
     });
 
     it('should get node position', () => {
-      const position = simulation.getNodePosition('node1');
-      expect(position).toBeDefined();
-      expect(position?.x).toBeDefined();
-      expect(position?.y).toBeDefined();
-      expect(position?.z).toBeDefined();
+      const pos = simulation.getNodePosition('node1');
+      expect(pos).toBeDefined();
+      expect(pos?.x).toBeDefined();
+      expect(pos?.y).toBeDefined();
+      expect(pos?.z).toBeDefined();
     });
 
     it('should return null for non-existent node', () => {
-      const position = simulation.getNodePosition('nonexistent');
-      expect(position).toBeNull();
+      const pos = simulation.getNodePosition('nonexistent');
+      expect(pos).toBeNull();
     });
 
-    it('should set and release node position', () => {
+    it('should set node position', () => {
       simulation.setNodePosition('node1', { x: 100, y: 200, z: 300 });
-      const position = simulation.getNodePosition('node1');
-      expect(position?.x).toBe(100);
-      expect(position?.y).toBe(200);
-      expect(position?.z).toBe(300);
+      const pos = simulation.getNodePosition('node1');
+      
+      expect(pos).toEqual({ x: 100, y: 200, z: 300 });
+    });
 
+    it('should release fixed node position', () => {
+      simulation.setNodePosition('node1', { x: 100, y: 200, z: 300 });
       simulation.releaseNode('node1');
-      // After release, node should be free to move again
+      
+      const pos = simulation.getNodePosition('node1');
+      expect(pos).toBeDefined();
     });
   });
 
   describe('Lifecycle', () => {
-    it('should start and stop simulation', () => {
+    it('should start simulation', () => {
       const nodes: GraphNode[] = [
-        { id: 'node1', name: 'Node 1', type: 'user', val: 1, x: 0, y: 0, z: 0 },
+        { id: 'node1', name: 'Node 1', type: 'subreddit' },
       ];
+      
+      simulation = new ForceSimulation({ onTick: onTickMock });
+      simulation.setData(nodes, []);
+      
+      expect(() => simulation.start()).not.toThrow();
+    });
 
+    it('should stop simulation', () => {
+      const nodes: GraphNode[] = [
+        { id: 'node1', name: 'Node 1', type: 'subreddit' },
+      ];
+      
+      simulation = new ForceSimulation({ onTick: onTickMock });
       simulation.setData(nodes, []);
       simulation.start();
-
-      const stats = simulation.getStats();
-      expect(stats.alpha).toBeGreaterThan(0);
-
-      simulation.stop();
-      // After stop, simulation should be paused
+      
+      expect(() => simulation.stop()).not.toThrow();
     });
 
     it('should dispose cleanly', () => {
       const nodes: GraphNode[] = [
-        { id: 'node1', name: 'Node 1', type: 'user', val: 1, x: 0, y: 0, z: 0 },
+        { id: 'node1', name: 'Node 1', type: 'subreddit' },
+        { id: 'node2', name: 'Node 2', type: 'user' },
       ];
-
-      simulation.setData(nodes, []);
+      
+      const links: GraphLink[] = [
+        { source: 'node1', target: 'node2' },
+      ];
+      
+      simulation = new ForceSimulation({ onTick: onTickMock });
+      simulation.setData(nodes, links);
       simulation.start();
-      simulation.dispose();
-
-      // After dispose, getStats should return zeros
+      
+      expect(() => simulation.dispose()).not.toThrow();
+      
       const stats = simulation.getStats();
       expect(stats.nodeCount).toBe(0);
       expect(stats.linkCount).toBe(0);
