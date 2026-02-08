@@ -62,10 +62,13 @@ export class LinkRenderer {
   private maxLinks: number;
   private needsUpdate = false;
   private lastCameraUpdate: { position: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  private positionsDirty = false; // Track if positions changed since last visibility update
+  private lastPerformanceWarning = 0; // Timestamp of last performance warning
   private readonly frustum = new THREE.Frustum();
   private readonly cameraMatrix = new THREE.Matrix4();
   private static readonly MIN_CAMERA_POSITION_DELTA = 10;
   private static readonly MIN_CAMERA_TARGET_DELTA = 10;
+  private static readonly PERFORMANCE_WARNING_THROTTLE = 5000; // Warn at most once per 5 seconds
 
   constructor(scene: THREE.Scene, config: LinkRendererConfig = {}) {
     this.scene = scene;
@@ -78,7 +81,7 @@ export class LinkRenderer {
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute(
       'position',
-      new THREE.BufferAttribute(this.positionsBuffer, 3)
+      new THREE.BufferAttribute(this.positionsBuffer, 3).setUsage(THREE.DynamicDrawUsage)
     );
     this.geometry.setDrawRange(0, 0); // Start with no links visible
 
@@ -100,20 +103,36 @@ export class LinkRenderer {
    * Set the links to be rendered
    */
   public setLinks(links: LinkData[]): void {
-    this.links = links;
+    const maxRenderableLinks = this.maxLinks;
+
+    // Clamp to maxLinks to avoid storing more links than the buffer can represent
+    let clampedLinks = links;
+    if (links.length > maxRenderableLinks) {
+      console.warn(
+        `LinkRenderer: received ${links.length} links but maxLinks is ${maxRenderableLinks}. ` +
+        `Only the first ${maxRenderableLinks} links will be rendered.`
+      );
+      clampedLinks = links.slice(0, maxRenderableLinks);
+    }
+
+    this.links = clampedLinks;
 
     // Resize buffer if necessary
-    const requiredSize = links.length * 2 * 3;
-    if (requiredSize > this.positionsBuffer.length) {
-      const newSize = Math.min(
-        Math.max(requiredSize, this.positionsBuffer.length * 2),
-        this.maxLinks * 2 * 3
-      );
-      this.positionsBuffer = new Float32Array(newSize);
-      this.geometry.setAttribute(
-        'position',
-        new THREE.BufferAttribute(this.positionsBuffer, 3)
-      );
+    const requiredSize = clampedLinks.length * 2 * 3;
+    const maxBufferSize = this.maxLinks * 2 * 3;
+
+    if (requiredSize > this.positionsBuffer.length && this.positionsBuffer.length < maxBufferSize) {
+      const candidateSize = Math.max(requiredSize, this.positionsBuffer.length * 2);
+      const newSize = Math.min(candidateSize, maxBufferSize);
+
+      // Avoid reallocating if we cannot actually increase capacity
+      if (newSize > this.positionsBuffer.length) {
+        this.positionsBuffer = new Float32Array(newSize);
+        this.geometry.setAttribute(
+          'position',
+          new THREE.BufferAttribute(this.positionsBuffer, 3).setUsage(THREE.DynamicDrawUsage)
+        );
+      }
     }
 
     this.needsUpdate = true;
@@ -124,6 +143,7 @@ export class LinkRenderer {
    */
   public updatePositions(positions: Map<string, { x: number; y: number; z: number }>): void {
     this.nodePositions = positions;
+    this.positionsDirty = true; // Mark that positions have changed
     this.needsUpdate = true;
   }
 
@@ -141,19 +161,24 @@ export class LinkRenderer {
       cameraTarget.multiplyScalar(100).add(cameraPos);
     }
 
+    // Force update if positions changed since last visibility update,
+    // even if camera hasn't moved (nodes may have moved in/out of frustum)
+    const forceUpdate = this.positionsDirty;
+
     // Only update if camera moved significantly (optimization)
-    if (this.lastCameraUpdate) {
+    if (!forceUpdate && this.lastCameraUpdate) {
       const posDiff = cameraPos.distanceTo(this.lastCameraUpdate.position);
       const targetDiff = cameraTarget.distanceTo(this.lastCameraUpdate.target);
       if (
         posDiff < LinkRenderer.MIN_CAMERA_POSITION_DELTA &&
         targetDiff < LinkRenderer.MIN_CAMERA_TARGET_DELTA
       ) {
-        return; // Camera hasn't moved significantly
+        return; // Camera hasn't moved significantly and positions haven't changed
       }
     }
 
     this.lastCameraUpdate = { position: cameraPos, target: cameraTarget };
+    this.positionsDirty = false; // Clear the flag after updating visibility
 
     // Update frustum
     camera.updateMatrixWorld();
@@ -210,9 +235,7 @@ export class LinkRenderer {
 
       // Check if we've exceeded buffer capacity
       if (vertexCount * 3 >= this.positionsBuffer.length) {
-        console.warn(
-          `LinkRenderer: Buffer capacity exceeded. Showing ${vertexCount / 2} of ${this.links.length} links.`
-        );
+        // Buffer capacity exceeded - this should not happen since setLinks() clamps to maxLinks
         break;
       }
 
@@ -239,9 +262,14 @@ export class LinkRenderer {
 
     const elapsed = performance.now() - startTime;
     if (elapsed > 10) {
-      console.warn(
-        `LinkRenderer: Buffer update took ${elapsed.toFixed(2)}ms for ${vertexCount / 2} links (target <10ms)`
-      );
+      // Throttle warnings to avoid console spam (max once per 5 seconds)
+      const now = Date.now();
+      if (now - this.lastPerformanceWarning > LinkRenderer.PERFORMANCE_WARNING_THROTTLE) {
+        console.warn(
+          `LinkRenderer: Buffer update took ${elapsed.toFixed(2)}ms for ${vertexCount / 2} links (target <10ms)`
+        );
+        this.lastPerformanceWarning = now;
+      }
     }
   }
 

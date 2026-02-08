@@ -239,7 +239,7 @@ export default function Graph3DInstanced(props: Props) {
     });
     nodeRendererRef.current = nodeRenderer;
 
-    // Create link renderer
+    // Create link renderer with initial opacity
     const linkRenderer = new LinkRenderer(scene, {
       maxLinks: MAX_RENDER_LINKS,
       opacity: linkOpacity,
@@ -328,7 +328,7 @@ export default function Graph3DInstanced(props: Props) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [webglSupported, nodeRelSize, MAX_RENDER_NODES, MAX_RENDER_LINKS, linkOpacity, initialCamera, onCameraChange]);
+  }, [webglSupported, nodeRelSize, MAX_RENDER_NODES, MAX_RENDER_LINKS, initialCamera, onCameraChange]);
 
   // Process graph data with filters
   const filtered = useMemo(() => {
