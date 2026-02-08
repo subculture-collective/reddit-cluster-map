@@ -64,6 +64,8 @@ export class LinkRenderer {
   private lastCameraUpdate: { position: THREE.Vector3; target: THREE.Vector3 } | null = null;
   private readonly frustum = new THREE.Frustum();
   private readonly cameraMatrix = new THREE.Matrix4();
+  private static readonly MIN_CAMERA_POSITION_DELTA = 10;
+  private static readonly MIN_CAMERA_TARGET_DELTA = 10;
 
   constructor(scene: THREE.Scene, config: LinkRendererConfig = {}) {
     this.scene = scene;
@@ -143,7 +145,10 @@ export class LinkRenderer {
     if (this.lastCameraUpdate) {
       const posDiff = cameraPos.distanceTo(this.lastCameraUpdate.position);
       const targetDiff = cameraTarget.distanceTo(this.lastCameraUpdate.target);
-      if (posDiff < 10 && targetDiff < 10) {
+      if (
+        posDiff < LinkRenderer.MIN_CAMERA_POSITION_DELTA &&
+        targetDiff < LinkRenderer.MIN_CAMERA_TARGET_DELTA
+      ) {
         return; // Camera hasn't moved significantly
       }
     }

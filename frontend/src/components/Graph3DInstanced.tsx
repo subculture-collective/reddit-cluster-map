@@ -260,7 +260,9 @@ export default function Graph3DInstanced(props: Props) {
     let lastCameraUpdate = 0;
     let lastLinkVisibilityUpdate = 0;
     const CAMERA_UPDATE_INTERVAL = 1000; // Update every 1 second
-    const LINK_VISIBILITY_UPDATE_INTERVAL = 200; // Update link visibility every 200ms
+    // Link visibility update interval balances responsiveness vs performance
+    // LinkRenderer has built-in camera movement detection to skip redundant updates
+    const LINK_VISIBILITY_UPDATE_INTERVAL = 300; // Check every 300ms (reasonable for camera movement)
     const lastCamPos = { x: NaN, y: NaN, z: NaN };
     const EPSILON = 1e-3;
 
@@ -270,7 +272,9 @@ export default function Graph3DInstanced(props: Props) {
       animationId = requestAnimationFrame(animate);
       controls.update();
       
-      // Update link visibility and refresh when camera moves
+      // Update link visibility when camera moves
+      // updateVisibility() skips work if camera hasn't moved significantly
+      // refresh() skips work if visibility hasn't changed (needsUpdate flag)
       const now = Date.now();
       if (linkRenderer && now - lastLinkVisibilityUpdate > LINK_VISIBILITY_UPDATE_INTERVAL) {
         linkRenderer.updateVisibility(camera);
