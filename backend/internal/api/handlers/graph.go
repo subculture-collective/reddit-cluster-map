@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/logger"
@@ -144,14 +145,14 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 			logger.WarnContext(ctx, "Precalc query timed out", "timeout", timeout)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "query timeout")
-			http.Error(w, `{"error":"Graph query timeout - dataset may be too large. Try reducing max_nodes or max_links parameters."}`, http.StatusRequestTimeout)
+			apierr.WriteErrorWithContext(w, r, apierr.GraphTimeout(""))
 			return
 		}
 		if ctx.Err() == context.Canceled || err == context.Canceled {
 			logger.WarnContext(ctx, "Precalc query was canceled")
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "query canceled")
-			http.Error(w, `{"error":"Request canceled"}`, http.StatusRequestTimeout)
+			apierr.WriteErrorWithContext(w, r, apierr.SystemTimeout("Request canceled"))
 			return
 		}
 		logger.WarnContext(ctx, "Precalc capped query failed, falling back", "error", err)
@@ -230,7 +231,7 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 		graphCacheMu.Unlock()
 		return
 	}
-	handleLegacyGraph(ctx, w, h, maxNodes, maxLinks, allowAll, allowedTypes, typeKey, withPos)
+	handleLegacyGraph(ctx, w, r, h, maxNodes, maxLinks, allowAll, allowedTypes, typeKey, withPos)
 }
 
 func toString(v interface{}) string {
@@ -334,11 +335,11 @@ func parseIntDefault(s string, def int) int {
 	return def
 }
 
-func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, h *Handler, maxNodes, maxLinks int, allowAll bool, allowedTypes map[string]struct{}, typeKey string, withPos bool) {
+func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, r *http.Request, h *Handler, maxNodes, maxLinks int, allowAll bool, allowedTypes map[string]struct{}, typeKey string, withPos bool) {
 	cacheKeyStr := cacheKey(maxNodes, maxLinks, typeKey, withPos)
 	data, err := h.queries.GetGraphData(ctx)
 	if err != nil {
-		http.Error(w, "Failed to fetch graph data", http.StatusInternalServerError)
+		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch graph data"))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

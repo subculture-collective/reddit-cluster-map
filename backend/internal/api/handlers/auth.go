@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/authstore"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
@@ -28,7 +29,7 @@ func NewAuthHandlers(q *db.Queries) *AuthHandlers { return &AuthHandlers{q: q} }
 func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	cfg := config.Load()
 	if cfg.RedditClientID == "" || cfg.RedditRedirectURI == "" {
-		http.Error(w, "OAuth not configured", http.StatusServiceUnavailable)
+		apierr.WriteErrorWithContext(w, r, apierr.AuthOAuthNotConfigured())
 		return
 	}
 	log.Printf("Initiating OAuth login (client_id: %s)", secrets.Mask(cfg.RedditClientID))
@@ -53,26 +54,26 @@ func (h *AuthHandlers) Callback(w http.ResponseWriter, r *http.Request) {
 	cfg := config.Load()
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Error(w, "missing code", http.StatusBadRequest)
+		apierr.WriteErrorWithContext(w, r, apierr.ValidationMissingField("code"))
 		return
 	}
 	tok, err := exchangeCode(ctx, cfg, code)
 	if err != nil {
 		log.Printf("OAuth exchange failed: %v", err)
-		http.Error(w, "token exchange failed", http.StatusBadGateway)
+		apierr.WriteErrorWithContext(w, r, apierr.AuthOAuthFailed("Token exchange failed"))
 		return
 	}
 	me, err := fetchMe(ctx, cfg, tok.AccessToken)
 	if err != nil {
 		log.Printf("Fetch me failed: %v", err)
-		http.Error(w, "failed to fetch identity", http.StatusBadGateway)
+		apierr.WriteErrorWithContext(w, r, apierr.AuthOAuthFailed("Failed to fetch identity"))
 		return
 	}
 	store := authstore.New(h.q)
 	expiresAt := time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second)
 	if _, err := store.Upsert(ctx, me.ID, me.Name, tok.AccessToken, tok.RefreshToken, tok.Scope, expiresAt); err != nil {
 		log.Printf("Store token failed: %v", err)
-		http.Error(w, "failed to persist account", http.StatusInternalServerError)
+		apierr.WriteErrorWithContext(w, r, apierr.SystemDatabase("Failed to persist account"))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
