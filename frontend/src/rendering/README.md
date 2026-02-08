@@ -120,8 +120,7 @@ const simulation = new ForceSimulation({
   physics: {
     chargeStrength: -30,
     linkDistance: 30,
-    velocityDecay: 0.4,
-    cooldownTicks: 100
+    velocityDecay: 0.4
   },
   usePrecomputedPositions: true
 });

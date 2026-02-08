@@ -218,7 +218,7 @@ Example:
 
 ### Alpha Decay
 
-The worker continues sending position updates until alpha < 0.01, at which point the simulation is considered stable.
+The worker relies on d3-force's default alpha and decay behavior. It continues sending position updates while the simulation is "hot" and naturally reduces update frequency as the simulation cools and approaches d3-force's internal stability threshold.
 
 ## Troubleshooting
 

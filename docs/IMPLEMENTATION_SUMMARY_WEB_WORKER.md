@@ -246,7 +246,7 @@ From issue #150:
 - ✅ Position updates arrive at >=20 Hz
 - ✅ Physics config changes (charge, distance, damping) apply without restart
 - ✅ Worker cleans up properly on component unmount
-- ✅ Precomputed positions bypass the worker entirely
+- ✅ Precomputed positions bypass the worker and simulation entirely
 
 **All acceptance criteria met.**
 

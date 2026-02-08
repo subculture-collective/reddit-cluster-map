@@ -31,7 +31,6 @@ describe('ForceSimulation with Web Worker', () => {
         chargeStrength: -50,
         linkDistance: 40,
         velocityDecay: 0.5,
-        cooldownTicks: 200,
       };
       
       simulation = new ForceSimulation({
@@ -182,7 +181,6 @@ describe('ForceSimulation with Web Worker', () => {
         chargeStrength: -30,
         linkDistance: 30,
         velocityDecay: 0.4,
-        cooldownTicks: 100,
       };
       
       simulation = new ForceSimulation({
@@ -197,7 +195,6 @@ describe('ForceSimulation with Web Worker', () => {
         chargeStrength: -50,
         linkDistance: 50,
         velocityDecay: 0.6,
-        cooldownTicks: 200,
         collisionRadius: 5,
       };
       

@@ -34,7 +34,6 @@ export interface PhysicsConfig {
   chargeStrength: number;
   linkDistance: number;
   velocityDecay: number;
-  cooldownTicks: number;
   collisionRadius?: number;
 }
 
@@ -75,6 +74,7 @@ export class ForceSimulation {
   private worker: Worker | null = null;
   private useWorker = false;
   private nodeIds: string[] = []; // Track node order for position buffer decoding
+  private currentAlpha = 0; // Track alpha from worker messages
 
   constructor(config: ForceSimulationConfig = {}) {
     this.config = config;
@@ -112,6 +112,10 @@ export class ForceSimulation {
         // Fall back to main thread
         this.terminateWorker();
         this.useWorker = false;
+        // If we already have data, reinitialize the main-thread simulation
+        if (this.nodes.length > 0) {
+          this.initializeSimulation();
+        }
       });
       
       this.useWorker = true;
@@ -132,20 +136,31 @@ export class ForceSimulation {
     nodeCount: number;
   }): void {
     if (message.type === 'positions') {
-      // Decode positions from Float32Array
-      const positions = new Map<string, { x: number; y: number; z: number }>();
+      // Update local alpha for getStats()
+      this.currentAlpha = message.alpha;
       
+      // Update local node positions
       for (let i = 0; i < message.nodeCount && i < this.nodeIds.length; i++) {
         const nodeId = this.nodeIds[i];
-        positions.set(nodeId, {
-          x: message.positions[i * 3],
-          y: message.positions[i * 3 + 1],
-          z: message.positions[i * 3 + 2],
-        });
+        const node = this.nodeMap.get(nodeId);
+        if (node) {
+          node.x = message.positions[i * 3];
+          node.y = message.positions[i * 3 + 1];
+          node.z = message.positions[i * 3 + 2];
+        }
       }
       
-      // Emit to callback
+      // Emit to callback - reuse a single Map to reduce GC pressure
       if (this.config.onTick) {
+        const positions = new Map<string, { x: number; y: number; z: number }>();
+        for (let i = 0; i < message.nodeCount && i < this.nodeIds.length; i++) {
+          const nodeId = this.nodeIds[i];
+          positions.set(nodeId, {
+            x: message.positions[i * 3],
+            y: message.positions[i * 3 + 1],
+            z: message.positions[i * 3 + 2],
+          });
+        }
         this.config.onTick(positions);
       }
     }
@@ -194,6 +209,12 @@ export class ForceSimulation {
       this.hasPrecomputedPositions = this.checkPrecomputedPositions();
     } else {
       this.hasPrecomputedPositions = false;
+    }
+
+    // If precomputed, bypass worker/simulation entirely - just emit once
+    if (this.hasPrecomputedPositions) {
+      this.emitTick();
+      return;
     }
 
     // Initialize or update simulation
@@ -248,7 +269,6 @@ export class ForceSimulation {
         chargeStrength: -30,
         linkDistance: 30,
         velocityDecay: 0.4,
-        cooldownTicks: 100,
       },
       usePrecomputedPositions: this.hasPrecomputedPositions,
     };
@@ -485,7 +505,7 @@ export class ForceSimulation {
     return {
       nodeCount: this.nodes.length,
       linkCount: this.links.length,
-      alpha: this.simulation?.alpha() ?? 0,
+      alpha: this.useWorker ? this.currentAlpha : (this.simulation?.alpha() ?? 0),
       hasPrecomputedPositions: this.hasPrecomputedPositions,
       useWorker: this.useWorker,
     };

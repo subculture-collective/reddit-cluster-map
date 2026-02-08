@@ -36,7 +36,6 @@ interface PhysicsConfig {
   chargeStrength: number;
   linkDistance: number;
   velocityDecay: number;
-  cooldownTicks: number;
   collisionRadius?: number;
 }
 
@@ -78,8 +77,11 @@ interface PositionsMessage {
 let simulation: d3.Simulation<SimNode, SimLink> | null = null;
 let nodes: SimNode[] = [];
 let links: SimLink[] = [];
-const nodeMap: Map<string, number> = new Map(); // id -> index in nodes array
 let hasPrecomputedPositions = false;
+
+// Reusable ping-pong buffers to avoid allocating a new Float32Array every tick
+let positionBuffers: Float32Array[] = [];
+let currentPositionBufferIndex = 0;
 
 /**
  * Initialize simulation with graph data
@@ -100,12 +102,6 @@ function initSimulation(message: InitMessage): void {
     z: node.z ?? 0,
     val: node.val,
   }));
-  
-  // Build node index map
-  nodeMap.clear();
-  nodes.forEach((node, idx) => {
-    nodeMap.set(node.id, idx);
-  });
   
   // Convert links
   links = message.links.map((link) => ({
@@ -232,18 +228,35 @@ function stopSimulation(): void {
 /**
  * Send current positions to main thread using transferable Float32Array
  * Format: [x1, y1, z1, x2, y2, z2, ...] with node IDs in same order as received
+ * Uses ping-pong buffers to avoid allocating new arrays every tick
  */
 function sendPositions(): void {
   if (nodes.length === 0) return;
   
-  // Create position buffer: 3 floats per node (x, y, z)
-  const buffer = new Float32Array(nodes.length * 3);
+  const requiredLength = nodes.length * 3; // 3 floats per node (x, y, z)
+  
+  // Initialize or resize ping-pong buffers when node count changes
+  const needsInitOrResize =
+    positionBuffers.length !== 2 ||
+    positionBuffers[0].length !== requiredLength ||
+    positionBuffers[1].length !== requiredLength;
+  
+  if (needsInitOrResize) {
+    positionBuffers = [
+      new Float32Array(requiredLength),
+      new Float32Array(requiredLength),
+    ];
+    currentPositionBufferIndex = 0;
+  }
+  
+  const buffer = positionBuffers[currentPositionBufferIndex];
   
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
-    buffer[i * 3] = node.x ?? 0;
-    buffer[i * 3 + 1] = node.y ?? 0;
-    buffer[i * 3 + 2] = node.z ?? 0;
+    const baseIndex = i * 3;
+    buffer[baseIndex] = node.x ?? 0;
+    buffer[baseIndex + 1] = node.y ?? 0;
+    buffer[baseIndex + 2] = node.z ?? 0;
   }
   
   const message: PositionsMessage = {
@@ -255,6 +268,9 @@ function sendPositions(): void {
   
   // Transfer ownership of the buffer to avoid copying (use structured clone transfer)
   self.postMessage(message, { transfer: [buffer.buffer] });
+  
+  // Flip to the other buffer for the next tick
+  currentPositionBufferIndex = currentPositionBufferIndex === 0 ? 1 : 0;
 }
 
 /**
