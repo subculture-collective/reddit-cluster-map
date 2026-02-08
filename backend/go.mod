@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/andybalholm/brotli v1.2.0
 	github.com/getsentry/sentry-go v0.36.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/sqlc-dev/pqtype v0.3.0
