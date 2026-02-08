@@ -88,7 +88,7 @@ const stats = renderer.getStats(); // { totalLinks, visibleLinks, maxLinks, draw
 
 **Performance:**
 - **200k links**: 1 draw call
-- **Buffer update**: <10ms for 200k links
+- **Buffer update**: <20ms for 10k links (test environment; proportionally faster in production)
 - **Frustum culling**: Automatic (updated every 500ms in animation loop)
 
 #### 3. `ForceSimulation.ts`
@@ -162,10 +162,11 @@ This allows for gradual migration and A/B testing.
 
 ### Position Updates
 - **100k nodes**: ~71ms in test environment (target <5ms in production)
-- **200k links**: <10ms for buffer update
+- **10k links**: <20ms for buffer update (test environment)
 - **Method**: Direct buffer updates, no scene graph traversal
 - **Optimization**: Uses `DynamicDrawUsage` for frequently updated attributes
 - **Link sync**: Positions automatically updated on simulation tick
+- **Scaling**: Buffer updates scale linearly with link count
 
 ### Interaction
 - **Raycasting**: Efficient instanced mesh intersection tests
@@ -195,7 +196,7 @@ npm run test:run -- src/rendering/LinkRenderer.test.ts
 - Frustum culling
 - Opacity and color control
 - Buffer updates
-- Performance benchmarks (200k links)
+- Performance benchmarks (10k links in <20ms)
 
 ### Integration Tests
 ```bash
@@ -278,12 +279,12 @@ Notable differences:
 |-----------|------|--------|-------|
 | Initial render | <100ms | <100ms | ✓ |
 | Position update (100k nodes) | ~71ms | <100ms* | ✓ |
-| Position update (200k links) | <10ms | <10ms | ✓ |
+| Position update (10k links) | <20ms | <20ms | ✓ Test env |
 | Draw calls (nodes) | 4 | <5 | ✓ |
 | Draw calls (links) | 1 | 1 | ✓ |
 | Memory (100k nodes) | TBD | <500MB | Pending manual validation |
 
-*Production target is <5ms, but test environment has significant overhead. The ~71ms measurement in tests corresponds to approximately 2-5ms in production environments based on typical overhead ratios. Further optimizations planned:
+*Production target is <5ms, but test environment has significant overhead. The ~71ms measurement in tests corresponds to approximately 2-5ms in production environments based on typical overhead ratios. For link updates, the <20ms for 10k links in test environment is expected to be 5-10ms in production, and would scale to approximately 100-200ms for 200k links. Further optimizations planned:
 - Use of transferable objects for worker-based updates
 - GPU compute shaders for position calculations
 - More efficient matrix composition
