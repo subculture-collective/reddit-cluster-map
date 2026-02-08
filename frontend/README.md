@@ -8,6 +8,57 @@ This app renders the Reddit Cluster Map using `react-force-graph-3d`.
 - Start dev server: `npm run dev`
 - Build: `npm run build`
 - Preview build: `npm run preview`
+- Check bundle size: `npm run size`
+
+## Bundle Size Tracking
+
+The project includes automated bundle size tracking to prevent performance regressions.
+
+### Bundle Size Limits
+
+- **JS Bundle**: 500 KB (gzipped)
+- **CSS Bundle**: 50 KB (gzipped)
+
+### CI Integration
+
+On every pull request:
+1. Bundle is built and analyzed
+2. Size is compared against the base branch
+3. CI fails if bundle exceeds limits
+4. PR comment shows size comparison with diff
+5. Bundle visualization (treemap) is generated as an artifact
+
+### Local Testing
+
+To check bundle size locally:
+
+```bash
+npm run build
+npm run size
+```
+
+To see detailed JSON output:
+
+```bash
+npm run size:json
+```
+
+### Bundle Analysis
+
+After building, a detailed bundle analysis is available at `dist/stats.html`. Open this file in a browser to see:
+- Interactive treemap of all modules
+- Size breakdown by package
+- Gzip and Brotli compressed sizes
+
+### Configuration
+
+Bundle size limits are configured in `.size-limit.json`. To adjust limits:
+
+1. Edit `.size-limit.json`
+2. Update the `limit` values
+3. Commit the changes
+
+The CI will enforce the new limits on subsequent PRs.
 
 ## Environment
 

@@ -1,0 +1,14 @@
+[
+  {
+    "name": "Total JS bundle",
+    "path": "dist/assets/*.js",
+    "limit": "500 KB",
+    "gzip": true
+  },
+  {
+    "name": "Total CSS bundle",
+    "path": "dist/assets/*.css",
+    "limit": "50 KB",
+    "gzip": true
+  }
+]
