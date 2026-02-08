@@ -18,25 +18,23 @@ export default function Communities({
   onApplyCommunityColors,
 }: CommunitiesProps) {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [communityResult, setCommunityResult] =
-    useState<CommunityResult | null>(null);
-  const [selectedCommunity, setSelectedCommunity] = useState<number | null>(
-    null
-  );
+  const [communityResult, setCommunityResult] = useState<CommunityResult | null>(null);
+  const [selectedCommunity, setSelectedCommunity] = useState<number | null>(null);
   const [computing, setComputing] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialLoad = useRef(true);
 
   const computeCommunities = useCallback(
     (data: GraphData) => {
       setComputing(true);
-      
+
       // Clear any existing timeout to prevent state updates from previous calls
       if (timeoutRef.current !== null) {
         clearTimeout(timeoutRef.current);
       }
-      
+
       // Use setTimeout to allow UI to update
       timeoutRef.current = setTimeout(() => {
         const result = detectCommunities(data);
@@ -51,13 +49,13 @@ export default function Communities({
   );
 
   const loadGraph = useCallback(async () => {
-    setLoading(true);
+    if (initialLoad.current) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const base = (import.meta.env?.VITE_API_URL || "/api").replace(/\/$/, "");
-      const response = await fetch(
-        `${base}/graph?max_nodes=50000&max_links=100000`
-      );
+      const response = await fetch(`${base}/graph?max_nodes=50000&max_links=100000`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = (await response.json()) as GraphData;
       setGraphData(data);
@@ -69,13 +67,24 @@ export default function Communities({
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setLoading(false);
+      if (initialLoad.current) {
+        setLoading(false);
+        initialLoad.current = false;
+      }
     }
   }, [computeCommunities]);
 
   useEffect(() => {
+    // Only fetch once on mount
     loadGraph();
-  }, [loadGraph]);
+    // Cleanup timeout on unmount
+    return () => {
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Cleanup timeout on unmount
   useEffect(() => {

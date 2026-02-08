@@ -5,9 +5,12 @@
 -include backend/.env
 export
 
-# Docker Compose paths
-COMPOSE_FILE = backend/docker-compose.yml
-COMPOSE_TEST_FILE = backend/docker-compose.test.yml
+# Paths (absolute to avoid duplication issues when changing directories)
+ROOT_DIR := $(CURDIR)
+COMPOSE_FILE_PATH := $(ROOT_DIR)/backend/docker-compose.yml
+COMPOSE_TEST_FILE_PATH := $(ROOT_DIR)/backend/docker-compose.test.yml
+MIGRATIONS_DIR := $(ROOT_DIR)/backend/migrations
+MIGRATE_IMAGE := migrate/migrate:latest
 
 # Docker container names
 DB_CONTAINER = reddit-cluster-db
@@ -50,7 +53,7 @@ setup: ## Initial setup - install dependencies and configure environment
 	@echo "✓ Backend dependencies installed"
 	@echo ""
 	@echo "==> Installing frontend dependencies..."
-	@cd frontend && npm ci
+	@cd frontend && npm install
 	@echo "✓ Frontend dependencies installed"
 	@echo ""
 	@echo "✓ Setup complete! Next steps:"
@@ -98,7 +101,7 @@ install-tools: ## Install sqlc and golang-migrate (requires Go)
 
 up: check-env ## Start all services (database, API, crawler, frontend, monitoring)
 	@echo "==> Starting all services..."
-	@cd backend && docker compose up -d
+	@docker compose -f $(COMPOSE_FILE_PATH) up -d
 	@echo "✓ Services started"
 	@echo ""
 	@echo "Services available at:"
@@ -109,7 +112,7 @@ up: check-env ## Start all services (database, API, crawler, frontend, monitorin
 
 down: ## Stop all services
 	@echo "==> Stopping all services..."
-	@cd backend && docker compose down
+	@docker compose -f $(COMPOSE_FILE_PATH) down
 	@echo "✓ Services stopped"
 
 restart: ## Restart all services
@@ -118,41 +121,60 @@ restart: ## Restart all services
 
 rebuild: ## Rebuild and restart all services
 	@echo "==> Rebuilding all services..."
-	@cd backend && docker compose up -d --build
+	@docker compose -f $(COMPOSE_FILE_PATH) up -d --build
 	@echo "✓ Services rebuilt and started"
 
 ps: ## Show running containers
-	@cd backend && docker compose ps
+	@docker compose -f $(COMPOSE_FILE_PATH) ps
 
 logs: ## Follow logs from all services
-	@cd backend && docker compose logs -f
+	@docker compose -f $(COMPOSE_FILE_PATH) logs -f
 
 logs-api: ## Follow API server logs
-	@cd backend && docker compose logs -f api
+	@docker compose -f $(COMPOSE_FILE_PATH) logs -f api
 
 logs-db: ## Follow database logs
-	@cd backend && docker compose logs -f db
+	@docker compose -f $(COMPOSE_FILE_PATH) logs -f db
 
 logs-crawler: ## Follow crawler logs
-	@cd backend && docker compose logs -f crawler
+	@docker compose -f $(COMPOSE_FILE_PATH) logs -f crawler
 
 logs-frontend: ## Follow frontend logs
-	@cd backend && docker compose logs -f reddit_frontend
+	@docker compose -f $(COMPOSE_FILE_PATH) logs -f reddit_frontend
 
 ##@ Database
 
-migrate-up: check-env ## Run database migrations
-	@command -v migrate >/dev/null 2>&1 || { echo "❌ migrate not found. Run 'make install-tools'"; exit 1; }
-	@echo "Running migrations..."
-	@DATABASE_URL="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)?sslmode=disable" \
-	migrate -path backend/migrations -database "$$DATABASE_URL" up
+# Container-based migrations (preferred)
+migrate-up: check-env ## Run database migrations inside container network
+	@echo "==> Running migrations in container (network: web, host: db)"
+	@docker run --rm \
+		--network web \
+		--env-file backend/.env \
+		-v $(MIGRATIONS_DIR):/migrations:ro \
+		$(MIGRATE_IMAGE) \
+		-path=/migrations -database "$$DATABASE_URL" up
 	@echo "✓ Migrations complete"
 
-migrate-down: check-env ## Rollback last migration
+migrate-down: check-env ## Rollback last migration inside container network
+	@echo "==> Rolling back last migration in container"
+	@docker run --rm \
+		--network web \
+		--env-file backend/.env \
+		-v $(MIGRATIONS_DIR):/migrations:ro \
+		$(MIGRATE_IMAGE) \
+		-path=/migrations -database "$$DATABASE_URL" down 1
+
+# Host-based migrations (optional)
+migrate-up-host: check-env ## Run database migrations from host to localhost:5432
 	@command -v migrate >/dev/null 2>&1 || { echo "❌ migrate not found. Run 'make install-tools'"; exit 1; }
-	@echo "Rolling back last migration..."
-	@DATABASE_URL="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)?sslmode=disable" \
-	migrate -path backend/migrations -database "$$DATABASE_URL" down 1
+	@echo "Running migrations (localhost)..."
+	@env -u DATABASE_URL migrate -path backend/migrations -database "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)?sslmode=disable" up || { echo "❌ Migration failed"; exit 1; }
+	@echo "✓ Migrations complete"
+
+migrate-down-host: check-env ## Rollback last migration from host to localhost:5432
+	@command -v migrate >/dev/null 2>&1 || { echo "❌ migrate not found. Run 'make install-tools'"; exit 1; }
+	@echo "Rolling back last migration (localhost)..."
+	@env -u DATABASE_URL migrate -path backend/migrations -database "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)?sslmode=disable" down 1
 
 db-reset: check-env ## Reset database (dangerous - drops all data)
 	@echo "⚠️  This will delete all data. Press Ctrl+C to cancel, or press Enter to continue..."
@@ -270,6 +292,32 @@ precalculate: check-env ## Run graph precalculation
 	@echo "==> Running graph precalculation..."
 	@cd backend && docker compose run --rm precalculate /app/precalculate
 	@echo "✓ Precalculation complete"
+
+##@ Deployment
+
+deploy: ## Rebuild services and run migrations
+	@echo "==> Deploying: rebuild + migrations"
+	@$(MAKE) rebuild
+	@sleep 2
+	@$(MAKE) migrate-up
+	@echo "✓ Deploy complete"
+
+deploy-build: ## Build images and start services
+	@echo "==> Building and starting services"
+	@docker compose -f $(COMPOSE_FILE_PATH) build
+	@docker compose -f $(COMPOSE_FILE_PATH) up -d
+	@echo "✓ Services built and started"
+
+##@ Migrations - Utilities
+
+migrate-status: ## Show migration version/status (container)
+	@echo "==> Migration status"
+	@docker run --rm \
+		--network web \
+		--env-file backend/.env \
+		-v $(MIGRATIONS_DIR):/migrations:ro \
+		$(MIGRATE_IMAGE) \
+		-path=/migrations -database "$$DATABASE_URL" version
 
 ##@ Backups
 

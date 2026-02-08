@@ -19,7 +19,7 @@ type CrawlRequest struct {
 
 // CrawlQueue abstracts the queries used by PostCrawl for testability.
 type CrawlQueue interface {
-	UpsertSubreddit(ctx context.Context, p db.UpsertSubredditParams) (int32, error)
+	EnsureSubreddit(ctx context.Context, p db.EnsureSubredditParams) (int32, error)
 	CrawlJobExists(ctx context.Context, subredditID int32) (bool, error)
 	EnqueueCrawlJob(ctx context.Context, p db.EnqueueCrawlJobParams) error
 }
@@ -54,7 +54,7 @@ func PostCrawl(q CrawlQueue) http.HandlerFunc {
 		}
 
 		// First get or create the subreddit to get its ID
-		subreddit, err := q.UpsertSubreddit(r.Context(), db.UpsertSubredditParams{
+		subreddit, err := q.EnsureSubreddit(r.Context(), db.EnsureSubredditParams{
 			Name:        req.Subreddit,
 			Title:       sql.NullString{String: req.Subreddit, Valid: true},
 			Description: sql.NullString{String: "", Valid: true},

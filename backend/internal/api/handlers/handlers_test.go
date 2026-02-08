@@ -31,7 +31,7 @@ func (qa *queriesAdapter) ListSubreddits(ctx context.Context, p db.ListSubreddit
 	}
 	return qa.f.subs[start:end], nil
 }
-func (qa *queriesAdapter) UpsertSubreddit(ctx context.Context, p db.UpsertSubredditParams) (int32, error) {
+func (qa *queriesAdapter) EnsureSubreddit(ctx context.Context, p db.EnsureSubredditParams) (int32, error) {
 	return 1, nil
 }
 func (qa *queriesAdapter) CrawlJobExists(ctx context.Context, subredditID int32) (bool, error) {

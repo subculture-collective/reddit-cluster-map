@@ -11,7 +11,7 @@ import (
 )
 
 const countCommunities = `-- name: CountCommunities :one
-SELECT COUNT(DISTINCT community_id) FROM user_subreddit_activity WHERE community_id IS NOT NULL
+SELECT COUNT(*) FROM graph_communities
 `
 
 func (q *Queries) CountCommunities(ctx context.Context) (int64, error) {
