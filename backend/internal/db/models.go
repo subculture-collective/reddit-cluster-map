@@ -65,11 +65,23 @@ type GraphCommunity struct {
 	UpdatedAt  sql.NullTime
 }
 
+type GraphCommunityHierarchy struct {
+	NodeID            string
+	Level             int32
+	CommunityID       int32
+	ParentCommunityID sql.NullInt32
+	CentroidX         sql.NullFloat64
+	CentroidY         sql.NullFloat64
+	CentroidZ         sql.NullFloat64
+	CreatedAt         sql.NullTime
+}
+
 type GraphCommunityLink struct {
 	SourceCommunityID int32
 	TargetCommunityID int32
 	Weight            int32
 	CreatedAt         sql.NullTime
+	UpdatedAt         sql.NullTime
 }
 
 type GraphCommunityMember struct {
