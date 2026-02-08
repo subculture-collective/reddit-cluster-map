@@ -21,6 +21,7 @@ import { detectWebGLSupport } from "../utils/webglDetect";
 import Graph3DInstanced from "./Graph3DInstanced";
 import { StreamingGraphLoader, type LoadProgress } from "../data/StreamingGraphLoader";
 import LoadingProgress from "./LoadingProgress";
+import PerformanceHUD from "./PerformanceHUD";
 
 type Filters = {
   subreddit: boolean;
@@ -1170,6 +1171,13 @@ function Graph3DOriginal(props: Props) {
             powerPreference: "high-performance",
           } as unknown as WebGLContextAttributes
         }
+      />
+      <PerformanceHUD
+        renderer={fgRef.current?.renderer?.() as THREE.WebGLRenderer | null || null}
+        nodeCount={filtered.nodes.length}
+        totalNodeCount={graphData?.nodes.length || 0}
+        simulationState={hasPrecomputedPositions ? 'precomputed' : 'active'}
+        lodLevel={currentLODRef.current}
       />
     </div>
   );

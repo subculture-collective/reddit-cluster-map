@@ -15,6 +15,7 @@ import { detectWebGLSupport } from '../utils/webglDetect';
 import LoadingSkeleton from './LoadingSkeleton';
 import NodeTooltip from './NodeTooltip';
 import { perfMonitor } from '../utils/performance';
+import PerformanceHUD from './PerformanceHUD';
 
 /**
  * Graph3DInstanced - High-performance 3D graph visualization using InstancedMesh
@@ -740,6 +741,13 @@ export default function Graph3DInstanced(props: Props) {
                 nodeType={hoveredNode?.type}
                 mouseX={hoveredNode?.mouseX || 0}
                 mouseY={hoveredNode?.mouseY || 0}
+            />
+            <PerformanceHUD
+                renderer={rendererRef.current}
+                nodeCount={filtered.nodes.length}
+                totalNodeCount={graphData?.nodes.length || 0}
+                simulationState={usePrecomputedLayout ? 'precomputed' : 'active'}
+                lodLevel={0}
             />
         </div>
     );
