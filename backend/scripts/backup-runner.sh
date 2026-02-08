@@ -1,5 +1,5 @@
 #!/bin/sh
-set -euo pipefail
+set -eu
 
 # Interval can be duration understood by sleep (e.g., 6h, 1d) or seconds. Default: 24h
 INTERVAL="${BACKUP_INTERVAL:-24h}"

@@ -10,6 +10,33 @@ import (
 	"database/sql"
 )
 
+const ensureSubreddit = `-- name: EnsureSubreddit :one
+INSERT INTO subreddits (name, title, description, subscribers, created_at, last_seen)
+VALUES ($1, $2, $3, $4, now(), now())
+ON CONFLICT (name) DO UPDATE SET
+  name = EXCLUDED.name
+RETURNING id
+`
+
+type EnsureSubredditParams struct {
+	Name        string
+	Title       sql.NullString
+	Description sql.NullString
+	Subscribers sql.NullInt32
+}
+
+func (q *Queries) EnsureSubreddit(ctx context.Context, arg EnsureSubredditParams) (int32, error) {
+	row := q.db.QueryRowContext(ctx, ensureSubreddit,
+		arg.Name,
+		arg.Title,
+		arg.Description,
+		arg.Subscribers,
+	)
+	var id int32
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getStaleSubreddits = `-- name: GetStaleSubreddits :many
 SELECT name FROM subreddits 
 WHERE last_seen < NOW() - INTERVAL '7 days'

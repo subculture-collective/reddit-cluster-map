@@ -5,7 +5,7 @@ SELECT COUNT(*) FROM graph_nodes WHERE type = $1;
 SELECT COUNT(*) FROM graph_links;
 
 -- name: CountCommunities :one
-SELECT COUNT(DISTINCT community_id) FROM user_subreddit_activity WHERE community_id IS NOT NULL;
+SELECT COUNT(*) FROM graph_communities;
 
 -- name: GetCrawlJobStats :one
 SELECT 

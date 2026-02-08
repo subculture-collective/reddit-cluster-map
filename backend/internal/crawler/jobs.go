@@ -307,14 +307,14 @@ func enqueueLinkedSubreddits(ctx context.Context, q *db.Queries, posts []Post) {
 	enqueuedCount := 0
 	for _, sub := range linked {
 		// First get or create the subreddit
-		subreddit, err := q.UpsertSubreddit(ctx, db.UpsertSubredditParams{
+		subreddit, err := q.EnsureSubreddit(ctx, db.EnsureSubredditParams{
 			Name:        sub,
 			Title:       sql.NullString{String: sub, Valid: true},
 			Description: sql.NullString{String: "", Valid: true},
 			Subscribers: sql.NullInt32{Int32: 0, Valid: true},
 		})
 		if err != nil {
-			log.Printf("⚠️ Failed to upsert subreddit %s: %v", sub, err)
+			log.Printf("⚠️ Failed to ensure subreddit %s: %v", sub, err)
 			continue
 		}
 

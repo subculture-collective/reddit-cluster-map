@@ -1,17 +1,17 @@
 services:
-  test-db:
-    image: postgres:17
-    environment:
-      POSTGRES_USER: testuser
-      POSTGRES_PASSWORD: testpass
-      POSTGRES_DB: testdb
-      POSTGRES_INITDB_ARGS: --data-checksums
-    ports:
-      - "5433:5432"
-    volumes:
-      - ./migrations/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+    test-db:
+        image: postgres:17
+        environment:
+            POSTGRES_USER: testuser
+            POSTGRES_PASSWORD: testpass
+            POSTGRES_DB: testdb
+            POSTGRES_INITDB_ARGS: --data-checksums
+        ports:
+            - '127.0.0.1:5433:5432'
+        volumes:
+            - ./migrations/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U testuser -d testdb']
+            interval: 5s
+            timeout: 5s
+            retries: 5
