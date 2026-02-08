@@ -299,7 +299,7 @@ LEFT JOIN (
 ORDER BY total_activity DESC, u.id;
 
 -- name: ListGraphNodesByWeight :many
-SELECT id, name, val, type
+SELECT id, name, val, type, pos_x, pos_y, pos_z
 FROM graph_nodes gn
 ORDER BY (
     CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
@@ -475,3 +475,69 @@ ORDER BY
     END,
     CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END DESC
 LIMIT $2;
+
+-- ============================================================
+-- Community Hierarchy Queries
+-- ============================================================
+
+-- name: ClearCommunityHierarchy :exec
+TRUNCATE TABLE graph_community_hierarchy;
+
+-- name: InsertCommunityHierarchy :exec
+INSERT INTO graph_community_hierarchy (
+    node_id,
+    level,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+) ON CONFLICT (node_id, level) DO UPDATE SET
+    community_id = EXCLUDED.community_id,
+    parent_community_id = EXCLUDED.parent_community_id,
+    centroid_x = EXCLUDED.centroid_x,
+    centroid_y = EXCLUDED.centroid_y,
+    centroid_z = EXCLUDED.centroid_z;
+
+-- name: GetCommunityHierarchy :many
+SELECT 
+    node_id,
+    level,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+FROM graph_community_hierarchy
+ORDER BY level, community_id, node_id;
+
+-- name: GetNodesAtLevel :many
+SELECT 
+    node_id,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+FROM graph_community_hierarchy
+WHERE level = $1
+ORDER BY community_id, node_id;
+
+-- name: GetHierarchyLevels :many
+SELECT DISTINCT level
+FROM graph_community_hierarchy
+ORDER BY level;
+
+-- name: GetCommunitiesAtLevel :many
+SELECT 
+    community_id,
+    COUNT(*) as member_count,
+    AVG(centroid_x) as avg_x,
+    AVG(centroid_y) as avg_y,
+    AVG(centroid_z) as avg_z
+FROM graph_community_hierarchy
+WHERE level = $1
+GROUP BY community_id
+ORDER BY member_count DESC;

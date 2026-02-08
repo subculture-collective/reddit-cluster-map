@@ -664,12 +664,38 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 
 	log.Printf("🎉 Graph data precalculation completed successfully")
 
-	// Run community detection and store results
+	// Run hierarchical community detection and store results
 	if queries, ok := s.store.(*db.Queries); ok {
-		if result, nodes, links, err := s.detectCommunities(ctx, queries); err != nil {
-			log.Printf("⚠️ community detection failed: %v", err)
-		} else if err := s.storeCommunities(ctx, queries, result, nodes, links); err != nil {
-			log.Printf("⚠️ failed to store communities: %v", err)
+		// Fetch nodes and links for community detection
+		nodes, err := queries.ListGraphNodesByWeight(ctx, 50000)
+		if err != nil {
+			log.Printf("⚠️ failed to fetch nodes for community detection: %v", err)
+		} else if len(nodes) == 0 {
+			log.Printf("ℹ️ No nodes found for community detection")
+		} else {
+			nodeIDs := make([]string, len(nodes))
+			for i, n := range nodes {
+				nodeIDs[i] = n.ID
+			}
+			links, err := queries.ListGraphLinksAmong(ctx, nodeIDs)
+			if err != nil {
+				log.Printf("⚠️ failed to fetch links for community detection: %v", err)
+			} else {
+				// Run hierarchical community detection
+				hierarchy, err := s.detectHierarchicalCommunities(ctx, queries, nodes, links)
+				if err != nil {
+					log.Printf("⚠️ hierarchical community detection failed: %v", err)
+				} else if err := s.storeHierarchy(ctx, queries, hierarchy); err != nil {
+					log.Printf("⚠️ failed to store hierarchy: %v", err)
+				}
+
+				// Also run flat community detection for backward compatibility (reuse same nodes/links)
+				if result, err := s.detectCommunitiesFromData(nodes, links); err != nil {
+					log.Printf("⚠️ community detection failed: %v", err)
+				} else if err := s.storeCommunities(ctx, queries, result, nodes, links); err != nil {
+					log.Printf("⚠️ failed to store communities: %v", err)
+				}
+			}
 		}
 	} else {
 		log.Printf("ℹ️ community detection skipped: store is not *db.Queries")
