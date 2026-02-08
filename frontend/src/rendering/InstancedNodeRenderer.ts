@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Octree, type OctreeItem } from '../spatial/Octree';
 
 /**
  * InstancedNodeRenderer - High-performance node rendering using THREE.InstancedMesh
@@ -11,12 +12,15 @@ import * as THREE from 'three';
  * - Position updates via instanceMatrix (no scene graph traversal)
  * - Per-instance colors via instanceColor attribute
  * - Per-instance sizes via scale in instance matrix
+ * - Octree spatial index for O(log n) raycasting and frustum culling
  * - Optimized for 100k+ nodes
  * 
  * Performance targets:
  * - ~4 draw calls for core node types (plus extras for links/labels as configured)
  * - <5ms for position updates
  * - <500MB memory usage for 100k nodes
+ * - <1ms raycasting with octree
+ * - <2ms frustum culling with octree
  * 
  * @example
  * ```typescript
@@ -31,8 +35,11 @@ import * as THREE from 'three';
  * // Update colors
  * renderer.updateColors(colors);
  * 
- * // Raycast for interactions
+ * // Raycast for interactions (uses octree)
  * const node = renderer.raycast(raycaster);
+ * 
+ * // Frustum culling (uses octree)
+ * const visibleNodes = renderer.queryFrustum(camera);
  * ```
  */
 
@@ -72,6 +79,7 @@ export class InstancedNodeRenderer {
   private nodeMap: Map<string, { type: string; index: number }> = new Map();
   private maxNodes: number;
   private nodeRelSize: number;
+  private octree: Octree<NodeData>;
 
   constructor(scene: THREE.Scene, config: InstancedNodeRendererConfig = {}) {
     this.scene = scene;
@@ -80,6 +88,13 @@ export class InstancedNodeRenderer {
     
     // Create shared geometry (8 segments for performance vs quality balance)
     this.geometry = new THREE.SphereGeometry(1, 8, 8);
+    
+    // Initialize octree for spatial queries
+    this.octree = new Octree<NodeData>({
+      maxItemsPerNode: 8,
+      maxDepth: 8,
+      minCellSize: 1.0,
+    });
   }
 
   /**
@@ -113,6 +128,19 @@ export class InstancedNodeRenderer {
         this.meshes.delete(type);
       }
     }
+
+    // Build octree from node positions
+    const octreeItems: OctreeItem<NodeData>[] = [];
+    for (const node of nodes) {
+      if (node.x !== undefined && node.y !== undefined && node.z !== undefined) {
+        octreeItems.push({
+          id: node.id,
+          position: new THREE.Vector3(node.x, node.y, node.z),
+          data: node,
+        });
+      }
+    }
+    this.octree.build(octreeItems);
   }
 
   /**
@@ -215,6 +243,9 @@ export class InstancedNodeRenderer {
     const rotation = new THREE.Quaternion();
     const scale = new THREE.Vector3();
 
+    // Track items for octree rebuild
+    const octreeItems: OctreeItem<NodeData>[] = [];
+
     for (const [, typedMesh] of this.meshes.entries()) {
       let updated = false;
 
@@ -232,6 +263,22 @@ export class InstancedNodeRenderer {
           matrix.compose(position, rotation, scale);
           typedMesh.mesh.setMatrixAt(i, matrix);
           
+          // Add to octree items
+          octreeItems.push({
+            id: nodeId,
+            position: new THREE.Vector3(pos.x, pos.y, pos.z),
+            data: {
+              id: nodeId,
+              type: typedMesh.nodeIds[i].startsWith('subreddit_') ? 'subreddit' :
+                    typedMesh.nodeIds[i].startsWith('user_') ? 'user' :
+                    typedMesh.nodeIds[i].startsWith('post_') ? 'post' :
+                    typedMesh.nodeIds[i].startsWith('comment_') ? 'comment' : 'default',
+              x: pos.x,
+              y: pos.y,
+              z: pos.z,
+            },
+          });
+          
           updated = true;
         }
       }
@@ -240,6 +287,11 @@ export class InstancedNodeRenderer {
         typedMesh.mesh.instanceMatrix.needsUpdate = true;
         typedMesh.mesh.computeBoundingSphere();
       }
+    }
+
+    // Rebuild octree with new positions
+    if (octreeItems.length > 0) {
+      this.octree.build(octreeItems);
     }
   }
 
@@ -310,25 +362,62 @@ export class InstancedNodeRenderer {
   }
 
   /**
-   * Raycast to find intersected node
+   * Raycast to find intersected node using octree spatial index
    * @returns Node ID if intersected, null otherwise
    */
   public raycast(raycaster: THREE.Raycaster): string | null {
-    let closestDistance = Infinity;
-    let closestNodeId: string | null = null;
+    // Use octree for fast spatial query
+    const ray = raycaster.ray;
+    const maxDistance = raycaster.far || 1000;
+    
+    const nearestItem = this.octree.raycast(ray, maxDistance);
+    if (!nearestItem) return null;
 
-    for (const [, typedMesh] of this.meshes.entries()) {
-      const intersects = raycaster.intersectObject(typedMesh.mesh, false);
-      
-      for (const intersect of intersects) {
-        if (intersect.distance < closestDistance && intersect.instanceId !== undefined) {
-          closestDistance = intersect.distance;
-          closestNodeId = typedMesh.nodeIds[intersect.instanceId];
+    // Verify hit with actual geometry
+    const nodeInfo = this.nodeMap.get(nearestItem.id);
+    if (!nodeInfo) return null;
+
+    const typedMesh = this.meshes.get(nodeInfo.type);
+    if (!typedMesh) return null;
+
+    // Only raycast against the specific mesh containing the candidate node
+    const intersects = raycaster.intersectObject(typedMesh.mesh, false);
+    
+    for (const intersect of intersects) {
+      if (intersect.instanceId !== undefined) {
+        const hitNodeId = typedMesh.nodeIds[intersect.instanceId];
+        if (hitNodeId === nearestItem.id) {
+          return hitNodeId;
         }
       }
     }
 
-    return closestNodeId;
+    // Fallback: octree found a candidate but geometry raycast missed
+    // This can happen for very small nodes - return the octree result
+    return nearestItem.id;
+  }
+
+  /**
+   * Query nodes within camera frustum using octree
+   * Returns node IDs that are potentially visible
+   * @param camera Camera to use for frustum culling
+   * @returns Array of visible node IDs
+   */
+  public queryFrustum(camera: THREE.Camera): string[] {
+    // Update frustum from camera
+    const frustum = new THREE.Frustum();
+    const projectionMatrix = new THREE.Matrix4();
+    
+    projectionMatrix.multiplyMatrices(
+      camera.projectionMatrix,
+      camera.matrixWorldInverse
+    );
+    frustum.setFromProjectionMatrix(projectionMatrix);
+
+    // Query octree for nodes in frustum
+    const visibleItems = this.octree.queryFrustum(frustum);
+    
+    return visibleItems.map(item => item.id);
   }
 
   /**
