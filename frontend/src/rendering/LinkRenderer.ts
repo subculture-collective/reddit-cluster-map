@@ -261,6 +261,9 @@ export class LinkRenderer {
 
   /**
    * Get rendering statistics
+   * Note: visibleLinks calculation may be expensive for very large graphs (200k+ links)
+   * as it filters the entire links array. This is acceptable for debugging/monitoring
+   * but should not be called in performance-critical paths.
    */
   public getStats(): {
     totalLinks: number;
@@ -271,6 +274,8 @@ export class LinkRenderer {
     const drawRange = this.geometry.drawRange;
     return {
       totalLinks: this.links.length,
+      // visibleLinks is calculated on-demand for accuracy
+      // For performance-critical usage, use bufferedLinks instead
       visibleLinks: this.visibleNodeIds.size > 0
         ? this.links.filter(
             (l) => this.visibleNodeIds.has(l.source) && this.visibleNodeIds.has(l.target)

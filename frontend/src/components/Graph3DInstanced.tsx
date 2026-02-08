@@ -260,9 +260,9 @@ export default function Graph3DInstanced(props: Props) {
     let lastCameraUpdate = 0;
     let lastLinkVisibilityUpdate = 0;
     const CAMERA_UPDATE_INTERVAL = 1000; // Update every 1 second
-    // Link visibility update interval balances responsiveness vs performance
+    // Link visibility update: minimum interval between checks (actual timing depends on frame rate)
     // LinkRenderer has built-in camera movement detection to skip redundant updates
-    const LINK_VISIBILITY_UPDATE_INTERVAL = 300; // Check every 300ms (reasonable for camera movement)
+    const LINK_VISIBILITY_UPDATE_INTERVAL = 300; // Min 300ms between visibility checks
     const lastCamPos = { x: NaN, y: NaN, z: NaN };
     const EPSILON = 1e-3;
 
