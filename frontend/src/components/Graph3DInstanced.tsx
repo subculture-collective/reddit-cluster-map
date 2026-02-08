@@ -286,8 +286,10 @@ export default function Graph3DInstanced(props: Props) {
       controls.dispose();
       renderer.dispose();
       nodeRenderer.dispose();
-      if (containerRef.current && renderer.domElement.parentNode === containerRef.current) {
-        containerRef.current.removeChild(renderer.domElement);
+      // Copy ref to variable for cleanup to avoid stale closure issue
+      const container = containerRef.current;
+      if (container && renderer.domElement.parentNode === container) {
+        container.removeChild(renderer.domElement);
       }
     };
   }, [webglSupported, nodeRelSize, MAX_RENDER_NODES, initialCamera, onCameraChange]);

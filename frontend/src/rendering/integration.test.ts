@@ -13,7 +13,7 @@ describe('Integration: InstancedNodeRenderer + ForceSimulation', () => {
     renderer = new InstancedNodeRenderer(scene, { maxNodes: 1000, nodeRelSize: 4 });
   });
 
-  it('should integrate renderer with simulation', (done) => {
+  it('should integrate renderer with simulation', async () => {
     const nodes = [
       { id: 'node1', type: 'subreddit', name: 'r/test1' },
       { id: 'node2', type: 'user', name: 'u/user1' },
@@ -27,43 +27,47 @@ describe('Integration: InstancedNodeRenderer + ForceSimulation', () => {
 
     // Set up simulation with callback
     let tickCount = 0;
-    simulation = new ForceSimulation({
-      onTick: (positions) => {
-        renderer.updatePositions(positions);
-        tickCount++;
-        
-        // After a few ticks, verify positions were updated
-        if (tickCount > 5) {
-          const pos1 = renderer.getNodePosition('node1');
-          expect(pos1).not.toBeNull();
-          expect(typeof pos1?.x).toBe('number');
+    const promise = new Promise<void>((resolve) => {
+      simulation = new ForceSimulation({
+        onTick: (positions) => {
+          renderer.updatePositions(positions);
+          tickCount++;
           
-          simulation.stop();
-          renderer.dispose();
-          done();
-        }
-      },
-      physics: {
-        chargeStrength: -30,
-        linkDistance: 30,
-        velocityDecay: 0.4,
-        cooldownTicks: 10,
-      },
+          // After a few ticks, verify positions were updated
+          if (tickCount > 5) {
+            const pos1 = renderer.getNodePosition('node1');
+            expect(pos1).not.toBeNull();
+            expect(typeof pos1?.x).toBe('number');
+            
+            simulation.stop();
+            renderer.dispose();
+            resolve();
+          }
+        },
+        physics: {
+          chargeStrength: -30,
+          linkDistance: 30,
+          velocityDecay: 0.4,
+          cooldownTicks: 10,
+        },
+      });
+
+      // Initialize renderer with nodes
+      renderer.setNodeData(nodes.map(n => ({
+        id: n.id,
+        type: n.type as 'subreddit' | 'user' | 'post' | 'comment',
+        x: Math.random() * 100,
+        y: Math.random() * 100,
+        z: Math.random() * 100,
+        size: 2,
+      })));
+
+      // Set simulation data and start
+      simulation.setData(nodes, links);
+      simulation.start();
     });
 
-    // Initialize renderer with nodes
-    renderer.setNodeData(nodes.map(n => ({
-      id: n.id,
-      type: n.type as any,
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      z: Math.random() * 100,
-      size: 2,
-    })));
-
-    // Set simulation data and start
-    simulation.setData(nodes, links);
-    simulation.start();
+    await promise;
   }, 2000);
 
   it('should handle precomputed positions', () => {
@@ -88,7 +92,7 @@ describe('Integration: InstancedNodeRenderer + ForceSimulation', () => {
     // Initialize renderer
     renderer.setNodeData(nodes.map(n => ({
       id: n.id,
-      type: n.type as any,
+      type: n.type as 'subreddit' | 'user' | 'post' | 'comment',
       x: n.x,
       y: n.y,
       z: n.z,
@@ -113,13 +117,13 @@ describe('Integration: InstancedNodeRenderer + ForceSimulation', () => {
 
   it('should render different node types with correct draw calls', () => {
     const nodes = [];
-    const types = ['subreddit', 'user', 'post', 'comment'];
+    const types: Array<'subreddit' | 'user' | 'post' | 'comment'> = ['subreddit', 'user', 'post', 'comment'];
     
     // Create 1000 nodes with different types
     for (let i = 0; i < 1000; i++) {
       nodes.push({
         id: `node${i}`,
-        type: types[i % 4] as any,
+        type: types[i % 4],
         x: Math.random() * 1000,
         y: Math.random() * 1000,
         z: Math.random() * 1000,
@@ -142,10 +146,18 @@ describe('Integration: InstancedNodeRenderer + ForceSimulation', () => {
   });
 
   it('should handle color updates from community detection', () => {
-    const nodes = [
-      { id: 'node1', type: 'subreddit' as any, x: 0, y: 0, z: 0, size: 2, color: '#ff0000' },
-      { id: 'node2', type: 'user' as any, x: 1, y: 1, z: 1, size: 2, color: '#00ff00' },
-      { id: 'node3', type: 'post' as any, x: 2, y: 2, z: 2, size: 2, color: '#0000ff' },
+    const nodes: Array<{
+      id: string;
+      type: 'subreddit' | 'user' | 'post' | 'comment';
+      x: number;
+      y: number;
+      z: number;
+      size: number;
+      color: string;
+    }> = [
+      { id: 'node1', type: 'subreddit', x: 0, y: 0, z: 0, size: 2, color: '#ff0000' },
+      { id: 'node2', type: 'user', x: 1, y: 1, z: 1, size: 2, color: '#00ff00' },
+      { id: 'node3', type: 'post', x: 2, y: 2, z: 2, size: 2, color: '#0000ff' },
     ];
 
     renderer.setNodeData(nodes);

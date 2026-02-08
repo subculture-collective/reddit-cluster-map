@@ -289,11 +289,12 @@ export default function Graph3D(props: Props) {
   }, []);
 
   // Use the new instanced renderer if enabled
-  if (useInstancedRenderer) {
-    return <Graph3DInstanced {...props} />;
-  }
+  // This must be done without early return to satisfy React hooks rules
+  return useInstancedRenderer ? <Graph3DInstanced {...props} /> : <Graph3DOriginal {...props} />;
+}
 
-  // Otherwise, use the original implementation below
+// Original implementation extracted to separate component
+function Graph3DOriginal(props: Props) {
   const {
     filters,
     minDegree,

@@ -307,7 +307,7 @@ export class ForceSimulation {
     node.z = position.z;
     node.fx = position.x;
     node.fy = position.y;
-    // @ts-ignore: d3-force types don't include fz for 3D
+    // @ts-expect-error: d3-force types don't include fz for 3D
     node.fz = position.z;
   }
 
@@ -320,7 +320,7 @@ export class ForceSimulation {
 
     node.fx = null;
     node.fy = null;
-    // @ts-ignore: d3-force types don't include fz for 3D
+    // @ts-expect-error: d3-force types don't include fz for 3D
     node.fz = null;
   }
 
