@@ -44,6 +44,8 @@ interface Props {
   onToggleCommunityColors?: (enabled: boolean) => void;
   usePrecomputedLayout?: boolean;
   onTogglePrecomputedLayout?: (enabled: boolean) => void;
+  sizeAttenuation?: boolean;
+  onToggleSizeAttenuation?: (enabled: boolean) => void;
 }
 
 export default function Controls(props: Props) {
@@ -74,6 +76,8 @@ export default function Controls(props: Props) {
     onToggleCommunityColors,
     usePrecomputedLayout,
     onTogglePrecomputedLayout,
+    sizeAttenuation,
+    onToggleSizeAttenuation,
   } = props;
   const [search, setSearch] = useState("");
   const [srv, setSrv] = useState<{
@@ -195,6 +199,16 @@ export default function Controls(props: Props) {
             onChange={(e) => onTogglePrecomputedLayout?.(e.target.checked)}
           />
           Use precomputed layout
+        </label>
+      )}
+      {onToggleSizeAttenuation && (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={!!sizeAttenuation}
+            onChange={(e) => onToggleSizeAttenuation?.(e.target.checked)}
+          />
+          Distance-based node sizing
         </label>
       )}
       <div className="text-xs text-white/70">Admin</div>

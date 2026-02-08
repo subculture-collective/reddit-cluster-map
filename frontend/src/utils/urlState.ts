@@ -20,6 +20,7 @@ export interface AppState {
   camera2d?: { x: number; y: number; zoom: number };
   useCommunityColors?: boolean;
   usePrecomputedLayout?: boolean;
+  sizeAttenuation?: boolean;
 }
 
 /**
@@ -107,6 +108,12 @@ export function readStateFromURL(): AppState {
     state.usePrecomputedLayout = usePrecomputedLayout === "1";
   }
 
+  // Size attenuation
+  const sizeAttenuation = params.get("sizeAttenuation");
+  if (sizeAttenuation !== null) {
+    state.sizeAttenuation = sizeAttenuation === "1";
+  }
+
   return state;
 }
 
@@ -176,6 +183,11 @@ export function writeStateToURL(state: AppState): void {
     params.set("precomputedLayout", state.usePrecomputedLayout ? "1" : "0");
   }
 
+  // Size attenuation
+  if (state.sizeAttenuation !== undefined) {
+    params.set("sizeAttenuation", state.sizeAttenuation ? "1" : "0");
+  }
+
   // Update URL without page reload
   const newUrl = `${window.location.pathname}?${params.toString()}`;
   window.history.replaceState({}, "", newUrl);
@@ -226,6 +238,10 @@ export function generateShareURL(state: AppState): string {
 
   if (state.usePrecomputedLayout !== undefined) {
     params.set("precomputedLayout", state.usePrecomputedLayout ? "1" : "0");
+  }
+
+  if (state.sizeAttenuation !== undefined) {
+    params.set("sizeAttenuation", state.sizeAttenuation ? "1" : "0");
   }
 
   return `${window.location.origin}${window.location.pathname}?${params.toString()}`;

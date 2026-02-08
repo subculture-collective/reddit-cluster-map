@@ -49,6 +49,7 @@ export interface NodeData {
 export interface InstancedNodeRendererConfig {
   maxNodes?: number;
   nodeRelSize?: number;
+  sizeAttenuation?: boolean;
 }
 
 interface TypedMesh {
@@ -72,11 +73,14 @@ export class InstancedNodeRenderer {
   private nodeMap: Map<string, { type: string; index: number }> = new Map();
   private maxNodes: number;
   private nodeRelSize: number;
+  private sizeAttenuation: boolean;
+  private camera: THREE.Camera | null = null;
 
   constructor(scene: THREE.Scene, config: InstancedNodeRendererConfig = {}) {
     this.scene = scene;
     this.maxNodes = config.maxNodes || 100000;
     this.nodeRelSize = config.nodeRelSize || 4;
+    this.sizeAttenuation = config.sizeAttenuation !== undefined ? config.sizeAttenuation : true;
     
     // Create shared geometry (8 segments for performance vs quality balance)
     this.geometry = new THREE.SphereGeometry(1, 8, 8);
@@ -135,9 +139,7 @@ export class InstancedNodeRenderer {
     
     if (!this.meshes.has(type)) {
       // Create new mesh
-      const material = new THREE.MeshLambertMaterial({
-        color: DEFAULT_COLORS[type] || DEFAULT_COLORS.default,
-      });
+      const material = this.createMaterial(type);
       
       const mesh = new THREE.InstancedMesh(this.geometry, material, count);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // Will be updated frequently
@@ -350,6 +352,125 @@ export class InstancedNodeRenderer {
     matrix.decompose(position, rotation, scale);
 
     return { x: position.x, y: position.y, z: position.z };
+  }
+
+  /**
+   * Set camera reference for distance-based scaling
+   */
+  public setCamera(camera: THREE.Camera): void {
+    this.camera = camera;
+  }
+
+  /**
+   * Update size attenuation setting
+   */
+  public setSizeAttenuation(enabled: boolean): void {
+    if (this.sizeAttenuation === enabled) return;
+    this.sizeAttenuation = enabled;
+    
+    // Recreate materials for all meshes
+    for (const [type, typedMesh] of this.meshes.entries()) {
+      const oldMaterial = typedMesh.mesh.material as THREE.Material;
+      const material = this.createMaterial(type);
+      typedMesh.mesh.material = material;
+      oldMaterial.dispose();
+    }
+  }
+
+  /**
+   * Create material for a node type with optional distance-based scaling
+   */
+  private createMaterial(type: string): THREE.Material {
+    if (!this.sizeAttenuation) {
+      // Use standard material without distance scaling
+      return new THREE.MeshLambertMaterial({
+        color: DEFAULT_COLORS[type] || DEFAULT_COLORS.default,
+      });
+    }
+
+    // Create custom shader material with distance-based scaling
+    const baseColor = DEFAULT_COLORS[type] || DEFAULT_COLORS.default;
+    
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        baseColor: { value: baseColor },
+        cameraPosition: { value: new THREE.Vector3() },
+        attenuationFactor: { value: 0.3 }, // Controls how much size changes with distance
+        minScale: { value: 0.3 }, // Minimum scale factor (prevent nodes from becoming too small)
+        maxScale: { value: 2.0 }, // Maximum scale factor (prevent nodes from becoming too large)
+      },
+      vertexShader: `
+        uniform vec3 cameraPosition;
+        uniform float attenuationFactor;
+        uniform float minScale;
+        uniform float maxScale;
+        
+        attribute vec3 instanceColor;
+        varying vec3 vColor;
+        varying vec3 vNormal;
+        
+        void main() {
+          vColor = instanceColor;
+          vNormal = normalize(normalMatrix * normal);
+          
+          // Get instance transform
+          mat4 instanceMatrix = instanceMatrix;
+          vec4 worldPosition = instanceMatrix * vec4(position, 1.0);
+          
+          // Calculate distance from camera
+          float dist = length(cameraPosition - worldPosition.xyz);
+          
+          // Apply logarithmic attenuation for smooth scaling
+          // log(1 + x) provides smooth falloff, scaled by attenuationFactor
+          float scaleFactor = 1.0 + attenuationFactor * log(1.0 + dist / 100.0);
+          scaleFactor = clamp(scaleFactor, minScale, maxScale);
+          
+          // Apply scale to the instance transform
+          vec3 scaledPosition = position * scaleFactor;
+          worldPosition = instanceMatrix * vec4(scaledPosition, 1.0);
+          
+          gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 baseColor;
+        varying vec3 vColor;
+        varying vec3 vNormal;
+        
+        void main() {
+          // Simple Lambertian shading
+          vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+          float diff = max(dot(vNormal, lightDir), 0.0);
+          
+          // Mix instance color with base color
+          vec3 color = mix(baseColor, vColor, step(0.01, length(vColor)));
+          
+          // Apply lighting
+          vec3 ambient = color * 0.6;
+          vec3 diffuse = color * 0.4 * diff;
+          
+          gl_FragColor = vec4(ambient + diffuse, 1.0);
+        }
+      `,
+      lights: false, // We handle lighting in the shader
+    });
+  }
+
+  /**
+   * Update camera position in shader uniforms (call this each frame)
+   */
+  public updateCameraPosition(): void {
+    if (!this.camera || !this.sizeAttenuation) return;
+    
+    const cameraPos = new THREE.Vector3();
+    this.camera.getWorldPosition(cameraPos);
+    
+    for (const [, typedMesh] of this.meshes.entries()) {
+      const material = typedMesh.mesh.material;
+      if (material instanceof THREE.ShaderMaterial && material.uniforms.cameraPosition) {
+        material.uniforms.cameraPosition.value.copy(cameraPos);
+      }
+    }
   }
 
   /**
