@@ -41,11 +41,10 @@ FROM graph_links;
 \echo '========================================='
 \echo ''
 \echo 'This query selects top 20,000 nodes by value and up to 50,000 links between them'
-\echo 'Optimized with EXISTS subqueries and statement timeout'
+\echo 'Optimized with EXISTS subqueries (no statement timeout in query itself - set at connection level)'
 \echo ''
 
 EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
-SET LOCAL statement_timeout = '5s';
 WITH sel_nodes AS (
     SELECT gn.id, gn.name, gn.val, gn.type, gn.pos_x, gn.pos_y, gn.pos_z
     FROM graph_nodes gn
@@ -95,11 +94,10 @@ FROM sel_links l;
 \echo '========================================='
 \echo ''
 \echo 'This query selects top 20,000 subreddit/user nodes and up to 50,000 links'
-\echo 'Optimized with EXISTS subqueries and statement timeout'
+\echo 'Optimized with EXISTS subqueries (no statement timeout in query itself - set at connection level)'
 \echo ''
 
 EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
-SET LOCAL statement_timeout = '5s';
 WITH sel_nodes AS (
     SELECT gn.id, gn.name, gn.val, gn.type, gn.pos_x, gn.pos_y, gn.pos_z
     FROM graph_nodes gn

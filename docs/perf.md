@@ -98,7 +98,7 @@ The latest optimization adds covering indexes and hash indexes for faster lookup
    WHERE gl.source IN (SELECT id FROM sel_nodes)
    
    -- New (faster):
-   WITH sel_node_ids AS (SELECT id FROM sel_nodes)
+   WITH sel_node_ids AS MATERIALIZED (SELECT id FROM sel_nodes)
    WHERE EXISTS (SELECT 1 FROM sel_node_ids WHERE id = gl.source)
    ```
    **Benefits**: EXISTS short-circuits on first match, better query plan selection, ~30-40% faster for large node sets.
