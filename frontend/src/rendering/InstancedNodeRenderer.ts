@@ -159,7 +159,7 @@ export class InstancedNodeRenderer {
       
       this.meshes.set(type, typedMesh);
     } else {
-      typedMesh = existing;
+      typedMesh = this.meshes.get(type)!;
       typedMesh.count = 0;
     }
 
@@ -215,7 +215,7 @@ export class InstancedNodeRenderer {
     const rotation = new THREE.Quaternion();
     const scale = new THREE.Vector3();
 
-    for (const [type, typedMesh] of this.meshes.entries()) {
+    for (const [, typedMesh] of this.meshes.entries()) {
       let updated = false;
 
       for (let i = 0; i < typedMesh.count; i++) {
@@ -317,7 +317,7 @@ export class InstancedNodeRenderer {
     let closestDistance = Infinity;
     let closestNodeId: string | null = null;
 
-    for (const [type, typedMesh] of this.meshes.entries()) {
+    for (const [, typedMesh] of this.meshes.entries()) {
       const intersects = raycaster.intersectObject(typedMesh.mesh, false);
       
       for (const intersect of intersects) {
@@ -356,7 +356,7 @@ export class InstancedNodeRenderer {
    * Dispose of all resources
    */
   public dispose(): void {
-    for (const [type, typedMesh] of this.meshes.entries()) {
+    for (const [, typedMesh] of this.meshes.entries()) {
       this.scene.remove(typedMesh.mesh);
       typedMesh.mesh.geometry.dispose();
       (typedMesh.mesh.material as THREE.Material).dispose();

@@ -18,6 +18,7 @@ import { EdgeBundler } from "../rendering/EdgeBundler";
 import * as THREE from "three";
 import LoadingSkeleton from "./LoadingSkeleton";
 import { detectWebGLSupport } from "../utils/webglDetect";
+import Graph3DInstanced from "./Graph3DInstanced";
 
 type Filters = {
   subreddit: boolean;
@@ -278,6 +279,21 @@ interface Props {
 }
 
 export default function Graph3D(props: Props) {
+  // Check if instanced rendering is enabled via environment variable
+  const useInstancedRenderer = useMemo(() => {
+    const env = import.meta.env?.VITE_USE_INSTANCED_RENDERER as unknown as string | boolean | undefined;
+    if (typeof env === 'string') {
+      return env.toLowerCase() === 'true' || env === '1';
+    }
+    return Boolean(env);
+  }, []);
+
+  // Use the new instanced renderer if enabled
+  if (useInstancedRenderer) {
+    return <Graph3DInstanced {...props} />;
+  }
+
+  // Otherwise, use the original implementation below
   const {
     filters,
     minDegree,
