@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
@@ -96,11 +97,11 @@ func (h *CommunityHandler) GetCommunities(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded || err == context.DeadlineExceeded {
 			log.Printf("⚠️ communities query timed out after %v", timeout)
-			http.Error(w, `{"error":"Communities query timeout"}`, http.StatusRequestTimeout)
+			apierr.WriteErrorWithContext(w, r, apierr.GraphTimeout("Communities query timeout"))
 			return
 		}
 		log.Printf("⚠️ failed to fetch community supernodes: %v", err)
-		http.Error(w, `{"error":"Failed to fetch communities"}`, http.StatusInternalServerError)
+		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch communities"))
 		return
 	}
 
@@ -108,7 +109,7 @@ func (h *CommunityHandler) GetCommunities(w http.ResponseWriter, r *http.Request
 	linksRows, err := h.queries.GetCommunityLinks(ctx, int32(maxLinks))
 	if err != nil {
 		log.Printf("⚠️ failed to fetch community links: %v", err)
-		http.Error(w, `{"error":"Failed to fetch community links"}`, http.StatusInternalServerError)
+		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch community links"))
 		return
 	}
 

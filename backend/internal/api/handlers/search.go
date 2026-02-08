@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/logger"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
@@ -29,7 +30,7 @@ func SearchNode(q NodeSearcher) http.HandlerFunc {
 		// Get search query parameter
 		query := strings.TrimSpace(r.URL.Query().Get("node"))
 		if query == "" {
-			http.Error(w, `{"error":"node parameter is required"}`, http.StatusBadRequest)
+			apierr.WriteErrorWithContext(w, r, apierr.SearchInvalidQuery("node parameter is required"))
 			return
 		}
 
@@ -58,7 +59,7 @@ func SearchNode(q NodeSearcher) http.HandlerFunc {
 		})
 		if err != nil {
 			logger.ErrorContext(ctx, "Failed to search nodes", "error", err, "query", query)
-			http.Error(w, `{"error":"Failed to search nodes"}`, http.StatusInternalServerError)
+			apierr.WriteErrorWithContext(w, r, apierr.SearchFailed(""))
 			return
 		}
 
