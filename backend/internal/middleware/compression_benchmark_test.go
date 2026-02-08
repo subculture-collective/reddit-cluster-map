@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -22,11 +23,11 @@ func TestCompressionRatio(t *testing.T) {
 			graphJSON.WriteString(",")
 		}
 		graphJSON.WriteString(`{"id":"user_`)
-		graphJSON.WriteString(string(rune('0' + (i % 10))))
+		graphJSON.WriteString(strconv.Itoa(i))
 		graphJSON.WriteString(`","name":"User `)
-		graphJSON.WriteString(string(rune('0' + (i % 10))))
+		graphJSON.WriteString(strconv.Itoa(i))
 		graphJSON.WriteString(`","val":`)
-		graphJSON.WriteString(string(rune('0' + (i % 10))))
+		graphJSON.WriteString(strconv.Itoa(i))
 		graphJSON.WriteString(`,"type":"user"}`)
 	}
 	graphJSON.WriteString(`],"links":[`)
@@ -35,9 +36,9 @@ func TestCompressionRatio(t *testing.T) {
 			graphJSON.WriteString(",")
 		}
 		graphJSON.WriteString(`{"source":"user_`)
-		graphJSON.WriteString(string(rune('0' + (i % 10))))
+		graphJSON.WriteString(strconv.Itoa(i % 1000))
 		graphJSON.WriteString(`","target":"subreddit_`)
-		graphJSON.WriteString(string(rune('0' + (i % 10))))
+		graphJSON.WriteString(strconv.Itoa(i % 1000))
 		graphJSON.WriteString(`"}`)
 	}
 	graphJSON.WriteString(`]}`)
@@ -141,9 +142,9 @@ func BenchmarkGzipCompression(b *testing.B) {
 			buf.WriteString(",")
 		}
 		buf.WriteString(`{"id":"n`)
-		buf.WriteString(string(rune('0' + (i % 10))))
+		buf.WriteString(strconv.Itoa(i))
 		buf.WriteString(`","name":"Node `)
-		buf.WriteString(string(rune('0' + (i % 10))))
+		buf.WriteString(strconv.Itoa(i))
 		buf.WriteString(`","val":100}`)
 	}
 	buf.WriteString(`],"links":[]}`)
@@ -173,9 +174,9 @@ func BenchmarkBrotliCompression(b *testing.B) {
 			buf.WriteString(",")
 		}
 		buf.WriteString(`{"id":"n`)
-		buf.WriteString(string(rune('0' + (i % 10))))
+		buf.WriteString(strconv.Itoa(i))
 		buf.WriteString(`","name":"Node `)
-		buf.WriteString(string(rune('0' + (i % 10))))
+		buf.WriteString(strconv.Itoa(i))
 		buf.WriteString(`","val":100}`)
 	}
 	buf.WriteString(`],"links":[]}`)
