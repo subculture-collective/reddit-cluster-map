@@ -636,7 +636,12 @@ export class Octree<T> {
         return new AABB(min, max);
     }
 
-    private expandRoot(position: THREE.Vector3): void {
+    /**
+     * Expand the root bounds to contain positions that fall outside
+     * Note: position parameter signals need for expansion but isn't used directly
+     * as we reinsert all items which will naturally fill the expanded space
+     */
+    private expandRoot(_position: THREE.Vector3): void {
         if (!this.root) return;
 
         // Double the size of the root bounds to contain the new position
