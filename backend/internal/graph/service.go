@@ -816,6 +816,8 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	cool := R / float64(iterations)
 	dispX := make([]float64, N)
 	dispY := make([]float64, N)
+	repX := make([]float64, N) // Reusable buffer for Barnes-Hut forces
+	repY := make([]float64, N)
 	var attr = func(dist float64) float64 { return (dist * dist) / k }
 
 	layoutComputeStart := time.Now()
@@ -824,9 +826,9 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 			dispX[i], dispY[i] = 0, 0
 		}
 
-		// Use Barnes-Hut for O(n log n) repulsive forces
+		// Use Barnes-Hut for O(n log n) repulsive forces (writes into repX, repY)
 		repStrength := k * k
-		repX, repY := calculateBarnesHutForces(X, Y, theta, repStrength)
+		calculateBarnesHutForces(X, Y, repX, repY, theta, repStrength)
 		for i := 0; i < N; i++ {
 			dispX[i] += repX[i]
 			dispY[i] += repY[i]

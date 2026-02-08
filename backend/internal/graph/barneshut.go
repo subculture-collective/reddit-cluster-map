@@ -116,9 +116,12 @@ func (node *barnesHutNode) calculateForce(i int, px, py, theta, repStrength floa
 	// If node is far enough (s/d < theta), treat as single body
 	if node.isLeaf || node.width/dist < theta {
 		if dist < 1e-6 {
-			// Particles too close, use small repulsive force
-			return 0, 0
+			// Particles too close, add small jitter to prevent collapse
+			dist = 1e-6
+			dx = (randFloat() - 0.5) * 2e-6
+			dy = (randFloat() - 0.5) * 2e-6
 		}
+		// FR-style repulsion: components scale as repStrength * mass / dist^2
 		force := repStrength * node.mass / (dist * dist)
 		fx := -dx / dist * force // Repulsive force pushes away
 		fy := -dy / dist * force
@@ -177,6 +180,10 @@ func buildBarnesHutTree(X, Y []float64) *barnesHutNode {
 
 	// Add 10% padding to avoid edge cases
 	padding := math.Max(maxX-minX, maxY-minY) * 0.1
+	// Ensure minimum padding to handle clustered/coincident points
+	if padding < 1.0 {
+		padding = 1.0
+	}
 	minX -= padding
 	maxX += padding
 	minY -= padding
@@ -207,16 +214,20 @@ func buildBarnesHutTree(X, Y []float64) *barnesHutNode {
 }
 
 // calculateBarnesHutForces computes repulsive forces using Barnes-Hut algorithm.
-// Returns force arrays dispX and dispY.
-func calculateBarnesHutForces(X, Y []float64, theta, repStrength float64) ([]float64, []float64) {
+// Writes results into provided dispX and dispY slices (must be pre-allocated with length N).
+func calculateBarnesHutForces(X, Y, dispX, dispY []float64, theta, repStrength float64) {
 	N := len(X)
-	dispX := make([]float64, N)
-	dispY := make([]float64, N)
+
+	// Clear output arrays
+	for i := 0; i < N; i++ {
+		dispX[i] = 0
+		dispY[i] = 0
+	}
 
 	// Build the quadtree
 	tree := buildBarnesHutTree(X, Y)
 	if tree == nil {
-		return dispX, dispY
+		return
 	}
 
 	// Calculate force on each particle
@@ -225,6 +236,4 @@ func calculateBarnesHutForces(X, Y []float64, theta, repStrength float64) ([]flo
 		dispX[i] = fx
 		dispY[i] = fy
 	}
-
-	return dispX, dispY
 }

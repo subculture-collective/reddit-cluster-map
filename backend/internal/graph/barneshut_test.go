@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"fmt"
 	"math"
 	"testing"
 )
@@ -174,7 +175,9 @@ func TestCalculateBarnesHutForces(t *testing.T) {
 	X := []float64{40, 60}
 	Y := []float64{50, 50}
 
-	dispX, dispY := calculateBarnesHutForces(X, Y, 0.8, 100.0)
+	dispX := make([]float64, 2)
+	dispY := make([]float64, 2)
+	calculateBarnesHutForces(X, Y, dispX, dispY, 0.8, 100.0)
 
 	if len(dispX) != 2 || len(dispY) != 2 {
 		t.Fatalf("expected 2 force values, got %d, %d", len(dispX), len(dispY))
@@ -212,7 +215,9 @@ func TestCalculateBarnesHutForcesLarge(t *testing.T) {
 		Y[i] = float64(i/gridSize) * 10
 	}
 
-	dispX, dispY := calculateBarnesHutForces(X, Y, 0.8, 100.0)
+	dispX := make([]float64, N)
+	dispY := make([]float64, N)
+	calculateBarnesHutForces(X, Y, dispX, dispY, 0.8, 100.0)
 
 	if len(dispX) != N || len(dispY) != N {
 		t.Fatalf("expected %d force values, got %d, %d", N, len(dispX), len(dispY))
@@ -237,10 +242,14 @@ func TestBarnesHutThetaParameter(t *testing.T) {
 	Y := []float64{0, 0, 100, 100}
 
 	// With theta=0.0 (exact, no approximation)
-	dispX0, _ := calculateBarnesHutForces(X, Y, 0.0, 100.0)
+	dispX0 := make([]float64, 4)
+	dispY0 := make([]float64, 4)
+	calculateBarnesHutForces(X, Y, dispX0, dispY0, 0.0, 100.0)
 
 	// With theta=0.8 (standard approximation)
-	dispX8, _ := calculateBarnesHutForces(X, Y, 0.8, 100.0)
+	dispX8 := make([]float64, 4)
+	dispY8 := make([]float64, 4)
+	calculateBarnesHutForces(X, Y, dispX8, dispY8, 0.8, 100.0)
 
 	// Forces should be similar but not identical
 	// Check that both produce reasonable repulsive forces
@@ -268,17 +277,13 @@ func BenchmarkBarnesHutForces(b *testing.B) {
 			Y[i] = float64(i/100) * 10
 		}
 
-		b.Run(benchName("BarnesHut", N), func(b *testing.B) {
+		b.Run(fmt.Sprintf("BarnesHut_%d", N), func(b *testing.B) {
+			dispX := make([]float64, N)
+			dispY := make([]float64, N)
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				calculateBarnesHutForces(X, Y, 0.8, 100.0)
+				calculateBarnesHutForces(X, Y, dispX, dispY, 0.8, 100.0)
 			}
 		})
 	}
-}
-
-func benchName(prefix string, n int) string {
-	if n >= 1000 {
-		return prefix + "_" + string(rune('0'+n/1000)) + "k"
-	}
-	return prefix + "_" + string(rune('0'+n/100)) + "00"
 }

@@ -9,7 +9,7 @@ import (
 // BenchmarkBarnesHutVsBruteForce compares Barnes-Hut against brute force
 func BenchmarkBarnesHutVsBruteForce(b *testing.B) {
 	sizes := []int{100, 500, 1000, 2000, 5000}
-	
+
 	for _, N := range sizes {
 		// Setup test data
 		X := make([]float64, N)
@@ -20,15 +20,18 @@ func BenchmarkBarnesHutVsBruteForce(b *testing.B) {
 			X[i] = radius * math.Cos(angle)
 			Y[i] = radius * math.Sin(angle)
 		}
-		
+
 		repStrength := 10000.0
-		
+
 		b.Run(fmt.Sprintf("BarnesHut_N=%d", N), func(b *testing.B) {
+			dispX := make([]float64, N)
+			dispY := make([]float64, N)
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				calculateBarnesHutForces(X, Y, 0.8, repStrength)
+				calculateBarnesHutForces(X, Y, dispX, dispY, 0.8, repStrength)
 			}
 		})
-		
+
 		b.Run(fmt.Sprintf("BruteForce_N=%d", N), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				bruteForceRepulsion(X, Y, repStrength)
@@ -42,7 +45,7 @@ func bruteForceRepulsion(X, Y []float64, repStrength float64) ([]float64, []floa
 	N := len(X)
 	dispX := make([]float64, N)
 	dispY := make([]float64, N)
-	
+
 	for v := 0; v < N; v++ {
 		for u := v + 1; u < N; u++ {
 			dx := X[v] - X[u]
@@ -60,7 +63,7 @@ func bruteForceRepulsion(X, Y []float64, repStrength float64) ([]float64, []floa
 			dispY[u] -= fy
 		}
 	}
-	
+
 	return dispX, dispY
 }
 
@@ -78,7 +81,7 @@ func BenchmarkLayoutScalability(b *testing.B) {
 		{10000, 25},
 		{20000, 25},
 	}
-	
+
 	for _, tc := range testCases {
 		b.Run(fmt.Sprintf("N=%d_Iter=%d", tc.nodes, tc.iterations), func(b *testing.B) {
 			// Setup positions
@@ -90,17 +93,19 @@ func BenchmarkLayoutScalability(b *testing.B) {
 				X[i] = radius * math.Cos(angle)
 				Y[i] = radius * math.Sin(angle)
 			}
-			
+
 			dispX := make([]float64, tc.nodes)
 			dispY := make([]float64, tc.nodes)
+			repX := make([]float64, tc.nodes)
+			repY := make([]float64, tc.nodes)
 			repStrength := 10000.0
 			theta := 0.8
-			
+
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Simulate one iteration of layout
 				for j := 0; j < tc.iterations; j++ {
-					repX, repY := calculateBarnesHutForces(X, Y, theta, repStrength)
+					calculateBarnesHutForces(X, Y, repX, repY, theta, repStrength)
 					for k := 0; k < tc.nodes; k++ {
 						dispX[k] = repX[k]
 						dispY[k] = repY[k]
@@ -121,14 +126,17 @@ func BenchmarkThetaParameter(b *testing.B) {
 		X[i] = 100 * math.Cos(angle)
 		Y[i] = 100 * math.Sin(angle)
 	}
-	
+
 	thetaValues := []float64{0.0, 0.5, 0.8, 1.0, 1.5}
 	repStrength := 10000.0
-	
+
 	for _, theta := range thetaValues {
 		b.Run(fmt.Sprintf("Theta=%.1f", theta), func(b *testing.B) {
+			dispX := make([]float64, N)
+			dispY := make([]float64, N)
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				calculateBarnesHutForces(X, Y, theta, repStrength)
+				calculateBarnesHutForces(X, Y, dispX, dispY, theta, repStrength)
 			}
 		})
 	}
@@ -137,7 +145,7 @@ func BenchmarkThetaParameter(b *testing.B) {
 // BenchmarkQuadtreeConstruction benchmarks just the tree building
 func BenchmarkQuadtreeConstruction(b *testing.B) {
 	sizes := []int{100, 500, 1000, 5000, 10000}
-	
+
 	for _, N := range sizes {
 		X := make([]float64, N)
 		Y := make([]float64, N)
@@ -145,7 +153,7 @@ func BenchmarkQuadtreeConstruction(b *testing.B) {
 			X[i] = float64(i % 100)
 			Y[i] = float64(i / 100)
 		}
-		
+
 		b.Run(fmt.Sprintf("N=%d", N), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				buildBarnesHutTree(X, Y)
