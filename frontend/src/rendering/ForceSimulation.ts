@@ -49,6 +49,9 @@ interface SimNode extends d3.SimulationNodeDatum {
   vy?: number;
   vz?: number;
   val?: number;
+  fx?: number | null;
+  fy?: number | null;
+  fz?: number | null;
 }
 
 interface SimLink extends d3.SimulationLinkDatum<SimNode> {
@@ -126,6 +129,8 @@ export class ForceSimulation {
 
   /**
    * Initialize or reinitialize the d3-force simulation
+   * Note: Uses 2D d3-force (updates x/y only). Z coordinates are preserved from initial positions
+   * but not updated by simulation. For true 3D layouts, consider d3-force-3d or ngraph.
    */
   private initializeSimulation(): void {
     // Stop existing simulation
@@ -133,7 +138,7 @@ export class ForceSimulation {
       this.simulation.stop();
     }
 
-    // Create new simulation with 3D forces
+    // Create new simulation with 2D forces (x/y only, z preserved from initial positions)
     this.simulation = d3.forceSimulation<SimNode, SimLink>(this.nodes);
 
     // If we have precomputed positions, skip simulation
@@ -167,7 +172,7 @@ export class ForceSimulation {
     this.simulation.force(
       'link',
       d3.forceLink<SimNode, SimLink>(this.links)
-        .id(d => d.id)
+        .id((d: SimNode) => d.id)
         .distance(linkDistance)
     );
 
@@ -181,7 +186,7 @@ export class ForceSimulation {
     if (physics?.collisionRadius && physics.collisionRadius > 0) {
       this.simulation.force(
         'collide',
-        d3.forceCollide<SimNode>(node => {
+        d3.forceCollide<SimNode>((node: SimNode) => {
           const val = node.val ?? 1;
           return Math.sqrt(val) + (physics.collisionRadius ?? 0);
         })
@@ -197,11 +202,8 @@ export class ForceSimulation {
       this.emitTick();
     });
 
-    // Cooldown ticks
-    const cooldownTicks = physics?.cooldownTicks ?? 100;
-    if (cooldownTicks > 0) {
-      this.simulation.tick(cooldownTicks);
-    }
+    // Note: Removed synchronous tick() to avoid blocking the main thread.
+    // The simulation will run incrementally via the animation loop.
   }
 
   /**
@@ -268,7 +270,7 @@ export class ForceSimulation {
     if (physics.collisionRadius && physics.collisionRadius > 0) {
       this.simulation.force(
         'collide',
-        d3.forceCollide<SimNode>(node => {
+        d3.forceCollide<SimNode>((node: SimNode) => {
           const val = node.val ?? 1;
           return Math.sqrt(val) + (physics.collisionRadius ?? 0);
         })
@@ -307,7 +309,6 @@ export class ForceSimulation {
     node.z = position.z;
     node.fx = position.x;
     node.fy = position.y;
-    // @ts-expect-error: d3-force types don't include fz for 3D
     node.fz = position.z;
   }
 
@@ -320,7 +321,6 @@ export class ForceSimulation {
 
     node.fx = null;
     node.fy = null;
-    // @ts-expect-error: d3-force types don't include fz for 3D
     node.fz = null;
   }
 

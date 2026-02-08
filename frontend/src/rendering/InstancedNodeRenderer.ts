@@ -7,14 +7,14 @@ import * as THREE from 'three';
  * This dramatically reduces CPU overhead and improves performance for large graphs.
  * 
  * Key features:
- * - Single InstancedMesh per node type (max 4-5 draw calls)
+ * - Single InstancedMesh per node type (typically 4 draw calls for core node types)
  * - Position updates via instanceMatrix (no scene graph traversal)
  * - Per-instance colors via instanceColor attribute
  * - Per-instance sizes via scale in instance matrix
  * - Optimized for 100k+ nodes
  * 
  * Performance targets:
- * - <3 draw calls for rendering
+ * - ~4 draw calls for core node types (plus extras for links/labels as configured)
  * - <5ms for position updates
  * - <500MB memory usage for 100k nodes
  * 
@@ -108,7 +108,7 @@ export class InstancedNodeRenderer {
     for (const [type, typedMesh] of this.meshes.entries()) {
       if (!nodesByType.has(type)) {
         this.scene.remove(typedMesh.mesh);
-        typedMesh.mesh.geometry.dispose();
+        // Only dispose material, not shared geometry
         (typedMesh.mesh.material as THREE.Material).dispose();
         this.meshes.delete(type);
       }
@@ -126,7 +126,7 @@ export class InstancedNodeRenderer {
     if (existing && existing.mesh.count !== count) {
       // Remove old mesh
       this.scene.remove(existing.mesh);
-      existing.mesh.geometry.dispose();
+      // Only dispose material, not shared geometry
       (existing.mesh.material as THREE.Material).dispose();
       this.meshes.delete(type);
     }
@@ -358,11 +358,12 @@ export class InstancedNodeRenderer {
   public dispose(): void {
     for (const [, typedMesh] of this.meshes.entries()) {
       this.scene.remove(typedMesh.mesh);
-      typedMesh.mesh.geometry.dispose();
+      // Only dispose material, not geometry (shared across all meshes)
       (typedMesh.mesh.material as THREE.Material).dispose();
     }
     this.meshes.clear();
     this.nodeMap.clear();
+    // Dispose shared geometry once after all meshes are cleared
     this.geometry.dispose();
   }
 

@@ -14,7 +14,7 @@ import LoadingSkeleton from './LoadingSkeleton';
  * InstancedMesh for dramatically improved performance with large graphs.
  * 
  * Performance characteristics:
- * - Renders 100k nodes in <3 draw calls (one per node type)
+ * - Renders 100k nodes in ~4 draw calls for nodes (one per node type)
  * - Position updates in <5ms
  * - Memory usage <500MB for 100k nodes
  * 
@@ -252,6 +252,12 @@ export default function Graph3DInstanced(props: Props) {
       camera.position.set(initialCamera.x, initialCamera.y, initialCamera.z);
     }
 
+    // Track last camera position for throttling
+    let lastCameraUpdate = 0;
+    const CAMERA_UPDATE_INTERVAL = 1000; // Update every 1 second
+    const lastCamPos = { x: NaN, y: NaN, z: NaN };
+    const EPSILON = 1e-3;
+
     // Animation loop
     let animationId: number;
     const animate = () => {
@@ -259,13 +265,24 @@ export default function Graph3DInstanced(props: Props) {
       controls.update();
       renderer.render(scene, camera);
 
-      // Emit camera changes
+      // Throttle camera change emissions
       if (onCameraChange) {
-        onCameraChange({
-          x: camera.position.x,
-          y: camera.position.y,
-          z: camera.position.z,
-        });
+        const now = Date.now();
+        if (now - lastCameraUpdate > CAMERA_UPDATE_INTERVAL) {
+          const { x, y, z } = camera.position;
+          // Only emit if position changed significantly
+          if (
+            Math.abs(x - lastCamPos.x) > EPSILON ||
+            Math.abs(y - lastCamPos.y) > EPSILON ||
+            Math.abs(z - lastCamPos.z) > EPSILON
+          ) {
+            onCameraChange({ x, y, z });
+            lastCamPos.x = x;
+            lastCamPos.y = y;
+            lastCamPos.z = z;
+            lastCameraUpdate = now;
+          }
+        }
       }
     };
     animate();
@@ -350,7 +367,13 @@ export default function Graph3DInstanced(props: Props) {
 
   // Update node renderer when filtered data changes
   useEffect(() => {
-    if (!nodeRendererRef.current || !filtered.nodes.length) return;
+    if (!nodeRendererRef.current) return;
+
+    // If there are no filtered nodes, clear the renderer so the scene matches the current state
+    if (!filtered.nodes.length) {
+      nodeRendererRef.current.setNodeData([]);
+      return;
+    }
 
     const nodeData: NodeData[] = filtered.nodes.map((node) => {
       // Get color from community or type
@@ -364,7 +387,7 @@ export default function Graph3DInstanced(props: Props) {
       }
 
       // Calculate size based on node value
-      let size = 1;
+      let size: number;
       const val = typeof node.val === 'number' ? node.val : 1;
       switch (node.type) {
         case 'subreddit':
@@ -440,7 +463,7 @@ export default function Graph3DInstanced(props: Props) {
     while (linksGroupRef.current.children.length > 0) {
       const child = linksGroupRef.current.children[0];
       linksGroupRef.current.remove(child);
-      if (child instanceof THREE.Line) {
+      if (child instanceof THREE.Line || child instanceof THREE.LineSegments) {
         child.geometry.dispose();
         (child.material as THREE.Material).dispose();
       }
@@ -458,26 +481,59 @@ export default function Graph3DInstanced(props: Props) {
       return;
     }
 
+    // Build a fast lookup map from node id to node data
+    const nodeById = new Map<string, typeof filtered.nodes[0]>();
+    for (const node of filtered.nodes) {
+      nodeById.set(node.id, node);
+    }
+
     const material = new THREE.LineBasicMaterial({
       color: 0x999999,
       opacity: linkOpacity,
       transparent: true,
     });
 
+    // Each link contributes two vertices (source and target), each with 3 components (x, y, z)
+    const positions = new Float32Array(linkCount * 2 * 3);
+    let segmentIndex = 0;
+
     for (const link of filtered.links) {
-      const sourceNode = filtered.nodes.find((n) => n.id === link.source);
-      const targetNode = filtered.nodes.find((n) => n.id === link.target);
-      
+      const sourceNode = nodeById.get(link.source);
+      const targetNode = nodeById.get(link.target);
+
       if (!sourceNode || !targetNode) continue;
 
-      const geometry = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(sourceNode.x || 0, sourceNode.y || 0, sourceNode.z || 0),
-        new THREE.Vector3(targetNode.x || 0, targetNode.y || 0, targetNode.z || 0),
-      ]);
+      const baseIndex = segmentIndex * 2 * 3;
 
-      const line = new THREE.Line(geometry, material);
-      linksGroupRef.current.add(line);
+      // Source vertex
+      positions[baseIndex] = sourceNode.x || 0;
+      positions[baseIndex + 1] = sourceNode.y || 0;
+      positions[baseIndex + 2] = sourceNode.z || 0;
+
+      // Target vertex
+      positions[baseIndex + 3] = targetNode.x || 0;
+      positions[baseIndex + 4] = targetNode.y || 0;
+      positions[baseIndex + 5] = targetNode.z || 0;
+
+      segmentIndex++;
     }
+
+    // If no valid segments, nothing to render
+    if (segmentIndex === 0) {
+      return;
+    }
+
+    // If some links were filtered out, trim the positions buffer to the used length
+    const usedPositions =
+      segmentIndex * 2 * 3 === positions.length
+        ? positions
+        : positions.subarray(0, segmentIndex * 2 * 3);
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(usedPositions, 3));
+
+    const lineSegments = new THREE.LineSegments(geometry, material);
+    linksGroupRef.current.add(lineSegments);
   }, [filtered, linkOpacity]);
 
   // Handle mouse interactions
@@ -534,7 +590,16 @@ export default function Graph3DInstanced(props: Props) {
   useEffect(() => {
     if (!focusNodeId || !cameraRef.current || !controlsRef.current || !nodeRendererRef.current) return;
 
-    const position = nodeRendererRef.current.getNodePosition(focusNodeId);
+    // Try to find node by id or name (case-insensitive)
+    const matchedNode = filtered.nodes.find(
+      (n) =>
+        n.id === focusNodeId ||
+        n.name?.toLowerCase() === focusNodeId.toLowerCase()
+    );
+
+    if (!matchedNode) return;
+
+    const position = nodeRendererRef.current.getNodePosition(matchedNode.id);
     if (position) {
       const distance = 200;
       cameraRef.current.position.set(
@@ -545,7 +610,7 @@ export default function Graph3DInstanced(props: Props) {
       controlsRef.current.target.set(position.x, position.y, position.z);
       controlsRef.current.update();
     }
-  }, [focusNodeId]);
+  }, [focusNodeId, filtered]);
 
   // Show loading skeleton during initial load
   if (loading && !initialLoadComplete) {
