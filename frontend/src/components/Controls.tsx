@@ -8,6 +8,7 @@ type Physics = {
   velocityDecay: number;
   cooldownTicks: number;
   collisionRadius: number;
+  autoTune?: boolean;
 };
 
 type SubredditSize =
@@ -295,6 +296,23 @@ export default function Controls(props: Props) {
           <option value="interSubLinks">Inter-sub links</option>
         </select>
       </div>
+
+      {/* Physics auto-tune toggle */}
+      <div className="text-xs text-white/70 border-t border-white/10 pt-2 mt-1">Physics</div>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={!!physics.autoTune}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            onPhysicsChange({
+              ...physics,
+              autoTune: e.target.checked,
+            })
+          }
+        />
+        Auto-tune physics
+        <span className="text-xs opacity-60">(3D instanced mode only)</span>
+      </label>
 
       {/* Physics: Repulsion (charge strength) */}
       <div className="flex gap-3 items-center">

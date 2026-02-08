@@ -34,12 +34,20 @@ function App() {
   
   const [linkOpacity, setLinkOpacity] = useState(0.35);
   const [nodeRelSize, setNodeRelSize] = useState(5);
-  const [physics, setPhysics] = useState({
+  const [physics, setPhysics] = useState<{
+    chargeStrength: number;
+    linkDistance: number;
+    velocityDecay: number;
+    cooldownTicks: number;
+    collisionRadius: number;
+    autoTune?: boolean;
+  }>({
     chargeStrength: -220,
     linkDistance: 120,
     velocityDecay: 0.88,
     cooldownTicks: 80,
     collisionRadius: 3,
+    autoTune: true, // Enable auto-tune by default for stability
   });
   const [focusNodeId, setFocusNodeId] = useState<string | undefined>();
   const [showLabels, setShowLabels] = useState(true);
