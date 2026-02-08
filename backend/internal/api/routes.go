@@ -6,6 +6,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/api/handlers"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/middleware"
@@ -118,13 +119,13 @@ func NewRouter(q *db.Queries) *mux.Router {
 	adminOnly := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.AdminAPIToken == "" {
-				http.Error(w, "admin token not configured", http.StatusServiceUnavailable)
+				apierr.WriteErrorWithContext(w, r, apierr.SystemUnavailable("Admin token not configured"))
 				return
 			}
 			auth := r.Header.Get("Authorization")
 			const prefix = "Bearer "
 			if len(auth) <= len(prefix) || auth[:len(prefix)] != prefix || auth[len(prefix):] != cfg.AdminAPIToken {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				apierr.WriteErrorWithContext(w, r, apierr.AuthInvalid(""))
 				return
 			}
 			next.ServeHTTP(w, r)
