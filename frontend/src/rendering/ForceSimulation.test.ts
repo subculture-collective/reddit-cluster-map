@@ -4,7 +4,7 @@ import type { GraphNode, GraphLink } from '../types/graph';
 
 describe('ForceSimulation with Web Worker', () => {
   let simulation: ForceSimulation;
-  let tickCallbackMock: ReturnType<typeof vi.fn>;
+  let tickCallbackMock: (positions: Map<string, { x: number; y: number; z: number }>) => void;
 
   beforeEach(() => {
     tickCallbackMock = vi.fn();
