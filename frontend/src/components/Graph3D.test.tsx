@@ -1,6 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import Graph3D from './Graph3D';
+
+// Disable instanced renderer for tests (WebGL not available in test environment)
+beforeEach(() => {
+  import.meta.env.VITE_USE_INSTANCED_RENDERER = false;
+});
 
 // Mock webglDetect to return true in tests
 vi.mock('../utils/webglDetect', () => ({
