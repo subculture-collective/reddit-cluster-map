@@ -59,6 +59,21 @@ func (s *Service) detectCommunities(ctx context.Context, queries *db.Queries) (*
 		return nil, nil, nil, fmt.Errorf("fetch links: %w", err)
 	}
 
+	result, err := s.detectCommunitiesFromData(nodes, links)
+	return result, nodes, links, err
+}
+
+// detectCommunitiesFromData performs Louvain community detection on provided nodes and links
+func (s *Service) detectCommunitiesFromData(nodes []db.ListGraphNodesByWeightRow, links []db.ListGraphLinksAmongRow) (*CommunityResult, error) {
+	if len(nodes) == 0 {
+		return &CommunityResult{Communities: []Community{}, NodeToCommunity: map[string]int{}, Modularity: 0}, nil
+	}
+
+	nodeIDs := make([]string, len(nodes))
+	for i, n := range nodes {
+		nodeIDs[i] = n.ID
+	}
+
 	log.Printf("📊 Building graph structure: %d nodes, %d links", len(nodeIDs), len(links))
 
 	// Build adjacency map and degree map
@@ -229,7 +244,7 @@ func (s *Service) detectCommunities(ctx context.Context, queries *db.Queries) (*
 		Communities:     communities,
 		NodeToCommunity: finalNodeToCommunity,
 		Modularity:      modularity,
-	}, nodes, links, nil
+	}, nil
 }
 
 // modularityGain calculates the gain in modularity from moving a node between communities
@@ -443,11 +458,11 @@ func (s *Service) detectHierarchicalCommunities(ctx context.Context, queries *db
 		log.Printf("🔄 Computing hierarchy level %d", level)
 
 		// Run single-pass Louvain on current level
-		nodeToCommunity := runSinglePassLouvain(currentNodeIDs, currentAdjacency, currentDegrees, currentTotalWeight)
+		metaNodeToCommunity := runSinglePassLouvain(currentNodeIDs, currentAdjacency, currentDegrees, currentTotalWeight)
 
 		// Check if we got any clustering (more than 1 community and less than total nodes)
 		uniqueCommunities := make(map[int]bool)
-		for _, comm := range nodeToCommunity {
+		for _, comm := range metaNodeToCommunity {
 			uniqueCommunities[comm] = true
 		}
 
@@ -468,26 +483,58 @@ func (s *Service) detectHierarchicalCommunities(ctx context.Context, queries *db
 			communityMap[oldID] = i
 		}
 
+		// For level 1, currentNodeIDs are the original node IDs
+		// For level 2+, currentNodeIDs are meta-node IDs from previous level
+		// We need to map original nodes to their new communities
+
 		finalNodeToCommunity := make(map[string]int)
-		for node, comm := range nodeToCommunity {
-			finalNodeToCommunity[node] = communityMap[comm]
+
+		if level == 1 {
+			// First level: currentNodeIDs are original nodes
+			for node, comm := range metaNodeToCommunity {
+				finalNodeToCommunity[node] = communityMap[comm]
+			}
+		} else {
+			// Higher levels: map through meta-nodes back to original nodes
+			// Each meta-node represents a community from the previous level
+			prevLevel := hierarchy[len(hierarchy)-1]
+
+			// Build reverse mapping: which original nodes are in which prev-level community
+			prevCommToNodes := make(map[int][]string)
+			for origNode, prevComm := range prevLevel.NodeToCommunity {
+				prevCommToNodes[prevComm] = append(prevCommToNodes[prevComm], origNode)
+			}
+
+			// Now map: meta-node -> new community -> original nodes
+			for metaNode, oldComm := range metaNodeToCommunity {
+				newComm := communityMap[oldComm]
+				// Parse meta-node ID to get the previous community it represents
+				var prevCommID int
+				fmt.Sscanf(metaNode, "meta_%d", &prevCommID)
+
+				// All original nodes in that previous community now belong to newComm
+				for _, origNode := range prevCommToNodes[prevCommID] {
+					finalNodeToCommunity[origNode] = newComm
+				}
+			}
 		}
 
-		// Calculate modularity
-		modularity := calculateModularity(finalNodeToCommunity, currentAdjacency, currentDegrees, currentTotalWeight)
+		// Calculate modularity on the meta-graph level
+		modularity := calculateModularity(metaNodeToCommunity, currentAdjacency, currentDegrees, currentTotalWeight)
 
 		// Map to parent communities from previous level
+		// A new community can merge multiple parent communities, so we mark mixed parents as -1
 		parentLevel := hierarchy[len(hierarchy)-1]
 		communityToParent := make(map[int]int)
-		for node, newComm := range finalNodeToCommunity {
-			oldComm := parentLevel.NodeToCommunity[node]
+		for origNode, newComm := range finalNodeToCommunity {
+			oldComm := parentLevel.NodeToCommunity[origNode]
 			if oldParent, exists := communityToParent[newComm]; exists {
-				// Verify consistency - all nodes in same new community should have same parent
-				if oldParent != oldComm {
-					// This is expected - nodes from different parent communities merge
+				if oldParent != oldComm && oldParent != -1 {
+					// This community has nodes from multiple parent communities; mark as mixed
+					communityToParent[newComm] = -1
 				}
 			} else {
-				// First time seeing this community, store any parent (we'll update centroids)
+				// First time seeing this community, store the parent; may be marked mixed later
 				communityToParent[newComm] = oldComm
 			}
 		}
@@ -513,25 +560,23 @@ func (s *Service) detectHierarchicalCommunities(ctx context.Context, queries *db
 		metaTotalWeight := 0
 
 		// Create meta-nodes (one per community)
-		for newComm := range uniqueCommunities {
-			metaNodeID := fmt.Sprintf("meta_%d", communityMap[newComm])
+		for _, newCommID := range communityMap {
+			metaNodeID := fmt.Sprintf("meta_%d", newCommID)
 			metaNodeIDs = append(metaNodeIDs, metaNodeID)
 			metaAdjacency[metaNodeID] = make(map[string]int)
 			metaDegrees[metaNodeID] = 0
 		}
 
-		// Aggregate links between communities
+		// Aggregate links between communities (including self-loops for intra-community edges)
 		for node1, neighbors := range currentAdjacency {
-			comm1 := finalNodeToCommunity[node1]
-			metaNode1 := fmt.Sprintf("meta_%d", comm1)
+			comm1 := metaNodeToCommunity[node1]
+			metaNode1 := fmt.Sprintf("meta_%d", communityMap[comm1])
 
 			for node2, weight := range neighbors {
-				comm2 := finalNodeToCommunity[node2]
-				if comm1 == comm2 {
-					// Internal link - contributes to meta-node self-weight
-					continue
-				}
-				metaNode2 := fmt.Sprintf("meta_%d", comm2)
+				comm2 := metaNodeToCommunity[node2]
+				metaNode2 := fmt.Sprintf("meta_%d", communityMap[comm2])
+
+				// Add edge weight (self-loops for intra-community edges)
 				metaAdjacency[metaNode1][metaNode2] += weight
 				metaDegrees[metaNode1] += weight
 				metaTotalWeight += weight
@@ -625,23 +670,18 @@ func (s *Service) calculateCentroidsForLevel(ctx context.Context, queries *db.Qu
 
 	// Build node position lookup
 	nodePositions := make(map[string][3]float64)
+	nodeHasPosition := make(map[string]bool)
 	for _, n := range nodes {
-		var x, y, z float64
-		if n.PosX.Valid {
-			x = n.PosX.Float64
+		if n.PosX.Valid && n.PosY.Valid && n.PosZ.Valid {
+			nodePositions[n.ID] = [3]float64{n.PosX.Float64, n.PosY.Float64, n.PosZ.Float64}
+			nodeHasPosition[n.ID] = true
 		}
-		if n.PosY.Valid {
-			y = n.PosY.Float64
-		}
-		if n.PosZ.Valid {
-			z = n.PosZ.Float64
-		}
-		nodePositions[n.ID] = [3]float64{x, y, z}
 	}
 
 	// Accumulate positions per community
 	for nodeID, commID := range nodeToCommunity {
-		if pos, ok := nodePositions[nodeID]; ok {
+		if nodeHasPosition[nodeID] {
+			pos := nodePositions[nodeID]
 			sum := communitySum[commID]
 			sum[0] += pos[0]
 			sum[1] += pos[1]
@@ -677,16 +717,18 @@ func (s *Service) storeHierarchy(ctx context.Context, queries *db.Queries, hiera
 
 	// Store each level
 	totalRows := 0
+	var firstError error
 	for _, level := range hierarchy {
 		for nodeID, commID := range level.NodeToCommunity {
 			var parentCommID sql.NullInt32
-			if parent, ok := level.CommunityToParent[commID]; ok {
+			if parent, ok := level.CommunityToParent[commID]; ok && parent != -1 {
 				parentCommID = sql.NullInt32{Int32: int32(parent), Valid: true}
 			}
 
-			centroid := level.CommunityCentroids[commID]
+			// Check if centroid exists for this community
+			centroid, hasCentroid := level.CommunityCentroids[commID]
 			var cx, cy, cz sql.NullFloat64
-			if centroid[0] != 0 || centroid[1] != 0 || centroid[2] != 0 {
+			if hasCentroid {
 				cx = sql.NullFloat64{Float64: centroid[0], Valid: true}
 				cy = sql.NullFloat64{Float64: centroid[1], Valid: true}
 				cz = sql.NullFloat64{Float64: centroid[2], Valid: true}
@@ -702,6 +744,9 @@ func (s *Service) storeHierarchy(ctx context.Context, queries *db.Queries, hiera
 				CentroidZ:         cz,
 			}); err != nil {
 				log.Printf("⚠️ failed to insert hierarchy row for node %s at level %d: %v", nodeID, level.Level, err)
+				if firstError == nil {
+					firstError = fmt.Errorf("failed to insert hierarchy row for node %s at level %d: %w", nodeID, level.Level, err)
+				}
 			} else {
 				totalRows++
 			}
@@ -710,5 +755,9 @@ func (s *Service) storeHierarchy(ctx context.Context, queries *db.Queries, hiera
 	}
 
 	log.Printf("✅ Stored hierarchical community structure: %d total rows across %d levels", totalRows, len(hierarchy))
+
+	if firstError != nil {
+		return firstError
+	}
 	return nil
 }

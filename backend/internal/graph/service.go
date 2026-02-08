@@ -689,8 +689,8 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 					log.Printf("⚠️ failed to store hierarchy: %v", err)
 				}
 
-				// Also run flat community detection for backward compatibility
-				if result, _, _, err := s.detectCommunities(ctx, queries); err != nil {
+				// Also run flat community detection for backward compatibility (reuse same nodes/links)
+				if result, err := s.detectCommunitiesFromData(nodes, links); err != nil {
 					log.Printf("⚠️ community detection failed: %v", err)
 				} else if err := s.storeCommunities(ctx, queries, result, nodes, links); err != nil {
 					log.Printf("⚠️ failed to store communities: %v", err)

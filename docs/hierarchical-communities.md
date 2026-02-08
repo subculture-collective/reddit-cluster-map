@@ -104,7 +104,7 @@ The hierarchical detection runs automatically during graph precalculation (`Prec
 1. **Adaptive Stopping**: Stops when clustering becomes ineffective
 2. **Meta-Graph Reduction**: Each level reduces graph size significantly
 3. **Limited Iterations**: Maximum 50 iterations per Louvain pass
-4. **Batch Operations**: Hierarchy storage uses batch inserts
+4. **Individual Inserts**: Hierarchy storage performs one insert per node per level (future optimization may add true batching via transactions or COPY)
 
 ## Testing
 

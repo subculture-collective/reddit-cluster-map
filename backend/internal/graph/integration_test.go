@@ -417,8 +417,8 @@ func TestIntegration_HierarchicalCommunityDetection(t *testing.T) {
 	}
 
 	// Validate hierarchy structure
-	if len(hierarchy) < 2 {
-		t.Errorf("expected at least 2 levels, got %d", len(hierarchy))
+	if len(hierarchy) < 3 {
+		t.Errorf("expected at least 3 levels for graph with clear clusters, got %d", len(hierarchy))
 	}
 
 	t.Logf("Generated %d hierarchy levels", len(hierarchy))
@@ -454,6 +454,16 @@ func TestIntegration_HierarchicalCommunityDetection(t *testing.T) {
 	stored, err := q.GetCommunityHierarchy(ctx)
 	if err != nil {
 		t.Fatalf("failed to query hierarchy: %v", err)
+	}
+
+	// Verify stored levels match generated levels
+	storedLevels, err := q.GetHierarchyLevels(ctx)
+	if err != nil {
+		t.Fatalf("failed to query hierarchy levels: %v", err)
+	}
+
+	if len(storedLevels) < 3 {
+		t.Errorf("expected at least 3 stored levels, got %d", len(storedLevels))
 	}
 
 	// Count entries per level
