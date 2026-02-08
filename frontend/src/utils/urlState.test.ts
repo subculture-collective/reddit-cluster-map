@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   readStateFromURL,
   writeStateToURL,
@@ -7,33 +7,38 @@ import {
 } from './urlState';
 
 describe('urlState', () => {
+  let originalLocation: Location;
+
+  beforeEach(() => {
+    // Save original location
+    originalLocation = window.location;
+    // Use delete to allow reassignment
+    delete (window as any).location;
+  });
+
+  afterEach(() => {
+    // Restore original location
+    window.location = originalLocation;
+  });
+
   describe('readStateFromURL', () => {
     it('returns empty object when no params', () => {
-      // Mock window.location
-      Object.defineProperty(window, 'location', {
-        value: { search: '' },
-        writable: true,
-      });
+      // Set window.location
+      window.location = { search: '' } as Location;
       
       const state = readStateFromURL();
       expect(state).toEqual({});
     });
 
     it('reads view mode from URL', () => {
-      Object.defineProperty(window, 'location', {
-        value: { search: '?view=2d' },
-        writable: true,
-      });
+      window.location = { search: '?view=2d' } as Location;
       
       const state = readStateFromURL();
       expect(state.viewMode).toBe('2d');
     });
 
     it('reads filters from URL', () => {
-      Object.defineProperty(window, 'location', {
-        value: { search: '?f_subreddit=1&f_user=0&f_post=1&f_comment=0' },
-        writable: true,
-      });
+      window.location = { search: '?f_subreddit=1&f_user=0&f_post=1&f_comment=0' } as Location;
       
       const state = readStateFromURL();
       expect(state.filters).toEqual({
@@ -45,10 +50,7 @@ describe('urlState', () => {
     });
 
     it('reads degree thresholds from URL', () => {
-      Object.defineProperty(window, 'location', {
-        value: { search: '?minDegree=5&maxDegree=100' },
-        writable: true,
-      });
+      window.location = { search: '?minDegree=5&maxDegree=100' } as Location;
       
       const state = readStateFromURL();
       expect(state.minDegree).toBe(5);
@@ -56,40 +58,28 @@ describe('urlState', () => {
     });
 
     it('reads 3D camera position from URL', () => {
-      Object.defineProperty(window, 'location', {
-        value: { search: '?cam3d_x=100.5&cam3d_y=200.3&cam3d_z=300.7' },
-        writable: true,
-      });
+      window.location = { search: '?cam3d_x=100.5&cam3d_y=200.3&cam3d_z=300.7' } as Location;
       
       const state = readStateFromURL();
       expect(state.camera3d).toEqual({ x: 100.5, y: 200.3, z: 300.7 });
     });
 
     it('reads 2D camera position from URL', () => {
-      Object.defineProperty(window, 'location', {
-        value: { search: '?cam2d_x=50.2&cam2d_y=75.8&cam2d_zoom=1.5' },
-        writable: true,
-      });
+      window.location = { search: '?cam2d_x=50.2&cam2d_y=75.8&cam2d_zoom=1.5' } as Location;
       
       const state = readStateFromURL();
       expect(state.camera2d).toEqual({ x: 50.2, y: 75.8, zoom: 1.5 });
     });
 
     it('reads community colors setting from URL', () => {
-      Object.defineProperty(window, 'location', {
-        value: { search: '?communityColors=1' },
-        writable: true,
-      });
+      window.location = { search: '?communityColors=1' } as Location;
       
       const state = readStateFromURL();
       expect(state.useCommunityColors).toBe(true);
     });
 
     it('reads precomputed layout setting from URL', () => {
-      Object.defineProperty(window, 'location', {
-        value: { search: '?precomputedLayout=0' },
-        writable: true,
-      });
+      window.location = { search: '?precomputedLayout=0' } as Location;
       
       const state = readStateFromURL();
       expect(state.usePrecomputedLayout).toBe(false);
@@ -97,16 +87,21 @@ describe('urlState', () => {
   });
 
   describe('writeStateToURL', () => {
+    let originalHistory: History;
+
+    beforeEach(() => {
+      originalHistory = window.history;
+    });
+
+    afterEach(() => {
+      window.history = originalHistory;
+    });
+
     it('writes view mode to URL', () => {
       const mockReplaceState = vi.fn();
-      Object.defineProperty(window, 'history', {
-        value: { replaceState: mockReplaceState },
-        writable: true,
-      });
-      Object.defineProperty(window, 'location', {
-        value: { search: '', pathname: '/test' },
-        writable: true,
-      });
+      delete (window as any).history;
+      window.history = { replaceState: mockReplaceState } as any;
+      window.location = { search: '', pathname: '/test' } as Location;
 
       const state: AppState = { viewMode: '3d' };
       writeStateToURL(state);
@@ -118,14 +113,9 @@ describe('urlState', () => {
 
     it('writes filters to URL', () => {
       const mockReplaceState = vi.fn();
-      Object.defineProperty(window, 'history', {
-        value: { replaceState: mockReplaceState },
-        writable: true,
-      });
-      Object.defineProperty(window, 'location', {
-        value: { search: '', pathname: '/test' },
-        writable: true,
-      });
+      delete (window as any).history;
+      window.history = { replaceState: mockReplaceState } as any;
+      window.location = { search: '', pathname: '/test' } as Location;
 
       const state: AppState = {
         filters: {
@@ -146,14 +136,9 @@ describe('urlState', () => {
 
     it('writes camera positions to URL', () => {
       const mockReplaceState = vi.fn();
-      Object.defineProperty(window, 'history', {
-        value: { replaceState: mockReplaceState },
-        writable: true,
-      });
-      Object.defineProperty(window, 'location', {
-        value: { search: '', pathname: '/test' },
-        writable: true,
-      });
+      delete (window as any).history;
+      window.history = { replaceState: mockReplaceState } as any;
+      window.location = { search: '', pathname: '/test' } as Location;
 
       const state: AppState = {
         camera3d: { x: 100, y: 200, z: 300 },
@@ -169,10 +154,7 @@ describe('urlState', () => {
 
   describe('generateShareURL', () => {
     it('generates full URL with state', () => {
-      Object.defineProperty(window, 'location', {
-        value: { origin: 'https://example.com', pathname: '/graph' },
-        writable: true,
-      });
+      window.location = { origin: 'https://example.com', pathname: '/graph' } as Location;
 
       const state: AppState = {
         viewMode: '3d',
