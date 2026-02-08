@@ -119,7 +119,7 @@ func NewRouter(q *db.Queries) *mux.Router {
 	adminOnly := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.AdminAPIToken == "" {
-				apierr.WriteErrorWithContext(w, r, apierr.AuthOAuthNotConfigured())
+				apierr.WriteErrorWithContext(w, r, apierr.SystemUnavailable("Admin token not configured"))
 				return
 			}
 			auth := r.Header.Get("Authorization")
