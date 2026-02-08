@@ -311,7 +311,7 @@ export default function Controls(props: Props) {
           }
         />
         Auto-tune physics
-        <span className="text-xs opacity-60">(scales with node count)</span>
+        <span className="text-xs opacity-60">(3D instanced mode only)</span>
       </label>
 
       {/* Physics: Repulsion (charge strength) */}

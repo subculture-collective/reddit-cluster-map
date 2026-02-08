@@ -130,17 +130,38 @@ export class ForceSimulation {
   }
 
   /**
-   * Check if simulation has converged (all velocities below threshold)
+   * Apply clamping and check convergence in a single pass for efficiency
+   * Returns the maximum velocity found across all nodes
    */
-  private checkConvergence(): boolean {
+  private clampAndCheckConvergence(): number {
     let maxVelocity = 0;
     for (const node of this.nodes) {
+      // Clamp velocity
       if (node.vx !== undefined && node.vy !== undefined) {
         const speed = Math.sqrt(node.vx * node.vx + node.vy * node.vy);
+        if (speed > ForceSimulation.MAX_VELOCITY) {
+          const scale = ForceSimulation.MAX_VELOCITY / speed;
+          node.vx *= scale;
+          node.vy *= scale;
+          if (node.vz !== undefined) {
+            node.vz *= scale;
+          }
+        }
         maxVelocity = Math.max(maxVelocity, speed);
       }
+      
+      // Clamp position
+      if (node.x !== undefined) {
+        node.x = Math.max(-ForceSimulation.POSITION_BOUND, Math.min(ForceSimulation.POSITION_BOUND, node.x));
+      }
+      if (node.y !== undefined) {
+        node.y = Math.max(-ForceSimulation.POSITION_BOUND, Math.min(ForceSimulation.POSITION_BOUND, node.y));
+      }
+      if (node.z !== undefined) {
+        node.z = Math.max(-ForceSimulation.POSITION_BOUND, Math.min(ForceSimulation.POSITION_BOUND, node.z));
+      }
     }
-    return maxVelocity < ForceSimulation.CONVERGENCE_THRESHOLD;
+    return maxVelocity;
   }
 
   /**
@@ -215,6 +236,11 @@ export class ForceSimulation {
 
     // If we have precomputed positions, skip simulation
     if (this.hasPrecomputedPositions) {
+      // Clamp precomputed positions to bounds
+      for (const node of this.nodes) {
+        this.clampPosition(node);
+      }
+      
       // Set cooldown to 0 to stop immediately
       this.simulation
         .force('charge', null)
@@ -276,23 +302,36 @@ export class ForceSimulation {
 
     // Set up tick handler with clamping and convergence detection
     this.simulation.on('tick', () => {
-      // Apply velocity and position clamping to all nodes
-      for (const node of this.nodes) {
-        this.clampVelocity(node);
-        this.clampPosition(node);
-      }
+      // Apply velocity and position clamping, and check convergence in single pass
+      const maxVelocity = this.clampAndCheckConvergence();
       
-      // Check for convergence and stop if achieved
-      if (this.checkConvergence() && this.simulation) {
-        this.simulation.alpha(0); // Stop simulation
+      // Stop simulation if converged
+      if (maxVelocity < ForceSimulation.CONVERGENCE_THRESHOLD && this.simulation) {
+        this.simulation.alpha(0);
       }
       
       this.emitTick();
     });
 
-    // Auto-tune alpha decay for faster/slower convergence
+    // Configure alpha decay / cooldown behavior
+    const manualCooldownTicks = physics?.cooldownTicks;
+    let cooldownTicks: number | undefined;
+
     if (autoTune && nodeCount > 0) {
-      const cooldownTicks = this.getAutoTunedCooldownTicks(nodeCount);
+      // Auto-tune mode: derive cooldown from node count
+      cooldownTicks = this.getAutoTunedCooldownTicks(nodeCount);
+    } else if (typeof manualCooldownTicks === 'number') {
+      if (manualCooldownTicks > 0) {
+        // Manual mode: use configured cooldownTicks directly
+        cooldownTicks = manualCooldownTicks;
+      } else {
+        // Edge case: cooldownTicks <= 0 disables automatic cooling
+        // alphaDecay(0) means no decay; convergence detection will still stop the sim
+        this.simulation.alphaDecay(0);
+      }
+    }
+
+    if (cooldownTicks && cooldownTicks > 0) {
       // Alpha decay formula: 1 - Math.pow(0.001, 1 / cooldownTicks)
       // This makes alpha reach ~0.001 after 'cooldownTicks' iterations
       const alphaDecay = 1 - Math.pow(0.001, 1 / cooldownTicks);
@@ -384,9 +423,24 @@ export class ForceSimulation {
       this.simulation.force('collide', null);
     }
 
-    // Update alpha decay if auto-tuning
+    // Update alpha decay / cooldown behavior
+    const manualCooldownTicks = physics.cooldownTicks;
+    let cooldownTicks: number | undefined;
+
     if (autoTune && nodeCount > 0) {
-      const cooldownTicks = this.getAutoTunedCooldownTicks(nodeCount);
+      // Auto-tune mode: derive cooldown from node count
+      cooldownTicks = this.getAutoTunedCooldownTicks(nodeCount);
+    } else if (typeof manualCooldownTicks === 'number') {
+      if (manualCooldownTicks > 0) {
+        // Manual mode: use configured cooldownTicks directly
+        cooldownTicks = manualCooldownTicks;
+      } else {
+        // Edge case: cooldownTicks <= 0 disables automatic cooling
+        this.simulation.alphaDecay(0);
+      }
+    }
+
+    if (cooldownTicks && cooldownTicks > 0) {
       const alphaDecay = 1 - Math.pow(0.001, 1 / cooldownTicks);
       this.simulation.alphaDecay(alphaDecay);
     }
