@@ -7,12 +7,16 @@ import type { GraphNode, GraphLink } from '../types/graph';
  * Wraps d3-force simulation to work with our custom InstancedNodeRenderer.
  * Handles both dynamic simulation and precomputed positions from backend.
  * 
+ * NEW: Runs force simulation in a Web Worker to prevent UI blocking.
+ * Falls back to main thread if Web Workers are not available.
+ * 
  * Features:
+ * - Web Worker-based physics computation (off main thread)
  * - Integration with d3-force physics engine
  * - Support for precomputed positions (skips simulation)
  * - Position update callbacks for renderer synchronization
  * - Configurable physics parameters
- * - Efficient tick handling
+ * - Efficient tick handling with transferable arrays
  * 
  * @example
  * ```typescript
@@ -30,7 +34,6 @@ export interface PhysicsConfig {
   chargeStrength: number;
   linkDistance: number;
   velocityDecay: number;
-  cooldownTicks: number;
   collisionRadius?: number;
 }
 
@@ -66,9 +69,111 @@ export class ForceSimulation {
   private config: ForceSimulationConfig;
   private nodeMap: Map<string, SimNode> = new Map();
   private hasPrecomputedPositions = false;
+  
+  // Web Worker support
+  private worker: Worker | null = null;
+  private useWorker = false;
+  private nodeIds: string[] = []; // Track node order for position buffer decoding
+  private currentAlpha = 0; // Track alpha from worker messages
 
   constructor(config: ForceSimulationConfig = {}) {
     this.config = config;
+    
+    // Try to initialize Web Worker
+    this.initWorker();
+  }
+
+  /**
+   * Initialize Web Worker if available
+   */
+  private initWorker(): void {
+    // Check if Web Workers are supported
+    if (typeof Worker === 'undefined') {
+      console.warn('Web Workers not supported, falling back to main thread simulation');
+      this.useWorker = false;
+      return;
+    }
+    
+    try {
+      // Create worker using Vite's worker import syntax
+      this.worker = new Worker(
+        new URL('../workers/layoutWorker.ts', import.meta.url),
+        { type: 'module' }
+      );
+      
+      // Set up message handler
+      this.worker.addEventListener('message', (event) => {
+        this.handleWorkerMessage(event.data);
+      });
+      
+      // Set up error handler
+      this.worker.addEventListener('error', (error) => {
+        console.error('Worker error:', error);
+        // Fall back to main thread
+        this.terminateWorker();
+        this.useWorker = false;
+        // If we already have data, reinitialize the main-thread simulation
+        if (this.nodes.length > 0) {
+          this.initializeSimulation();
+        }
+      });
+      
+      this.useWorker = true;
+    } catch (error) {
+      console.warn('Failed to create worker, falling back to main thread:', error);
+      this.useWorker = false;
+      this.worker = null;
+    }
+  }
+  
+  /**
+   * Handle messages from the Web Worker
+   */
+  private handleWorkerMessage(message: { 
+    type: string; 
+    positions: Float32Array; 
+    alpha: number; 
+    nodeCount: number;
+  }): void {
+    if (message.type === 'positions') {
+      // Update local alpha for getStats()
+      this.currentAlpha = message.alpha;
+      
+      // Update local node positions
+      for (let i = 0; i < message.nodeCount && i < this.nodeIds.length; i++) {
+        const nodeId = this.nodeIds[i];
+        const node = this.nodeMap.get(nodeId);
+        if (node) {
+          node.x = message.positions[i * 3];
+          node.y = message.positions[i * 3 + 1];
+          node.z = message.positions[i * 3 + 2];
+        }
+      }
+      
+      // Emit to callback - reuse a single Map to reduce GC pressure
+      if (this.config.onTick) {
+        const positions = new Map<string, { x: number; y: number; z: number }>();
+        for (let i = 0; i < message.nodeCount && i < this.nodeIds.length; i++) {
+          const nodeId = this.nodeIds[i];
+          positions.set(nodeId, {
+            x: message.positions[i * 3],
+            y: message.positions[i * 3 + 1],
+            z: message.positions[i * 3 + 2],
+          });
+        }
+        this.config.onTick(positions);
+      }
+    }
+  }
+  
+  /**
+   * Terminate the Web Worker
+   */
+  private terminateWorker(): void {
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
   }
 
   /**
@@ -83,6 +188,9 @@ export class ForceSimulation {
       z: node.z,
       val: node.val,
     }));
+
+    // Track node IDs in order for worker communication
+    this.nodeIds = this.nodes.map(n => n.id);
 
     // Build node map for quick lookup
     this.nodeMap.clear();
@@ -103,8 +211,18 @@ export class ForceSimulation {
       this.hasPrecomputedPositions = false;
     }
 
+    // If precomputed, bypass worker/simulation entirely - just emit once
+    if (this.hasPrecomputedPositions) {
+      this.emitTick();
+      return;
+    }
+
     // Initialize or update simulation
-    this.initializeSimulation();
+    if (this.useWorker && this.worker) {
+      this.initializeWorkerSimulation();
+    } else {
+      this.initializeSimulation();
+    }
   }
 
   /**
@@ -128,7 +246,38 @@ export class ForceSimulation {
   }
 
   /**
-   * Initialize or reinitialize the d3-force simulation
+   * Initialize simulation in Web Worker
+   */
+  private initializeWorkerSimulation(): void {
+    if (!this.worker) return;
+    
+    // Send initialization message to worker
+    const message = {
+      type: 'init',
+      nodes: this.nodes.map(node => ({
+        id: node.id,
+        x: node.x,
+        y: node.y,
+        z: node.z,
+        val: node.val,
+      })),
+      links: this.links.map(link => ({
+        source: typeof link.source === 'string' ? link.source : link.source.id,
+        target: typeof link.target === 'string' ? link.target : link.target.id,
+      })),
+      physics: this.config.physics ?? {
+        chargeStrength: -30,
+        linkDistance: 30,
+        velocityDecay: 0.4,
+      },
+      usePrecomputedPositions: this.hasPrecomputedPositions,
+    };
+    
+    this.worker.postMessage(message);
+  }
+
+  /**
+   * Initialize or reinitialize the d3-force simulation (main thread fallback)
    * Note: Uses 2D d3-force (updates x/y only). Z coordinates are preserved from initial positions
    * but not updated by simulation. For true 3D layouts, consider d3-force-3d or ngraph.
    */
@@ -229,6 +378,11 @@ export class ForceSimulation {
    * Start the simulation
    */
   public start(): void {
+    if (this.useWorker && this.worker) {
+      // Worker auto-starts, no need to send message
+      return;
+    }
+    
     if (this.simulation && !this.hasPrecomputedPositions) {
       this.simulation.alpha(1).restart();
     }
@@ -238,6 +392,11 @@ export class ForceSimulation {
    * Stop the simulation
    */
   public stop(): void {
+    if (this.useWorker && this.worker) {
+      this.worker.postMessage({ type: 'stop' });
+      return;
+    }
+    
     if (this.simulation) {
       this.simulation.stop();
     }
@@ -248,6 +407,15 @@ export class ForceSimulation {
    */
   public updatePhysics(physics: PhysicsConfig): void {
     this.config.physics = physics;
+    
+    if (this.useWorker && this.worker) {
+      // Send update message to worker
+      this.worker.postMessage({
+        type: 'updatePhysics',
+        physics,
+      });
+      return;
+    }
     
     if (!this.simulation || this.hasPrecomputedPositions) return;
 
@@ -332,12 +500,14 @@ export class ForceSimulation {
     linkCount: number;
     alpha: number;
     hasPrecomputedPositions: boolean;
+    useWorker: boolean;
   } {
     return {
       nodeCount: this.nodes.length,
       linkCount: this.links.length,
-      alpha: this.simulation?.alpha() ?? 0,
+      alpha: this.useWorker ? this.currentAlpha : (this.simulation?.alpha() ?? 0),
       hasPrecomputedPositions: this.hasPrecomputedPositions,
+      useWorker: this.useWorker,
     };
   }
 
@@ -345,6 +515,9 @@ export class ForceSimulation {
    * Clean up resources
    */
   public dispose(): void {
+    // Terminate worker
+    this.terminateWorker();
+    
     if (this.simulation) {
       this.simulation.stop();
       this.simulation = null;
@@ -352,5 +525,6 @@ export class ForceSimulation {
     this.nodes = [];
     this.links = [];
     this.nodeMap.clear();
+    this.nodeIds = [];
   }
 }
