@@ -3,18 +3,7 @@
  * Shows animated placeholders during initial graph load
  */
 
-type LoadingSkeletonProps = {
-  progress?: {
-    loaded: number;
-    total: number;
-  };
-};
-
-const LoadingSkeleton = ({ progress }: LoadingSkeletonProps) => {
-  const progressPercent = progress
-    ? Math.round((progress.loaded / progress.total) * 100)
-    : 0;
-
+const LoadingSkeleton = () => {
   return (
     <div className="w-full h-screen bg-black relative overflow-hidden">
       {/* Animated background gradient */}
@@ -40,7 +29,7 @@ const LoadingSkeleton = ({ progress }: LoadingSkeletonProps) => {
         </div>
       </div>
 
-      {/* Loading message and progress */}
+      {/* Loading message */}
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
         <div className="bg-black/70 backdrop-blur-sm rounded-lg px-8 py-6 border border-white/10 shadow-2xl max-w-md">
           {/* Spinner */}
@@ -56,30 +45,12 @@ const LoadingSkeleton = ({ progress }: LoadingSkeletonProps) => {
             Preparing network visualization...
           </p>
           
-          {/* Progress bar */}
-          {progress && progress.total > 0 && (
-            <div className="space-y-2">
-              <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-300 ease-out"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-              <p className="text-gray-400 text-xs text-center">
-                {progress.loaded.toLocaleString()} of {progress.total.toLocaleString()} nodes
-                {progressPercent > 0 && ` (${progressPercent}%)`}
-              </p>
-            </div>
-          )}
-          
           {/* Pulsing dots */}
-          {!progress && (
-            <div className="flex justify-center gap-1 mt-2">
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
-          )}
+          <div className="flex justify-center gap-1 mt-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
         </div>
       </div>
     </div>

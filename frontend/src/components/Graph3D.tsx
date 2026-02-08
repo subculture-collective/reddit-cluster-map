@@ -303,7 +303,6 @@ export default function Graph3D(props: Props) {
   const [loading, setLoading] = useState(false);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [webglSupported] = useState(() => detectWebGLSupport());
-  const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number } | undefined>(undefined);
   // Ref typed as expected by ForceGraph3D definition
   const fgRef = useRef<
     ForceGraphMethods<RFNodeObject, RFLinkObject> | undefined
@@ -365,12 +364,10 @@ export default function Graph3D(props: Props) {
         setGraphData({ nodes: [], links: [] });
         setError(null);
         setLoading(false);
-        setLoadProgress(undefined);
         return;
       }
       setLoading(true);
       setError(null);
-      setLoadProgress(undefined);
       try {
         const base = (import.meta.env?.VITE_API_URL || "/api").replace(
           /\/$/,
@@ -390,11 +387,6 @@ export default function Graph3D(props: Props) {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = (await response.json()) as GraphData;
         
-        // Track progress as data loads
-        if (data.nodes && data.nodes.length > 0) {
-          setLoadProgress({ loaded: data.nodes.length, total: data.nodes.length });
-        }
-        
         setGraphData(data);
         setInitialLoadComplete(true);
       } catch (err) {
@@ -404,8 +396,6 @@ export default function Graph3D(props: Props) {
       } finally {
         if (!signal || !signal.aborted) {
           setLoading(false);
-          // Clear progress after a short delay
-          setTimeout(() => setLoadProgress(undefined), 500);
         }
       }
     },
@@ -962,44 +952,18 @@ export default function Graph3D(props: Props) {
 
   // Show loading skeleton during initial load
   if (isLoading && !initialLoadComplete) {
-    return <LoadingSkeleton progress={loadProgress} />;
+    return <LoadingSkeleton />;
   }
 
-  // Show WebGL warning if not supported
+  // Show WebGL warning if not supported - throw error to be caught by ErrorBoundary
   if (!webglSupported) {
-    return (
-      <div className="w-full h-screen bg-black flex items-center justify-center">
-        <div className="bg-yellow-900/20 border border-yellow-500/50 rounded-lg px-8 py-6 max-w-2xl mx-4">
-          <div className="flex items-start gap-4">
-            <div className="flex-shrink-0">
-              <svg className="w-8 h-8 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <div className="flex-1">
-              <h2 className="text-yellow-100 text-xl font-semibold mb-2">
-                WebGL Not Supported
-              </h2>
-              <p className="text-yellow-200 text-sm mb-3">
-                Your browser doesn't support WebGL, which is required for 3D visualization.
-              </p>
-              <p className="text-yellow-200 text-sm mb-4">
-                Please try using a modern browser like Chrome, Firefox, Safari, or Edge.
-              </p>
-              <p className="text-yellow-200 text-sm mb-4">
-                Alternatively, you can switch to the 2D view which doesn't require WebGL.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    throw new Error('WebGL is not supported in your browser');
   }
 
   return (
     <div 
       className={`w-full h-screen relative transition-opacity duration-500 ${
-        initialLoadComplete && !isLoading ? 'opacity-100' : 'opacity-0'
+        initialLoadComplete || error ? 'opacity-100' : 'opacity-0'
       }`}
       onMouseMove={() => frameThrottlerRef.current?.markActive()}
       onWheel={() => frameThrottlerRef.current?.markActive()}

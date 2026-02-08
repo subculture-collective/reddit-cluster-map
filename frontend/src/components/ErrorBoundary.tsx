@@ -5,11 +5,13 @@ type ErrorBoundaryProps = {
   children: ReactNode;
   fallback?: (error: Error, retry: () => void) => ReactNode;
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
+  resetKeys?: Array<string | number>;
 };
 
 type ErrorBoundaryState = {
   hasError: boolean;
   error: Error | null;
+  retryKey: number;
 };
 
 /**
@@ -19,10 +21,10 @@ type ErrorBoundaryState = {
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, retryKey: 0 };
   }
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     // Update state so the next render will show the fallback UI
     return { hasError: true, error };
   }
@@ -33,8 +35,25 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     this.props.onError?.(error, errorInfo);
   }
 
+  componentDidUpdate(prevProps: ErrorBoundaryProps) {
+    // Reset error state if resetKeys changed
+    if (
+      this.state.hasError &&
+      this.props.resetKeys &&
+      prevProps.resetKeys &&
+      this.props.resetKeys.some((key, i) => key !== prevProps.resetKeys?.[i])
+    ) {
+      this.setState({ hasError: false, error: null });
+    }
+  }
+
   handleReset = () => {
-    this.setState({ hasError: false, error: null });
+    // Increment retryKey to force remount of children
+    this.setState((state) => ({
+      hasError: false,
+      error: null,
+      retryKey: state.retryKey + 1,
+    }));
   };
 
   render() {
@@ -108,7 +127,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
       );
     }
 
-    return this.props.children;
+    // Use retryKey to force remount on retry
+    return <div key={this.state.retryKey}>{this.props.children}</div>;
   }
 }
 

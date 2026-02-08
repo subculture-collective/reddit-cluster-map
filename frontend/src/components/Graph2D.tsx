@@ -201,7 +201,6 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
-  const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number } | undefined>(undefined);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<d3.Simulation<D3Node, D3Link> | null>(null);
@@ -268,12 +267,10 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         setGraphData({ nodes: [], links: [] });
         setError(null);
         setLoading(false);
-        setLoadProgress(undefined);
         return;
       }
       setLoading(true);
       setError(null);
-      setLoadProgress(undefined);
       try {
         const base = (import.meta.env?.VITE_API_URL || "/api").replace(
           /\/$/,
@@ -293,11 +290,6 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = (await response.json()) as GraphData;
         
-        // Track progress as data loads
-        if (data.nodes && data.nodes.length > 0) {
-          setLoadProgress({ loaded: data.nodes.length, total: data.nodes.length });
-        }
-        
         setGraphData(data);
         setInitialLoadComplete(true);
       } catch (err) {
@@ -307,8 +299,6 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       } finally {
         if (!signal || !signal.aborted) {
           setLoading(false);
-          // Clear progress after a short delay
-          setTimeout(() => setLoadProgress(undefined), 500);
         }
       }
     },
@@ -861,14 +851,14 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
   // Show loading skeleton during initial load
   if (isLoading && !initialLoadComplete) {
-    return <LoadingSkeleton progress={loadProgress} />;
+    return <LoadingSkeleton />;
   }
 
   return (
     <div
       ref={containerRef}
       className={`w-full h-screen relative bg-black transition-opacity duration-500 ${
-        initialLoadComplete && !isLoading ? 'opacity-100' : 'opacity-0'
+        initialLoadComplete || error ? 'opacity-100' : 'opacity-0'
       }`}
       onMouseMove={() => frameThrottlerRef.current?.markActive()}
       onWheel={() => frameThrottlerRef.current?.markActive()}
