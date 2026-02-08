@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GraphData, GraphNode, GraphLink } from "../types/graph";
 import type { TypeFilters } from "../types/ui";
 import { FrameThrottler } from "../utils/frameThrottle";
+import LoadingSkeleton from "./LoadingSkeleton";
 
 type SubSizeMode =
   | "subscribers"
@@ -199,6 +200,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<d3.Simulation<D3Node, D3Link> | null>(null);
@@ -287,7 +289,9 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         const response = await fetch(url, { signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = (await response.json()) as GraphData;
+        
         setGraphData(data);
+        setInitialLoadComplete(true);
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
         setError((err as Error).message);
@@ -845,10 +849,17 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
 
   const isLoading = loading;
 
+  // Show loading skeleton during initial load
+  if (isLoading && !initialLoadComplete) {
+    return <LoadingSkeleton />;
+  }
+
   return (
     <div
       ref={containerRef}
-      className="w-full h-screen relative bg-black"
+      className={`w-full h-screen relative bg-black transition-opacity duration-500 ${
+        initialLoadComplete || error ? 'opacity-100' : 'opacity-0'
+      }`}
       onMouseMove={() => frameThrottlerRef.current?.markActive()}
       onWheel={() => frameThrottlerRef.current?.markActive()}
       onMouseDown={() => frameThrottlerRef.current?.markActive()}
@@ -856,13 +867,27 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
       onTouchMove={() => frameThrottlerRef.current?.markActive()}
     >
       {error && (
-        <div className="absolute top-2 left-2 z-20 bg-red-900/70 text-red-100 rounded px-3 py-2 text-sm">
-          Error: {error}
+        <div className="absolute top-2 left-2 z-20 bg-red-900/70 text-red-100 rounded px-3 py-2 text-sm max-w-md">
+          <div className="flex items-start gap-2">
+            <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1">
+              <p className="font-medium mb-1">Error loading graph</p>
+              <p className="text-xs opacity-90">{error}</p>
+              <button
+                onClick={() => load()}
+                className="mt-2 px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm font-medium transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
         </div>
       )}
-      {isLoading && (
+      {isLoading && initialLoadComplete && (
         <div className="absolute top-2 left-2 z-20 bg-black/50 text-white rounded px-3 py-2 text-sm">
-          Loading graph…
+          Updating graph…
         </div>
       )}
       {!isLoading && activeTypes.length === 0 && (

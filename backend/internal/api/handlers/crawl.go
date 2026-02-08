@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/crawler"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/middleware"
@@ -31,13 +32,13 @@ func PostCrawl(q CrawlQueue) http.HandlerFunc {
 
 		// Validate content type
 		if err := middleware.ValidateJSON(r); err != nil {
-			http.Error(w, `{"error":"Invalid request format"}`, http.StatusBadRequest)
+			apierr.WriteErrorWithContext(w, r, apierr.ValidationInvalidFormat(""))
 			return
 		}
 
 		var req CrawlRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, `{"error":"Invalid request body"}`, http.StatusBadRequest)
+			apierr.WriteErrorWithContext(w, r, apierr.ValidationInvalidJSON())
 			return
 		}
 
@@ -48,7 +49,7 @@ func PostCrawl(q CrawlQueue) http.HandlerFunc {
 		}
 
 		if err := sanitizer.ValidateSubredditName(req.Subreddit); err != nil {
-			http.Error(w, `{"error":"Invalid subreddit name"}`, http.StatusBadRequest)
+			apierr.WriteErrorWithContext(w, r, apierr.CrawlInvalidSubreddit(""))
 			return
 		}
 
@@ -61,7 +62,7 @@ func PostCrawl(q CrawlQueue) http.HandlerFunc {
 		})
 		if err != nil {
 			log.Printf("❌ Failed to upsert subreddit %s: %v", req.Subreddit, err)
-			http.Error(w, `{"error":"Failed to create subreddit"}`, http.StatusInternalServerError)
+			apierr.WriteErrorWithContext(w, r, apierr.SystemDatabase("Failed to create subreddit"))
 			return
 		}
 
@@ -73,7 +74,7 @@ func PostCrawl(q CrawlQueue) http.HandlerFunc {
 					EnqueuedBy:  sql.NullString{String: "api", Valid: true},
 				}); err != nil {
 					log.Printf("❌ Failed to enqueue %s: %v", req.Subreddit, err)
-					http.Error(w, `{"error":"Failed to enqueue job"}`, http.StatusInternalServerError)
+					apierr.WriteErrorWithContext(w, r, apierr.CrawlQueueFailed(""))
 					return
 				}
 			} else {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/api/handlers"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/middleware"
@@ -92,7 +93,7 @@ func NewRouter(q *db.Queries) *mux.Router {
 
 	// Graph data for the frontend: GET /api/graph
 	graphHandler := handlers.NewHandler(q)
-	r.HandleFunc("/api/graph", graphHandler.GetGraphData).Methods("GET")
+	r.Handle("/api/graph", middleware.ETag(middleware.Gzip(http.HandlerFunc(graphHandler.GetGraphData)))).Methods("GET")
 
 	// Search endpoint with gzip and ETag: GET /api/search?node=...
 	searchHandler := middleware.ETag(middleware.Gzip(http.HandlerFunc(handlers.SearchNode(q))))
@@ -118,13 +119,13 @@ func NewRouter(q *db.Queries) *mux.Router {
 	adminOnly := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.AdminAPIToken == "" {
-				http.Error(w, "admin token not configured", http.StatusServiceUnavailable)
+				apierr.WriteErrorWithContext(w, r, apierr.SystemUnavailable("Admin token not configured"))
 				return
 			}
 			auth := r.Header.Get("Authorization")
 			const prefix = "Bearer "
 			if len(auth) <= len(prefix) || auth[:len(prefix)] != prefix || auth[len(prefix):] != cfg.AdminAPIToken {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				apierr.WriteErrorWithContext(w, r, apierr.AuthInvalid(""))
 				return
 			}
 			next.ServeHTTP(w, r)

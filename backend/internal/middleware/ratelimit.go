@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
 	"golang.org/x/time/rate"
 )
 
@@ -100,7 +101,7 @@ func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check global rate limit first
 		if !rl.global.Allow() {
-			http.Error(w, `{"error":"Rate limit exceeded - too many requests globally"}`, http.StatusTooManyRequests)
+			apierr.WriteErrorWithContext(w, r, apierr.RateLimitGlobal())
 			return
 		}
 
@@ -110,7 +111,7 @@ func (rl *RateLimiter) Limit(next http.Handler) http.Handler {
 		// Check per-IP rate limit
 		limiter := rl.getLimiter(ip)
 		if !limiter.Allow() {
-			http.Error(w, `{"error":"Rate limit exceeded - too many requests from your IP"}`, http.StatusTooManyRequests)
+			apierr.WriteErrorWithContext(w, r, apierr.RateLimitIP())
 			return
 		}
 

@@ -6,7 +6,7 @@ import type {
   NodeObject as RFNodeObject,
 } from "react-force-graph-3d";
 import ForceGraph3D from "react-force-graph-3d";
-import type { GraphData, GraphNode } from "../types/graph";
+import type { GraphData, GraphNode, GraphLink } from "../types/graph";
 import SpriteText from "three-spritetext";
 import { FrameThrottler } from "../utils/frameThrottle";
 import {
@@ -14,6 +14,11 @@ import {
   shouldShowLabels,
   DEFAULT_LOD_CONFIG,
 } from "../utils/levelOfDetail";
+import { EdgeBundler } from "../rendering/EdgeBundler";
+import * as THREE from "three";
+import LoadingSkeleton from "./LoadingSkeleton";
+import { detectWebGLSupport } from "../utils/webglDetect";
+import Graph3DInstanced from "./Graph3DInstanced";
 
 type Filters = {
   subreddit: boolean;
@@ -274,6 +279,22 @@ interface Props {
 }
 
 export default function Graph3D(props: Props) {
+  // Check if instanced rendering is enabled via environment variable
+  const useInstancedRenderer = useMemo(() => {
+    const env = import.meta.env?.VITE_USE_INSTANCED_RENDERER as unknown as string | boolean | undefined;
+    if (typeof env === 'string') {
+      return env.toLowerCase() === 'true' || env === '1';
+    }
+    return Boolean(env);
+  }, []);
+
+  // Use the new instanced renderer if enabled
+  // This must be done without early return to satisfy React hooks rules
+  return useInstancedRenderer ? <Graph3DInstanced {...props} /> : <Graph3DOriginal {...props} />;
+}
+
+// Original implementation extracted to separate component
+function Graph3DOriginal(props: Props) {
   const {
     filters,
     minDegree,
@@ -293,9 +314,12 @@ export default function Graph3D(props: Props) {
   } = props;
 
   const [onlyLinked, setOnlyLinked] = useState(true);
+  const [useBundling, setUseBundling] = useState(false);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [webglSupported] = useState(() => detectWebGLSupport());
   // Ref typed as expected by ForceGraph3D definition
   const fgRef = useRef<
     ForceGraphMethods<RFNodeObject, RFLinkObject> | undefined
@@ -304,6 +328,7 @@ export default function Graph3D(props: Props) {
   const frameThrottlerRef = useRef<FrameThrottler | null>(null);
   const [adaptiveLinkOpacity, setAdaptiveLinkOpacity] = useState(linkOpacity);
   const [adaptiveShowLabels, setAdaptiveShowLabels] = useState(showLabels);
+  const bundleMeshesRef = useRef<THREE.Mesh[]>([]);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -378,7 +403,9 @@ export default function Graph3D(props: Props) {
         const response = await fetch(url, { signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = (await response.json()) as GraphData;
+        
         setGraphData(data);
+        setInitialLoadComplete(true);
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
         setError((err as Error).message);
@@ -720,6 +747,41 @@ export default function Graph3D(props: Props) {
     return byName?.id;
   }, [selectedId, filtered]);
 
+  // Edge bundling logic
+  const edgeBundler = useMemo(() => new EdgeBundler({
+    minLinksForBundle: 3,
+    baseWidth: 0.5,
+    curveSegments: 16,
+    curvature: 0.3,
+  }), []);
+
+  // Constants for bundle updates
+  const MIN_NODES_WITH_POSITIONS_RATIO = 0.5; // Require 50% of nodes to have positions
+  const BUNDLE_UPDATE_INTERVAL_MS = 1000; // Update bundles every second during simulation
+
+  const bundledData = useMemo(() => {
+    if (!useBundling || !communityResult) {
+      return { bundledLinks: new Set<GraphLink>() };
+    }
+
+    // Use EdgeBundler's method to identify which links would be bundled
+    const bundledLinks = edgeBundler.identifyBundledLinks(
+      filtered.links,
+      communityResult.nodeCommunities
+    );
+
+    return { bundledLinks };
+  }, [useBundling, communityResult, filtered, edgeBundler]);
+
+  // Create a link visibility function that hides bundled links
+  const bundledLinkIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const link of bundledData.bundledLinks) {
+      ids.add(`${link.source}-${link.target}`);
+    }
+    return ids;
+  }, [bundledData]);
+
   const EDGE_VIS_THRESHOLD = 1200;
   const linkVisibilityFn = useCallback(
     (l?: { source?: string | number; target?: string | number }) => {
@@ -728,9 +790,18 @@ export default function Graph3D(props: Props) {
         const t = String(l.target ?? "");
         if (s === selectedActiveId || t === selectedActiveId) return true;
       }
+      
+      // Hide bundled links when bundling is enabled
+      if (useBundling && l) {
+        const s = String(l.source ?? "");
+        const t = String(l.target ?? "");
+        const linkId = `${s}-${t}`;
+        if (bundledLinkIds.has(linkId)) return false;
+      }
+      
       return cameraDistRef.current < EDGE_VIS_THRESHOLD;
     },
-    [selectedActiveId]
+    [selectedActiveId, useBundling, bundledLinkIds]
   );
 
   const hasPrecomputedPositions = useMemo(() => {
@@ -774,9 +845,143 @@ export default function Graph3D(props: Props) {
     return set;
   }, [adaptiveShowLabels, filtered, degreeMap]);
 
+  // Effect to manage bundle meshes in the THREE.js scene
+  useEffect(() => {
+    if (!fgRef.current || !useBundling || !communityResult) {
+      // Clean up existing bundle meshes
+      const scene = (fgRef.current as any)?.scene?.();
+      if (scene) {
+        for (const mesh of bundleMeshesRef.current) {
+          scene.remove(mesh);
+          mesh.geometry.dispose();
+          (mesh.material as THREE.Material).dispose();
+        }
+      }
+      bundleMeshesRef.current = [];
+      return;
+    }
+
+    // Build community color map once (reused across updates)
+    const communityColors = new Map<number, string>();
+    for (const community of communityResult.communities) {
+      communityColors.set(community.id, community.color);
+    }
+
+    // Reusable Maps to avoid allocating new instances on each update
+    const nodeRefs = new Map<string, any>();
+    const vector3Positions = new Map<string, THREE.Vector3>();
+
+    // Function to update bundles based on current node positions
+    const updateBundles = () => {
+      const scene = (fgRef.current as any)?.scene?.();
+      if (!scene) return;
+
+      // Extract current node positions from the force graph
+      // Store node references directly to avoid intermediate object allocation
+      nodeRefs.clear();
+      const graphData = (fgRef.current as any)?.graphData?.();
+      
+      if (graphData?.nodes) {
+        for (const node of graphData.nodes) {
+          const id = String(node.id);
+          if (typeof node.x === 'number' && typeof node.y === 'number' && typeof node.z === 'number') {
+            nodeRefs.set(id, node);
+          }
+        }
+      }
+
+      // Skip if we don't have enough position data
+      if (nodeRefs.size < filtered.nodes.length * MIN_NODES_WITH_POSITIONS_RATIO) {
+        return;
+      }
+
+      // Identify nodes that participate in bundles
+      const bundleNodeIds = new Set<string>();
+      for (const link of filtered.links) {
+        const sourceCommunity = communityResult.nodeCommunities.get(link.source);
+        const targetCommunity = communityResult.nodeCommunities.get(link.target);
+        if (sourceCommunity !== undefined && targetCommunity !== undefined) {
+          bundleNodeIds.add(link.source);
+          bundleNodeIds.add(link.target);
+        }
+      }
+
+      // Convert to Vector3 only for bundle nodes, reusing Vector3 instances
+      vector3Positions.clear();
+      for (const [id, node] of nodeRefs) {
+        if (bundleNodeIds.has(id)) {
+          // Reuse or create Vector3 instances
+          let vec = vector3Positions.get(id);
+          if (!vec) {
+            vec = new THREE.Vector3();
+            vector3Positions.set(id, vec);
+          }
+          vec.set(node.x, node.y, node.z);
+        }
+      }
+
+      // Calculate bundles
+      const { bundles } = edgeBundler.bundleLinks(
+        filtered.links,
+        communityResult.nodeCommunities,
+        communityColors,
+        vector3Positions
+      );
+
+      // Remove old bundle meshes
+      for (const mesh of bundleMeshesRef.current) {
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        (mesh.material as THREE.Material).dispose();
+      }
+      bundleMeshesRef.current = [];
+
+      // Add new bundle meshes
+      for (const bundle of bundles) {
+        if (bundle.controlPoints.length < 2) continue;
+        
+        const mesh = edgeBundler.createBundleMesh(bundle, adaptiveLinkOpacity);
+        scene.add(mesh);
+        bundleMeshesRef.current.push(mesh);
+      }
+    };
+
+    // Initial bundle creation
+    updateBundles();
+
+    // Set up interval to update bundles periodically during simulation
+    const intervalId = setInterval(updateBundles, BUNDLE_UPDATE_INTERVAL_MS);
+
+    return () => {
+      clearInterval(intervalId);
+      // Clean up bundle meshes
+      const scene = (fgRef.current as any)?.scene?.();
+      if (scene) {
+        for (const mesh of bundleMeshesRef.current) {
+          scene.remove(mesh);
+          mesh.geometry.dispose();
+          (mesh.material as THREE.Material).dispose();
+        }
+      }
+      bundleMeshesRef.current = [];
+    };
+  }, [useBundling, communityResult, filtered, edgeBundler, adaptiveLinkOpacity]);
+
+  // Show loading skeleton during initial load
+  if (isLoading && !initialLoadComplete) {
+    return <LoadingSkeleton />;
+  }
+
+  // Show WebGL warning if not supported - throw error to be caught by ErrorBoundary
+  if (!webglSupported) {
+    throw new Error('WebGL is not supported in your browser');
+  }
+
   return (
     <div 
-      className="w-full h-screen relative"
+      className={`w-full h-screen relative transition-opacity duration-500 ${
+        initialLoadComplete || error ? 'opacity-100' : 'opacity-0'
+      }`}
       onMouseMove={() => frameThrottlerRef.current?.markActive()}
       onWheel={() => frameThrottlerRef.current?.markActive()}
       onMouseDown={() => frameThrottlerRef.current?.markActive()}
@@ -784,13 +989,27 @@ export default function Graph3D(props: Props) {
       onTouchMove={() => frameThrottlerRef.current?.markActive()}
     >
       {error && (
-        <div className="absolute top-2 left-2 z-20 bg-red-900/70 text-red-100 rounded px-3 py-2 text-sm">
-          Error: {error}
+        <div className="absolute top-2 left-2 z-20 bg-red-900/70 text-red-100 rounded px-3 py-2 text-sm max-w-md">
+          <div className="flex items-start gap-2">
+            <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1">
+              <p className="font-medium mb-1">Error loading graph</p>
+              <p className="text-xs opacity-90">{error}</p>
+              <button
+                onClick={() => load()}
+                className="mt-2 px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm font-medium transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
         </div>
       )}
-      {isLoading && (
+      {isLoading && initialLoadComplete && (
         <div className="absolute top-2 left-2 z-20 bg-black/50 text-white rounded px-3 py-2 text-sm">
-          Loading graph…
+          Updating graph…
         </div>
       )}
       {!isLoading && activeTypes.length === 0 && (
@@ -814,6 +1033,17 @@ export default function Graph3D(props: Props) {
           />
           <span className="opacity-80">Only show linked nodes</span>
         </label>
+        {communityResult && (
+          <label className="ml-2 flex items-center gap-1 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useBundling}
+              onChange={() => setUseBundling((v) => !v)}
+              className="accent-purple-400"
+            />
+            <span className="opacity-80">Bundle edges</span>
+          </label>
+        )}
         <span
           title={
             usePrecomputedLayout
@@ -846,11 +1076,11 @@ export default function Graph3D(props: Props) {
         nodeVal={nodeValFn as unknown as (n: unknown) => number}
         nodeRelSize={nodeRelSize}
         nodeThreeObject={
-          adaptiveShowLabels
+          (adaptiveShowLabels
             ? (node: unknown) => {
                 const n = node as GraphNode;
                 const id = String(n.id);
-                if (!labelSet.has(id)) return undefined as unknown as object;
+                if (!labelSet.has(id)) return undefined;
                 const name = (n.name || id).toString();
                 const st = new SpriteText(
                   name.length > 28 ? name.slice(0, 27) + "…" : name
@@ -862,9 +1092,9 @@ export default function Graph3D(props: Props) {
                 st.textHeight = 6 + Math.min(10, base);
                 st.backgroundColor = "rgba(0,0,0,0.35)";
                 st.padding = 2;
-                return st as unknown as object;
+                return st;
               }
-            : (undefined as unknown as (n: unknown) => object)
+            : undefined) as any
         }
         linkWidth={1}
         linkColor={() => "#999"}

@@ -75,6 +75,23 @@ func main() {
 	}
 	defer conn.Close()
 
+	// Configure connection pool for crawler (fewer connections needed than API)
+	conn.SetMaxOpenConns(10)              // Crawler needs fewer concurrent connections
+	conn.SetMaxIdleConns(5)               // Keep some idle connections ready
+	conn.SetConnMaxLifetime(10 * time.Minute) // Longer lifetime for background service
+	conn.SetConnMaxIdleTime(5 * time.Minute)  // Longer idle time for background service
+
+	// Verify connection is working
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := conn.PingContext(ctx); err != nil {
+			logger.Error("Failed to ping database", "error", err)
+			log.Fatalf("Failed to ping database: %v", err)
+		}
+		logger.Info("Database connection established")
+	}
+
 	// Create database queries
 	queries := db.New(conn)
 

@@ -7,10 +7,13 @@ import Graph3D from "./components/Graph3D.tsx";
 import Inspector from "./components/Inspector.tsx";
 import Legend from "./components/Legend.tsx";
 import ShareButton from "./components/ShareButton.tsx";
+import ErrorBoundary from "./components/ErrorBoundary.tsx";
+import GraphErrorFallback from "./components/GraphErrorFallback.tsx";
 import type { TypeFilters } from "./types/ui";
 import type { CommunityResult } from "./utils/communityDetection";
 import { readStateFromURL, writeStateToURL, type AppState } from "./utils/urlState";
 import { useEffect, useState, useCallback, useRef } from "react";
+import { detectWebGLSupport } from "./utils/webglDetect";
 
 function App() {
   // Initialize state from URL if available
@@ -216,47 +219,69 @@ function App() {
           />
           <ShareButton getState={getShareState} />
           {viewMode === "3d" ? (
-            <Graph3D
-              filters={filters}
-              minDegree={minDegree}
-              maxDegree={maxDegree}
-              linkOpacity={linkOpacity}
-              nodeRelSize={nodeRelSize}
-              physics={physics}
-              subredditSize={subredditSize}
-              focusNodeId={focusNodeId}
-              showLabels={showLabels}
-              selectedId={selectedId}
-              onNodeSelect={(id?: string) => {
-                setFocusNodeId(id);
-                setSelectedId(id);
-              }}
-              communityResult={useCommunityColors ? communityResult : null}
-              usePrecomputedLayout={usePrecomputedLayout}
-              initialCamera={camera3dRef}
-              onCameraChange={setCamera3dRef}
-            />
+            <ErrorBoundary
+              fallback={(error, retry) => (
+                <GraphErrorFallback
+                  error={error}
+                  onRetry={retry}
+                  onFallbackTo2D={() => setViewMode("2d")}
+                  mode="3d"
+                  webglSupported={detectWebGLSupport()}
+                />
+              )}
+            >
+              <Graph3D
+                filters={filters}
+                minDegree={minDegree}
+                maxDegree={maxDegree}
+                linkOpacity={linkOpacity}
+                nodeRelSize={nodeRelSize}
+                physics={physics}
+                subredditSize={subredditSize}
+                focusNodeId={focusNodeId}
+                showLabels={showLabels}
+                selectedId={selectedId}
+                onNodeSelect={(id?: string) => {
+                  setFocusNodeId(id);
+                  setSelectedId(id);
+                }}
+                communityResult={useCommunityColors ? communityResult : null}
+                usePrecomputedLayout={usePrecomputedLayout}
+                initialCamera={camera3dRef}
+                onCameraChange={setCamera3dRef}
+              />
+            </ErrorBoundary>
           ) : (
-            <Graph2D
-              filters={filters}
-              minDegree={minDegree}
-              maxDegree={maxDegree}
-              linkOpacity={linkOpacity}
-              nodeRelSize={nodeRelSize}
-              physics={physics}
-              subredditSize={subredditSize}
-              focusNodeId={focusNodeId}
-              showLabels={showLabels}
-              selectedId={selectedId}
-              onNodeSelect={(id?: string) => {
-                setFocusNodeId(id);
-                setSelectedId(id);
-              }}
-              communityResult={useCommunityColors ? communityResult : null}
-              usePrecomputedLayout={usePrecomputedLayout}
-              initialCamera={camera2dRef}
-              onCameraChange={setCamera2dRef}
-            />
+            <ErrorBoundary
+              fallback={(error, retry) => (
+                <GraphErrorFallback
+                  error={error}
+                  onRetry={retry}
+                  mode="2d"
+                />
+              )}
+            >
+              <Graph2D
+                filters={filters}
+                minDegree={minDegree}
+                maxDegree={maxDegree}
+                linkOpacity={linkOpacity}
+                nodeRelSize={nodeRelSize}
+                physics={physics}
+                subredditSize={subredditSize}
+                focusNodeId={focusNodeId}
+                showLabels={showLabels}
+                selectedId={selectedId}
+                onNodeSelect={(id?: string) => {
+                  setFocusNodeId(id);
+                  setSelectedId(id);
+                }}
+                communityResult={useCommunityColors ? communityResult : null}
+                usePrecomputedLayout={usePrecomputedLayout}
+                initialCamera={camera2dRef}
+                onCameraChange={setCamera2dRef}
+              />
+            </ErrorBoundary>
           )}
           <Legend
             filters={filters}

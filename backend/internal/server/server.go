@@ -25,6 +25,21 @@ func InitDB() (*db.Queries, error) {
 		return nil, err
 	}
 
+	// Configure connection pool for optimal performance
+	// These settings prevent connection exhaustion and ensure efficient resource usage
+	conn.SetMaxOpenConns(25)              // Max concurrent connections (adjust based on load)
+	conn.SetMaxIdleConns(10)              // Max idle connections in pool
+	conn.SetConnMaxLifetime(5 * time.Minute) // Recycle connections every 5 minutes
+	conn.SetConnMaxIdleTime(2 * time.Minute) // Close idle connections after 2 minutes
+
+	// Verify connection is working
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := conn.PingContext(ctx); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
 	// Check for position columns on startup
 	checkPositionColumns(conn)
 
