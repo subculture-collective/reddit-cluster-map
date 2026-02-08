@@ -93,7 +93,7 @@ func NewRouter(q *db.Queries) *mux.Router {
 
 	// Graph data for the frontend: GET /api/graph
 	graphHandler := handlers.NewHandler(q)
-	r.HandleFunc("/api/graph", graphHandler.GetGraphData).Methods("GET")
+	r.Handle("/api/graph", middleware.ETag(middleware.Gzip(http.HandlerFunc(graphHandler.GetGraphData)))).Methods("GET")
 
 	// Search endpoint with gzip and ETag: GET /api/search?node=...
 	searchHandler := middleware.ETag(middleware.Gzip(http.HandlerFunc(handlers.SearchNode(q))))

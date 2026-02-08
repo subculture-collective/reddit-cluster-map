@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/andybalholm/brotli"
 )
 
 func TestGzip(t *testing.T) {
@@ -17,29 +19,52 @@ func TestGzip(t *testing.T) {
 	})
 
 	tests := []struct {
-		name           string
-		acceptEncoding string
-		expectGzip     bool
+		name             string
+		acceptEncoding   string
+		expectEncoding   string
+		expectCompressed bool
 	}{
 		{
-			name:           "with gzip support",
-			acceptEncoding: "gzip",
-			expectGzip:     true,
+			name:             "with gzip support",
+			acceptEncoding:   "gzip",
+			expectEncoding:   "gzip",
+			expectCompressed: true,
 		},
 		{
-			name:           "with gzip and deflate support",
-			acceptEncoding: "gzip, deflate",
-			expectGzip:     true,
+			name:             "with gzip and deflate support",
+			acceptEncoding:   "gzip, deflate",
+			expectEncoding:   "gzip",
+			expectCompressed: true,
 		},
 		{
-			name:           "without gzip support",
-			acceptEncoding: "",
-			expectGzip:     false,
+			name:             "with brotli support",
+			acceptEncoding:   "br",
+			expectEncoding:   "br",
+			expectCompressed: true,
 		},
 		{
-			name:           "with only deflate support",
-			acceptEncoding: "deflate",
-			expectGzip:     false,
+			name:             "with brotli and gzip support (prefer brotli)",
+			acceptEncoding:   "br, gzip",
+			expectEncoding:   "br",
+			expectCompressed: true,
+		},
+		{
+			name:             "with gzip and brotli support (prefer brotli)",
+			acceptEncoding:   "gzip, br",
+			expectEncoding:   "br",
+			expectCompressed: true,
+		},
+		{
+			name:             "without compression support",
+			acceptEncoding:   "",
+			expectEncoding:   "",
+			expectCompressed: false,
+		},
+		{
+			name:             "with only deflate support",
+			acceptEncoding:   "deflate",
+			expectEncoding:   "",
+			expectCompressed: false,
 		},
 	}
 
@@ -59,29 +84,40 @@ func TestGzip(t *testing.T) {
 			}
 
 			contentEncoding := rr.Header().Get("Content-Encoding")
-			if tt.expectGzip {
-				if contentEncoding != "gzip" {
-					t.Errorf("expected Content-Encoding: gzip, got %s", contentEncoding)
+			if tt.expectCompressed {
+				if contentEncoding != tt.expectEncoding {
+					t.Errorf("expected Content-Encoding: %s, got %s", tt.expectEncoding, contentEncoding)
 				}
 
-				// Try to decompress the response
-				gr, err := gzip.NewReader(rr.Body)
-				if err != nil {
-					t.Fatalf("failed to create gzip reader: %v", err)
-				}
-				defer gr.Close()
+				var body []byte
+				var err error
 
-				body, err := io.ReadAll(gr)
-				if err != nil {
-					t.Fatalf("failed to read gzipped body: %v", err)
+				// Decompress based on encoding
+				if tt.expectEncoding == "gzip" {
+					gr, err := gzip.NewReader(rr.Body)
+					if err != nil {
+						t.Fatalf("failed to create gzip reader: %v", err)
+					}
+					defer gr.Close()
+
+					body, err = io.ReadAll(gr)
+					if err != nil {
+						t.Fatalf("failed to read gzipped body: %v", err)
+					}
+				} else if tt.expectEncoding == "br" {
+					br := brotli.NewReader(rr.Body)
+					body, err = io.ReadAll(br)
+					if err != nil {
+						t.Fatalf("failed to read brotli body: %v", err)
+					}
 				}
 
 				if !strings.Contains(string(body), "test response") {
 					t.Error("decompressed body doesn't contain expected content")
 				}
 			} else {
-				if contentEncoding == "gzip" {
-					t.Error("did not expect Content-Encoding: gzip")
+				if contentEncoding != "" {
+					t.Errorf("did not expect Content-Encoding, got %s", contentEncoding)
 				}
 
 				body := rr.Body.String()
