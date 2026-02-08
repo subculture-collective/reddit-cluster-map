@@ -1,0 +1,226 @@
+name: Bundle Size Check
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/bundle-size.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  bundle-size:
+    name: Check Bundle Size
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Build bundle
+        working-directory: ./frontend
+        run: npm run build
+
+      - name: Check bundle size
+        working-directory: ./frontend
+        run: npm run size
+
+      - name: Get bundle stats
+        working-directory: ./frontend
+        id: bundle-stats
+        run: |
+          echo "stats<<EOF" >> $GITHUB_OUTPUT
+          npm run size:json >> $GITHUB_OUTPUT 2>&1 || true
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload bundle visualizer
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-stats
+          path: frontend/dist/stats.html
+          retention-days: 30
+
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          path: base
+
+      - name: Set up Node.js for base
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies (base)
+        working-directory: ./base/frontend
+        run: npm ci
+
+      - name: Build bundle (base)
+        working-directory: ./base/frontend
+        run: npm run build
+
+      - name: Get base bundle stats
+        working-directory: ./base/frontend
+        id: base-stats
+        run: |
+          echo "stats<<EOF" >> $GITHUB_OUTPUT
+          npm run size:json >> $GITHUB_OUTPUT 2>&1 || true
+          echo "EOF" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Compare bundle sizes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            // Parse current stats
+            const currentOutput = `${{ steps.bundle-stats.outputs.stats }}`;
+            const baseOutput = `${{ steps.base-stats.outputs.stats }}`;
+            
+            function parseStats(output) {
+              try {
+                const lines = output.trim().split('\n');
+                const stats = {};
+                
+                for (const line of lines) {
+                  if (line.includes('Total JS bundle') || line.includes('Total CSS bundle')) {
+                    const match = line.match(/(.+?)\s+(\d+(?:\.\d+)?)\s*(B|KB|MB)\s+\(gzip\)/i);
+                    if (match) {
+                      const [, name, size, unit] = match;
+                      let sizeBytes = parseFloat(size);
+                      if (unit.toUpperCase() === 'KB') sizeBytes *= 1024;
+                      if (unit.toUpperCase() === 'MB') sizeBytes *= 1024 * 1024;
+                      stats[name.trim()] = sizeBytes;
+                    }
+                  }
+                }
+                return stats;
+              } catch (e) {
+                console.error('Failed to parse stats:', e);
+                return {};
+              }
+            }
+            
+            const currentStats = parseStats(currentOutput);
+            const baseStats = parseStats(baseOutput);
+            
+            function formatSize(bytes) {
+              if (bytes < 1024) return `${bytes.toFixed(0)} B`;
+              if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+              return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+            }
+            
+            function formatDiff(current, base) {
+              if (!base) return 'N/A';
+              const diff = current - base;
+              const pct = ((diff / base) * 100).toFixed(2);
+              const sign = diff > 0 ? '+' : '';
+              const emoji = diff > 0 ? '🔴' : diff < 0 ? '🟢' : '⚪';
+              return `${emoji} ${sign}${formatSize(diff)} (${sign}${pct}%)`;
+            }
+            
+            let comment = '## 📦 Bundle Size Report\n\n';
+            comment += '| File | Current | Base | Diff |\n';
+            comment += '|------|---------|------|------|\n';
+            
+            for (const [name, currentSize] of Object.entries(currentStats)) {
+              const baseSize = baseStats[name];
+              comment += `| ${name} | ${formatSize(currentSize)} | ${baseSize ? formatSize(baseSize) : 'N/A'} | ${formatDiff(currentSize, baseSize)} |\n`;
+            }
+            
+            comment += '\n';
+            
+            // Check if bundle size exceeds limits
+            const jsLimit = 500 * 1024; // 500 KB
+            const cssLimit = 50 * 1024; // 50 KB
+            const jsSize = currentStats['Total JS bundle'] || 0;
+            const cssSize = currentStats['Total CSS bundle'] || 0;
+            
+            const jsSizeExceeded = jsSize > jsLimit;
+            const cssSizeExceeded = cssSize > cssLimit;
+            
+            if (jsSizeExceeded || cssSizeExceeded) {
+              comment += '### ⚠️ Bundle Size Limit Exceeded\n\n';
+              if (jsSizeExceeded) {
+                comment += `- ❌ JS bundle (${formatSize(jsSize)}) exceeds limit of ${formatSize(jsLimit)}\n`;
+              }
+              if (cssSizeExceeded) {
+                comment += `- ❌ CSS bundle (${formatSize(cssSize)}) exceeds limit of ${formatSize(cssLimit)}\n`;
+              }
+              comment += '\n';
+            }
+            
+            // Check for significant increases
+            const jsBase = baseStats['Total JS bundle'];
+            const cssBase = baseStats['Total CSS bundle'];
+            
+            if (jsBase) {
+              const jsDiff = jsSize - jsBase;
+              const jsPctIncrease = (jsDiff / jsBase) * 100;
+              
+              if (jsPctIncrease > 5 || jsDiff > 50 * 1024) {
+                comment += '### ⚠️ Significant JS Bundle Increase\n\n';
+                comment += `JS bundle increased by ${formatSize(jsDiff)} (${jsPctIncrease.toFixed(2)}%), `;
+                comment += `which exceeds the threshold of 5% or 50KB.\n\n`;
+              }
+            }
+            
+            if (cssBase) {
+              const cssDiff = cssSize - cssBase;
+              const cssPctIncrease = (cssDiff / cssBase) * 100;
+              
+              if (cssPctIncrease > 5 || cssDiff > 50 * 1024) {
+                comment += '### ⚠️ Significant CSS Bundle Increase\n\n';
+                comment += `CSS bundle increased by ${formatSize(cssDiff)} (${cssPctIncrease.toFixed(2)}%), `;
+                comment += `which exceeds the threshold of 5% or 50KB.\n\n`;
+              }
+            }
+            
+            comment += '\n📊 [View detailed bundle analysis](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n';
+            
+            // Post comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(c => 
+              c.user.type === 'Bot' && c.body.includes('Bundle Size Report')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+            
+            // Fail if limits are exceeded
+            if (jsSizeExceeded || cssSizeExceeded) {
+              core.setFailed('Bundle size exceeds configured limits');
+            }

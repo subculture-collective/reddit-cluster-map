@@ -69,6 +69,10 @@ frontend/yarn-error.log*
 frontend/pnpm-debug.log*
 frontend/lerna-debug.log*
 
+# Bundle analysis
+frontend/dist/stats.html
+frontend/dist/stats.json
+
 # Allow this vscode setting to be committed if needed
 !frontend/.vscode/extensions.json
 
