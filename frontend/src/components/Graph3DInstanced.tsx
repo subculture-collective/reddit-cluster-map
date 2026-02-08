@@ -107,7 +107,7 @@ export default function Graph3DInstanced(props: Props) {
     const lastRaycastTimeRef = useRef<number>(0);
     const hoverThrottleRef = useRef<number | null>(null);
     const cameraAnimationRef = useRef<number | null>(null);
-    
+
     // State for tooltip
     const [hoveredNode, setHoveredNode] = useState<{
         id: string;
@@ -733,10 +733,7 @@ export default function Graph3DInstanced(props: Props) {
                     <span className='opacity-80'>Only show linked nodes</span>
                 </label>
             </div>
-            <div 
-                ref={containerRef} 
-                className='w-full h-full'
-            />
+            <div ref={containerRef} className='w-full h-full' />
             <NodeTooltip
                 nodeId={hoveredNode?.id || null}
                 nodeName={hoveredNode?.name}

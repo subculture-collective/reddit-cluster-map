@@ -108,6 +108,7 @@ Wraps d3-force simulation to work with the InstancedNodeRenderer.
 **NEW: Runs simulation in Web Worker to prevent UI blocking!**
 
 **Key Features:**
+
 - **Web Worker-based physics** - Computation runs off main thread
 - Integration with d3-force physics engine
 - Support for precomputed positions from backend
@@ -116,6 +117,7 @@ Wraps d3-force simulation to work with the InstancedNodeRenderer.
 - Automatic fallback to main thread if workers unavailable
 
 **Performance:**
+
 - Main thread stays responsive during simulation
 - Position updates arrive at 20-60 Hz
 - FPS maintained at 30+ even with 100k nodes
@@ -125,14 +127,14 @@ Wraps d3-force simulation to work with the InstancedNodeRenderer.
 
 ```typescript
 const simulation = new ForceSimulation({
-  onTick: (positions) => renderer.updatePositions(positions),
-  physics: {
-    chargeStrength: -30,
-    linkDistance: 30,
-    velocityDecay: 0.4,
-    cooldownTicks: 100,
-  },
-  usePrecomputedPositions: true
+    onTick: positions => renderer.updatePositions(positions),
+    physics: {
+        chargeStrength: -30,
+        linkDistance: 30,
+        velocityDecay: 0.4,
+        cooldownTicks: 100,
+    },
+    usePrecomputedPositions: true,
 });
 
 simulation.setData(nodes, links);
@@ -146,6 +148,7 @@ console.log('Using worker:', stats.useWorker);
 **See [Web Worker Simulation Documentation](../../docs/WEB_WORKER_SIMULATION.md) for details.**
 
 #### 4. `LinkRenderer.ts`
+
 GPU-accelerated link rendering using THREE.LineSegments.
 
 **Key Features:**
@@ -176,6 +179,7 @@ linkRenderer.updateVisibility(camera);
 ```
 
 #### 5. `Graph3DInstanced.tsx`
+
 React component that integrates the renderer and simulation with Three.js scene management.
 
 **Key Features:**
