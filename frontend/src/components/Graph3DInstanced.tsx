@@ -446,8 +446,17 @@ export default function Graph3DInstanced(props: Props) {
       }
     }
 
-    // Add new links (only if not too many)
-    if (filtered.links.length > 5000) return; // Skip rendering for very large graphs
+    const linkCount = filtered.links.length;
+    const LINK_THRESHOLD = 5000;
+
+    // Skip rendering for very large link counts to maintain performance
+    if (linkCount > LINK_THRESHOLD) {
+      console.warn(
+        `Link rendering disabled: ${linkCount} links exceed threshold of ${LINK_THRESHOLD}. ` +
+        `Consider using edge bundling or filtering to reduce link count.`
+      );
+      return;
+    }
 
     const material = new THREE.LineBasicMaterial({
       color: 0x999999,

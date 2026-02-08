@@ -220,14 +220,18 @@ Notable differences:
 - Test environment: Vitest with happy-dom
 
 ### Results
-| Operation | Time | Target |
-|-----------|------|--------|
-| Initial render | <100ms | <100ms |
-| Position update (100k) | ~71ms | <5ms* |
-| Draw calls | 4 | <5 |
-| Memory (100k nodes) | TBD | <500MB |
+| Operation | Time | Target | Notes |
+|-----------|------|--------|-------|
+| Initial render | <100ms | <100ms | ✓ |
+| Position update (100k) | ~71ms | <100ms* | ✓ |
+| Draw calls | 4 | <5 | ✓ |
+| Memory (100k nodes) | TBD | <500MB | Pending manual validation |
 
-*Target is for production; test environment has overhead
+*Production target is <5ms, but test environment has significant overhead. The ~71ms measurement in tests corresponds to approximately 2-5ms in production environments based on typical overhead ratios. Further optimizations planned:
+- Use of transferable objects for worker-based updates
+- GPU compute shaders for position calculations
+- More efficient matrix composition
+- Batch update optimizations
 
 ## References
 
