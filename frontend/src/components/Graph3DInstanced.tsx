@@ -7,6 +7,8 @@ import { ForceSimulation, type PhysicsConfig } from '../rendering/ForceSimulatio
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { detectWebGLSupport } from '../utils/webglDetect';
 import LoadingSkeleton from './LoadingSkeleton';
+import NodeTooltip from './NodeTooltip';
+import { perfMonitor } from '../utils/performance';
 
 /**
  * Graph3DInstanced - High-performance 3D graph visualization using InstancedMesh
@@ -66,6 +68,7 @@ export default function Graph3DInstanced(props: Props) {
     nodeRelSize,
     physics,
     focusNodeId,
+    selectedId,
     onNodeSelect,
     communityResult,
     usePrecomputedLayout,
@@ -93,7 +96,20 @@ export default function Graph3DInstanced(props: Props) {
   const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
   const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
   const hoveredNodeRef = useRef<string | null>(null);
+  const selectedNodeRef = useRef<string | null>(null);
   const labelsGroupRef = useRef<THREE.Group | null>(null);
+  const lastRaycastTimeRef = useRef<number>(0);
+  const hoverThrottleRef = useRef<number | null>(null);
+  const cameraAnimationRef = useRef<number | null>(null);
+  
+  // State for tooltip
+  const [hoveredNode, setHoveredNode] = useState<{
+    id: string;
+    name?: string;
+    type?: string;
+    mouseX: number;
+    mouseY: number;
+  } | null>(null);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -503,6 +519,80 @@ export default function Graph3DInstanced(props: Props) {
     linkRendererRef.current.setOpacity(linkOpacity);
   }, [linkOpacity]);
 
+  // Sync selectedId prop with internal selection state
+  useEffect(() => {
+    if (!nodeRendererRef.current) return;
+
+    // Only update if the prop is different from internal state
+    if (selectedId !== selectedNodeRef.current) {
+      const previousSelectedId = selectedNodeRef.current;
+      selectedNodeRef.current = selectedId || null;
+
+      // Update visual highlights
+      const colorMap = new Map<string, string>();
+
+      // Restore previous selection's color if exists
+      if (previousSelectedId && previousSelectedId !== selectedId) {
+        const prevNode = filtered.nodes.find((n) => n.id === previousSelectedId);
+        if (prevNode) {
+          let originalColor: string | undefined;
+          if (communityResult) {
+            const commId = communityResult.nodeCommunities.get(prevNode.id);
+            if (commId !== undefined) {
+              const community = communityResult.communities.find((c) => c.id === commId);
+              if (community) originalColor = community.color;
+            }
+          }
+          if (originalColor) {
+            colorMap.set(previousSelectedId, originalColor);
+          }
+        }
+      }
+
+      // Apply highlight to new selection
+      if (selectedId) {
+        const nodeExists = filtered.nodes.some((n) => n.id === selectedId);
+        if (nodeExists) {
+          colorMap.set(selectedId, '#ffff00');
+        }
+      }
+
+      if (colorMap.size > 0) {
+        nodeRendererRef.current.updateColors(colorMap);
+      }
+    }
+  }, [selectedId, filtered, communityResult]);
+
+  // Synchronize selection and instance colors when filtered data changes
+  useEffect(() => {
+    if (!nodeRendererRef.current) return;
+
+    const selectedId = selectedNodeRef.current;
+    const nodeRenderer = nodeRendererRef.current;
+
+    // Check if the previously selected node still exists in the filtered data
+    if (selectedId) {
+      const nodeExists = filtered.nodes.some((n) => n.id === selectedId);
+      if (!nodeExists) {
+        // Clear the logical selection since the node is no longer visible
+        selectedNodeRef.current = null;
+      }
+    }
+
+    // After setNodeData is called in the node renderer effect,
+    // re-apply the highlight if the selected node still exists
+    if (selectedId && filtered.nodes.some((n) => n.id === selectedId)) {
+      // Use a microtask to ensure setNodeData has completed
+      queueMicrotask(() => {
+        if (nodeRenderer) {
+          const colorMap = new Map<string, string>();
+          colorMap.set(selectedId, '#ffff00');
+          nodeRenderer.updateColors(colorMap);
+        }
+      });
+    }
+  }, [filtered]);
+
   // Handle mouse interactions
   useEffect(() => {
     if (!containerRef.current || !nodeRendererRef.current || !cameraRef.current) return;
@@ -512,46 +602,191 @@ export default function Graph3DInstanced(props: Props) {
     const mouse = mouseRef.current;
     const nodeRenderer = nodeRendererRef.current;
     const camera = cameraRef.current;
+    const controls = controlsRef.current;
 
-    const handleMouseMove = (event: MouseEvent) => {
+    // Throttle hover detection to 30Hz (every ~33ms)
+    const HOVER_THROTTLE_MS = 33;
+
+    const performRaycast = (clientX: number, clientY: number) => {
+      const now = performance.now();
+      if (now - lastRaycastTimeRef.current < HOVER_THROTTLE_MS) {
+        return; // Skip if within throttle period
+      }
+      lastRaycastTimeRef.current = now;
+
       const rect = container.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-      const nodeId = nodeRenderer.raycast(raycaster);
+      
+      // Measure raycast performance
+      const nodeId = perfMonitor.measure('interaction:raycast', () => {
+        return nodeRenderer.raycast(raycaster);
+      });
 
       if (nodeId !== hoveredNodeRef.current) {
         hoveredNodeRef.current = nodeId;
         container.style.cursor = nodeId ? 'pointer' : 'default';
         
-        // Could trigger tooltip here
+        // Update tooltip
         if (nodeId) {
           const node = filtered.nodes.find((n) => n.id === nodeId);
           if (node) {
-            container.title = node.name || node.id;
+            setHoveredNode({
+              id: nodeId,
+              name: node.name,
+              type: node.type,
+              mouseX: clientX,
+              mouseY: clientY,
+            });
           }
         } else {
-          container.title = '';
+          setHoveredNode(null);
+        }
+      } else if (nodeId && hoveredNode) {
+        // Update mouse position even when hovering the same node
+        setHoveredNode({
+          ...hoveredNode,
+          mouseX: clientX,
+          mouseY: clientY,
+        });
+      }
+    };
+
+    const handleMouseMove = (event: MouseEvent) => {
+      // Use requestAnimationFrame for throttling
+      if (hoverThrottleRef.current !== null) {
+        return;
+      }
+      hoverThrottleRef.current = requestAnimationFrame(() => {
+        performRaycast(event.clientX, event.clientY);
+        hoverThrottleRef.current = null;
+      });
+    };
+
+    const handleClick = () => {
+      if (hoveredNodeRef.current) {
+        const node = filtered.nodes.find((n) => n.id === hoveredNodeRef.current);
+        
+        // Capture previously selected node before updating
+        const previousSelectedId = selectedNodeRef.current;
+        
+        // Update selection
+        selectedNodeRef.current = hoveredNodeRef.current;
+        
+        // Highlight selected node and restore previous selection color with performance monitoring
+        if (nodeRenderer) {
+          perfMonitor.measure('interaction:selection-highlight', () => {
+            const colorMap = new Map<string, string>();
+            
+            // Restore the previously selected node's original color, if any
+            if (previousSelectedId && previousSelectedId !== hoveredNodeRef.current) {
+              const prevNode = filtered.nodes.find((n) => n.id === previousSelectedId);
+              if (prevNode) {
+                // Determine the original color from community or type
+                let originalColor: string | undefined;
+                if (communityResult) {
+                  const commId = communityResult.nodeCommunities.get(prevNode.id);
+                  if (commId !== undefined) {
+                    const community = communityResult.communities.find((c) => c.id === commId);
+                    if (community) originalColor = community.color;
+                  }
+                }
+                if (originalColor) {
+                  colorMap.set(previousSelectedId, originalColor);
+                }
+              }
+            }
+            
+            // Apply yellow highlight to the newly selected node
+            colorMap.set(hoveredNodeRef.current!, '#ffff00'); // Yellow highlight
+            
+            nodeRenderer.updateColors(colorMap);
+          });
+        }
+        
+        // Fire callback
+        if (onNodeSelect) {
+          onNodeSelect(node?.name || hoveredNodeRef.current);
         }
       }
     };
 
-    const handleClick = () => {
-      if (hoveredNodeRef.current && onNodeSelect) {
+    const handleDoubleClick = () => {
+      if (hoveredNodeRef.current && controls) {
         const node = filtered.nodes.find((n) => n.id === hoveredNodeRef.current);
-        onNodeSelect(node?.name || hoveredNodeRef.current);
+        if (!node) return;
+
+        const position = nodeRenderer.getNodePosition(node.id);
+        if (position) {
+          // Cancel any in-flight animation
+          if (cameraAnimationRef.current !== null) {
+            cancelAnimationFrame(cameraAnimationRef.current);
+            cameraAnimationRef.current = null;
+          }
+
+          // Animate camera to node
+          const distance = 150;
+          const targetPos = {
+            x: position.x + distance,
+            y: position.y + distance,
+            z: position.z + distance,
+          };
+          
+          // Smooth transition using controls
+          const startPos = { ...camera.position };
+          const startTarget = { ...controls.target };
+          const duration = 1000; // 1 second
+          const startTime = performance.now();
+
+          const animateCamera = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Easing function (ease-in-out)
+            const eased = progress < 0.5
+              ? 2 * progress * progress
+              : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+            camera.position.x = startPos.x + (targetPos.x - startPos.x) * eased;
+            camera.position.y = startPos.y + (targetPos.y - startPos.y) * eased;
+            camera.position.z = startPos.z + (targetPos.z - startPos.z) * eased;
+
+            controls.target.x = startTarget.x + (position.x - startTarget.x) * eased;
+            controls.target.y = startTarget.y + (position.y - startTarget.y) * eased;
+            controls.target.z = startTarget.z + (position.z - startTarget.z) * eased;
+            
+            controls.update();
+
+            if (progress < 1) {
+              cameraAnimationRef.current = requestAnimationFrame(animateCamera);
+            } else {
+              cameraAnimationRef.current = null;
+            }
+          };
+
+          animateCamera();
+        }
       }
     };
 
     container.addEventListener('mousemove', handleMouseMove);
     container.addEventListener('click', handleClick);
+    container.addEventListener('dblclick', handleDoubleClick);
 
     return () => {
       container.removeEventListener('mousemove', handleMouseMove);
       container.removeEventListener('click', handleClick);
+      container.removeEventListener('dblclick', handleDoubleClick);
+      if (hoverThrottleRef.current !== null) {
+        cancelAnimationFrame(hoverThrottleRef.current);
+      }
+      if (cameraAnimationRef.current !== null) {
+        cancelAnimationFrame(cameraAnimationRef.current);
+      }
     };
-  }, [filtered, onNodeSelect]);
+  }, [filtered, onNodeSelect, communityResult]);
 
   // Focus camera on node
   useEffect(() => {
@@ -635,6 +870,13 @@ export default function Graph3DInstanced(props: Props) {
       <div 
         ref={containerRef} 
         className="w-full h-full"
+      />
+      <NodeTooltip
+        nodeId={hoveredNode?.id || null}
+        nodeName={hoveredNode?.name}
+        nodeType={hoveredNode?.type}
+        mouseX={hoveredNode?.mouseX || 0}
+        mouseY={hoveredNode?.mouseY || 0}
       />
     </div>
   );
