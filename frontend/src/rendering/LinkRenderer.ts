@@ -3,39 +3,39 @@ import * as THREE from 'three';
 /**
  * LinkRenderer - High-performance link rendering using THREE.LineSegments
  * 
- * Renders all links in a single draw call using GPU batching.
- * This dramatically reduces draw calls from O(n) to O(1) for links.
+ * Renders all visible links in a single draw call using GPU-accelerated LineSegments.
+ * This dramatically reduces draw calls and improves performance for large graphs.
  * 
  * Key features:
- * - Single LineSegments object for all links (1 draw call)
- * - Pre-allocated Float32Array buffer for positions
- * - Viewport-based frustum culling (only render visible links)
- * - Dynamic buffer updates when node positions change
+ * - Single LineSegments draw call for all links
+ * - Viewport-based link filtering (frustum culling)
+ * - Pre-allocated Float32Array buffer for efficient updates
+ * - Dynamic buffer resizing as needed
  * - Opacity control via material uniform
  * 
  * Performance targets:
- * - 1 draw call for 200k links
- * - <10ms buffer update time for 200k links
- * - Automatic frustum culling for off-screen links
+ * - 1 draw call for all links
+ * - <10ms buffer update for 200k links
+ * - Links hidden when endpoints are off-screen
  * 
  * @example
  * ```typescript
- * const renderer = new LinkRenderer(scene, {
+ * const linkRenderer = new LinkRenderer(scene, {
  *   maxLinks: 200000,
- *   opacity: 0.6
+ *   opacity: 0.3
  * });
  * 
- * // Set initial link data
- * renderer.setLinks(links);
+ * // Set link data
+ * linkRenderer.setLinks(links);
  * 
- * // Update positions when nodes move
- * renderer.updatePositions(nodePositions);
+ * // Update when node positions change
+ * linkRenderer.updatePositions(nodePositions);
  * 
  * // Update when camera moves (for frustum culling)
- * renderer.updateFrustumCulling(camera);
+ * linkRenderer.updateVisibility(camera);
  * 
- * // Change opacity
- * renderer.setOpacity(0.3);
+ * // Update opacity
+ * linkRenderer.setOpacity(0.5);
  * ```
  */
 
@@ -47,232 +47,270 @@ export interface LinkData {
 export interface LinkRendererConfig {
   maxLinks?: number;
   opacity?: number;
-  color?: number | string;
-  enableFrustumCulling?: boolean;
+  color?: number;
 }
 
 export class LinkRenderer {
   private scene: THREE.Scene;
+  private geometry: THREE.BufferGeometry;
+  private material: THREE.LineBasicMaterial;
   private lineSegments: THREE.LineSegments | null = null;
-  private geometry: THREE.BufferGeometry | null = null;
-  private material: THREE.LineBasicMaterial | null = null;
-  private positionsBuffer: Float32Array;
-  private maxLinks: number;
   private links: LinkData[] = [];
   private nodePositions: Map<string, { x: number; y: number; z: number }> = new Map();
-  private enableFrustumCulling: boolean;
-  private visibleLinkIndices: Set<number> = new Set();
+  private visibleNodeIds: Set<string> = new Set();
+  private positionsBuffer: Float32Array;
+  private maxLinks: number;
   private needsUpdate = false;
+  private lastCameraUpdate: { position: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  private positionsDirty = false; // Track if positions changed since last visibility update
+  private lastPerformanceWarning = 0; // Timestamp of last performance warning
+  private readonly frustum = new THREE.Frustum();
+  private readonly cameraMatrix = new THREE.Matrix4();
+  private static readonly MIN_CAMERA_POSITION_DELTA = 10;
+  private static readonly MIN_CAMERA_TARGET_DELTA = 10;
+  private static readonly PERFORMANCE_WARNING_THROTTLE = 5000; // Warn at most once per 5 seconds
 
   constructor(scene: THREE.Scene, config: LinkRendererConfig = {}) {
     this.scene = scene;
     this.maxLinks = config.maxLinks || 200000;
-    this.enableFrustumCulling = config.enableFrustumCulling ?? true;
 
-    // Pre-allocate buffer: 2 vertices per link × 3 components (x, y, z)
+    // Pre-allocate buffer for link positions (2 vertices per link × 3 components per vertex)
     this.positionsBuffer = new Float32Array(this.maxLinks * 2 * 3);
+
+    // Create geometry with position attribute
+    this.geometry = new THREE.BufferGeometry();
+    this.geometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(this.positionsBuffer, 3).setUsage(THREE.DynamicDrawUsage)
+    );
+    this.geometry.setDrawRange(0, 0); // Start with no links visible
 
     // Create material
     this.material = new THREE.LineBasicMaterial({
-      color: config.color ?? 0x999999,
-      opacity: config.opacity ?? 0.6,
+      color: config.color !== undefined ? config.color : 0x999999,
+      opacity: config.opacity !== undefined ? config.opacity : 0.3,
       transparent: true,
+      depthTest: true,
+      depthWrite: false,
     });
 
-    // Create geometry with pre-allocated buffer
-    this.geometry = new THREE.BufferGeometry();
-    const positionAttribute = new THREE.BufferAttribute(this.positionsBuffer, 3);
-    positionAttribute.setUsage(THREE.DynamicDrawUsage); // Will be updated frequently
-    this.geometry.setAttribute('position', positionAttribute);
-
-    // Create line segments
+    // Create LineSegments
     this.lineSegments = new THREE.LineSegments(this.geometry, this.material);
-    this.lineSegments.frustumCulled = false; // We handle culling manually
     this.scene.add(this.lineSegments);
   }
 
   /**
-   * Set link data
-   * @param links Array of link objects with source and target IDs
+   * Set the links to be rendered
    */
   public setLinks(links: LinkData[]): void {
-    const linkCount = Math.min(links.length, this.maxLinks);
-    this.links = links.slice(0, linkCount);
-    
-    // Mark all links as potentially visible initially
-    this.visibleLinkIndices.clear();
-    for (let i = 0; i < this.links.length; i++) {
-      this.visibleLinkIndices.add(i);
+    const maxRenderableLinks = this.maxLinks;
+
+    // Clamp to maxLinks to avoid storing more links than the buffer can represent
+    let clampedLinks = links;
+    if (links.length > maxRenderableLinks) {
+      console.warn(
+        `LinkRenderer: received ${links.length} links but maxLinks is ${maxRenderableLinks}. ` +
+        `Only the first ${maxRenderableLinks} links will be rendered.`
+      );
+      clampedLinks = links.slice(0, maxRenderableLinks);
     }
-    
+
+    this.links = clampedLinks;
+
+    // Resize buffer if necessary
+    const requiredSize = clampedLinks.length * 2 * 3;
+    const maxBufferSize = this.maxLinks * 2 * 3;
+
+    if (requiredSize > this.positionsBuffer.length && this.positionsBuffer.length < maxBufferSize) {
+      const candidateSize = Math.max(requiredSize, this.positionsBuffer.length * 2);
+      const newSize = Math.min(candidateSize, maxBufferSize);
+
+      // Avoid reallocating if we cannot actually increase capacity
+      if (newSize > this.positionsBuffer.length) {
+        this.positionsBuffer = new Float32Array(newSize);
+        this.geometry.setAttribute(
+          'position',
+          new THREE.BufferAttribute(this.positionsBuffer, 3).setUsage(THREE.DynamicDrawUsage)
+        );
+      }
+    }
+
     this.needsUpdate = true;
-    this.updateBuffer();
   }
 
   /**
-   * Update node positions
-   * @param positions Map of node ID to position
+   * Update node positions and refresh link endpoints
    */
   public updatePositions(positions: Map<string, { x: number; y: number; z: number }>): void {
     this.nodePositions = positions;
+    this.positionsDirty = true; // Mark that positions have changed
     this.needsUpdate = true;
-    this.updateBuffer();
   }
 
   /**
-   * Update frustum culling based on camera
-   * @param camera The camera to use for frustum culling
+   * Update visible node IDs based on camera frustum
+   * Call this when the camera moves significantly
    */
-  public updateFrustumCulling(camera: THREE.Camera): void {
-    if (!this.enableFrustumCulling) return;
+  public updateVisibility(camera: THREE.Camera): void {
+    // Check if camera moved significantly
+    const cameraPos = camera.position.clone();
+    const cameraTarget = new THREE.Vector3();
+    
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.getWorldDirection(cameraTarget);
+      cameraTarget.multiplyScalar(100).add(cameraPos);
+    }
 
-    const frustum = new THREE.Frustum();
-    const projScreenMatrix = new THREE.Matrix4();
-    projScreenMatrix.multiplyMatrices(
+    // Force update if positions changed since last visibility update,
+    // even if camera hasn't moved (nodes may have moved in/out of frustum)
+    const forceUpdate = this.positionsDirty;
+
+    // Only update if camera moved significantly (optimization)
+    if (!forceUpdate && this.lastCameraUpdate) {
+      const posDiff = cameraPos.distanceTo(this.lastCameraUpdate.position);
+      const targetDiff = cameraTarget.distanceTo(this.lastCameraUpdate.target);
+      if (
+        posDiff < LinkRenderer.MIN_CAMERA_POSITION_DELTA &&
+        targetDiff < LinkRenderer.MIN_CAMERA_TARGET_DELTA
+      ) {
+        return; // Camera hasn't moved significantly and positions haven't changed
+      }
+    }
+
+    this.lastCameraUpdate = { position: cameraPos, target: cameraTarget };
+    this.positionsDirty = false; // Clear the flag after updating visibility
+
+    // Update frustum
+    camera.updateMatrixWorld();
+    this.cameraMatrix.multiplyMatrices(
       camera.projectionMatrix,
       camera.matrixWorldInverse
     );
-    frustum.setFromProjectionMatrix(projScreenMatrix);
+    this.frustum.setFromProjectionMatrix(this.cameraMatrix);
 
-    // Update visible link indices based on frustum
-    const prevVisibleIndices = new Set(this.visibleLinkIndices);
-    this.visibleLinkIndices.clear();
-
-    const sourcePos = new THREE.Vector3();
-    const targetPos = new THREE.Vector3();
-
-    for (let i = 0; i < this.links.length; i++) {
-      const link = this.links[i];
-      const source = this.nodePositions.get(link.source);
-      const target = this.nodePositions.get(link.target);
-
-      if (!source || !target) continue;
-
-      sourcePos.set(source.x, source.y, source.z);
-      targetPos.set(target.x, target.y, target.z);
-
-      // Only render link if at least one endpoint is visible
-      if (frustum.containsPoint(sourcePos) || frustum.containsPoint(targetPos)) {
-        this.visibleLinkIndices.add(i);
+    // Update visible nodes
+    this.visibleNodeIds.clear();
+    const tempVector = new THREE.Vector3();
+    for (const [nodeId, pos] of this.nodePositions.entries()) {
+      tempVector.set(pos.x, pos.y, pos.z);
+      if (this.frustum.containsPoint(tempVector)) {
+        this.visibleNodeIds.add(nodeId);
       }
     }
 
-    // Check if the visible set actually changed
-    let setChanged = prevVisibleIndices.size !== this.visibleLinkIndices.size;
-    if (!setChanged) {
-      // Same size, but check if contents are the same
-      for (const idx of this.visibleLinkIndices) {
-        if (!prevVisibleIndices.has(idx)) {
-          setChanged = true;
-          break;
-        }
-      }
-    }
-
-    // Only update buffer if visibility actually changed
-    if (setChanged) {
-      this.needsUpdate = true;
-      this.updateBuffer();
-    }
+    this.needsUpdate = true;
   }
 
   /**
-   * Update the positions buffer with current link data
+   * Refresh the link geometry buffer
+   * Call this after updating positions or visibility
    */
-  private updateBuffer(): void {
-    if (!this.needsUpdate || !this.geometry) return;
+  public refresh(): void {
+    if (!this.needsUpdate) {
+      return;
+    }
 
     const startTime = performance.now();
-    let vertexIndex = 0;
 
-    // Populate buffer only with visible links
-    for (const linkIndex of this.visibleLinkIndices) {
-      const link = this.links[linkIndex];
-      if (!link) continue;
+    let vertexCount = 0;
 
-      const source = this.nodePositions.get(link.source);
-      const target = this.nodePositions.get(link.target);
+    // Only render links where both endpoints are visible
+    for (const link of this.links) {
+      const sourcePos = this.nodePositions.get(link.source);
+      const targetPos = this.nodePositions.get(link.target);
 
-      if (!source || !target) continue;
+      // Skip if either node doesn't have a position
+      if (!sourcePos || !targetPos) {
+        continue;
+      }
 
-      const baseIndex = vertexIndex * 3;
+      // Skip if either endpoint is not visible (frustum culling)
+      // If visibleNodeIds is empty, render all links (no culling active)
+      if (
+        this.visibleNodeIds.size > 0 &&
+        (!this.visibleNodeIds.has(link.source) || !this.visibleNodeIds.has(link.target))
+      ) {
+        continue;
+      }
+
+      // Check if we've exceeded buffer capacity
+      if (vertexCount * 3 >= this.positionsBuffer.length) {
+        // Buffer capacity exceeded - this should not happen since setLinks() clamps to maxLinks
+        break;
+      }
+
+      const baseIndex = vertexCount * 3;
 
       // Source vertex
-      this.positionsBuffer[baseIndex] = source.x;
-      this.positionsBuffer[baseIndex + 1] = source.y;
-      this.positionsBuffer[baseIndex + 2] = source.z;
+      this.positionsBuffer[baseIndex] = sourcePos.x;
+      this.positionsBuffer[baseIndex + 1] = sourcePos.y;
+      this.positionsBuffer[baseIndex + 2] = sourcePos.z;
 
       // Target vertex
-      this.positionsBuffer[baseIndex + 3] = target.x;
-      this.positionsBuffer[baseIndex + 4] = target.y;
-      this.positionsBuffer[baseIndex + 5] = target.z;
+      this.positionsBuffer[baseIndex + 3] = targetPos.x;
+      this.positionsBuffer[baseIndex + 4] = targetPos.y;
+      this.positionsBuffer[baseIndex + 5] = targetPos.z;
 
-      vertexIndex += 2;
+      vertexCount += 2;
     }
 
-    // Update draw range to only render visible links
-    this.geometry.setDrawRange(0, vertexIndex);
-
-    // Mark buffer as needing update
-    const positionAttribute = this.geometry.getAttribute('position');
-    if (positionAttribute) {
-      positionAttribute.needsUpdate = true;
-    }
+    // Update draw range to only render the populated vertices
+    this.geometry.setDrawRange(0, vertexCount);
+    this.geometry.attributes.position.needsUpdate = true;
 
     this.needsUpdate = false;
 
-    const updateTime = performance.now() - startTime;
-    // Only warn in development to avoid console spam in production
-    if (updateTime > 10 && import.meta.env?.DEV) {
-      console.warn(`LinkRenderer buffer update took ${updateTime.toFixed(2)}ms`);
+    const elapsed = performance.now() - startTime;
+    if (elapsed > 10) {
+      // Throttle warnings to avoid console spam (max once per 5 seconds)
+      const now = Date.now();
+      if (now - this.lastPerformanceWarning > LinkRenderer.PERFORMANCE_WARNING_THROTTLE) {
+        console.warn(
+          `LinkRenderer: Buffer update took ${elapsed.toFixed(2)}ms for ${vertexCount / 2} links (target <10ms)`
+        );
+        this.lastPerformanceWarning = now;
+      }
     }
   }
 
   /**
-   * Set link opacity
-   * @param opacity Value between 0 and 1
+   * Set the opacity of all links
    */
   public setOpacity(opacity: number): void {
-    if (this.material) {
-      this.material.opacity = Math.max(0, Math.min(1, opacity));
-    }
+    this.material.opacity = Math.max(0, Math.min(1, opacity));
   }
 
   /**
-   * Set link color
-   * @param color Color value (hex number or string)
+   * Set the color of all links
    */
-  public setColor(color: number | string): void {
-    if (this.material) {
-      this.material.color.set(color);
-    }
+  public setColor(color: number): void {
+    this.material.color.setHex(color);
   }
 
   /**
-   * Force a buffer update on the next render
-   */
-  public forceUpdate(): void {
-    this.needsUpdate = true;
-    this.updateBuffer();
-  }
-
-  /**
-   * Get statistics about the renderer
+   * Get rendering statistics
+   * Note: visibleLinks calculation may be expensive for very large graphs (200k+ links)
+   * as it filters the entire links array. This is acceptable for debugging/monitoring
+   * but should not be called in performance-critical paths.
    */
   public getStats(): {
     totalLinks: number;
     visibleLinks: number;
-    maxLinks: number;
+    bufferedLinks: number;
     drawCalls: number;
   } {
-    const renderedVertices = this.geometry ? this.geometry.drawRange.count : 0;
-    const visibleLinks = Math.floor(renderedVertices / 2);
-
+    const drawRange = this.geometry.drawRange;
     return {
       totalLinks: this.links.length,
-      visibleLinks,
-      maxLinks: this.maxLinks,
-      drawCalls: visibleLinks > 0 ? 1 : 0,
+      // visibleLinks is calculated on-demand for accuracy
+      // For performance-critical usage, use bufferedLinks instead
+      visibleLinks: this.visibleNodeIds.size > 0
+        ? this.links.filter(
+            (l) => this.visibleNodeIds.has(l.source) && this.visibleNodeIds.has(l.target)
+          ).length
+        : this.links.length,
+      bufferedLinks: drawRange.count / 2,
+      drawCalls: drawRange.count > 0 ? 1 : 0,
     };
   }
 
@@ -283,17 +321,10 @@ export class LinkRenderer {
     if (this.lineSegments) {
       this.scene.remove(this.lineSegments);
     }
-    if (this.geometry) {
-      this.geometry.dispose();
-      this.geometry = null;
-    }
-    if (this.material) {
-      this.material.dispose();
-      this.material = null;
-    }
-    this.lineSegments = null;
+    this.geometry.dispose();
+    this.material.dispose();
     this.links = [];
     this.nodePositions.clear();
-    this.visibleLinkIndices.clear();
+    this.visibleNodeIds.clear();
   }
 }

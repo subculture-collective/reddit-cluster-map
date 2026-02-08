@@ -239,15 +239,14 @@ export default function Graph3DInstanced(props: Props) {
     });
     nodeRendererRef.current = nodeRenderer;
 
-    // Create link renderer
+    // Create link renderer with initial opacity
     const linkRenderer = new LinkRenderer(scene, {
       maxLinks: MAX_RENDER_LINKS,
-      opacity: 0.6, // Initial opacity, will be updated by separate effect
-      enableFrustumCulling: true,
+      opacity: linkOpacity,
     });
     linkRendererRef.current = linkRenderer;
 
-    // Create groups for labels
+    // Create group for labels
     const labelsGroup = new THREE.Group();
     scene.add(labelsGroup);
     labelsGroupRef.current = labelsGroup;
@@ -259,10 +258,12 @@ export default function Graph3DInstanced(props: Props) {
 
     // Track last camera position for throttling
     let lastCameraUpdate = 0;
+    let lastLinkVisibilityUpdate = 0;
     const CAMERA_UPDATE_INTERVAL = 1000; // Update every 1 second
+    // Link visibility update: minimum interval between checks (actual timing depends on frame rate)
+    // LinkRenderer has built-in camera movement detection to skip redundant updates
+    const LINK_VISIBILITY_UPDATE_INTERVAL = 300; // Min 300ms between visibility checks
     const lastCamPos = { x: NaN, y: NaN, z: NaN };
-    let lastCameraFrustumUpdate = 0;
-    const FRUSTUM_UPDATE_INTERVAL = 500; // Update frustum culling every 500ms
     const EPSILON = 1e-3;
 
     // Animation loop
@@ -270,15 +271,18 @@ export default function Graph3DInstanced(props: Props) {
     const animate = () => {
       animationId = requestAnimationFrame(animate);
       controls.update();
-      renderer.render(scene, camera);
-
+      
+      // Update link visibility when camera moves
+      // updateVisibility() skips work if camera hasn't moved significantly
+      // refresh() skips work if visibility hasn't changed (needsUpdate flag)
       const now = Date.now();
-
-      // Throttle frustum culling updates for links
-      if (linkRenderer && now - lastCameraFrustumUpdate > FRUSTUM_UPDATE_INTERVAL) {
-        linkRenderer.updateFrustumCulling(camera);
-        lastCameraFrustumUpdate = now;
+      if (linkRenderer && now - lastLinkVisibilityUpdate > LINK_VISIBILITY_UPDATE_INTERVAL) {
+        linkRenderer.updateVisibility(camera);
+        linkRenderer.refresh();
+        lastLinkVisibilityUpdate = now;
       }
+      
+      renderer.render(scene, camera);
 
       // Throttle camera change emissions
       if (onCameraChange) {
@@ -446,9 +450,9 @@ export default function Graph3DInstanced(props: Props) {
           if (nodeRendererRef.current) {
             nodeRendererRef.current.updatePositions(positions);
           }
-          // Update link positions when nodes move
           if (linkRendererRef.current) {
             linkRendererRef.current.updatePositions(positions);
+            linkRendererRef.current.refresh();
           }
         },
         physics,
@@ -474,36 +478,29 @@ export default function Graph3DInstanced(props: Props) {
     }
   }, [physics]);
 
-  // Update link renderer with filtered link data
+  // Set up links with LinkRenderer
   useEffect(() => {
     if (!linkRendererRef.current) return;
 
-    // Set links in the renderer
+    // Set links data
     linkRendererRef.current.setLinks(filtered.links);
-
-    // Get initial node positions for links
-    if (nodeRendererRef.current) {
-      const positions = new Map<string, { x: number; y: number; z: number }>();
-      for (const node of filtered.nodes) {
-        const pos = nodeRendererRef.current.getNodePosition(node.id);
-        if (pos) {
-          positions.set(node.id, pos);
-        }
+    
+    // Build initial positions map from filtered nodes
+    const positions = new Map<string, { x: number; y: number; z: number }>();
+    for (const node of filtered.nodes) {
+      if (node.x !== undefined && node.y !== undefined && node.z !== undefined) {
+        positions.set(node.id, { x: node.x, y: node.y, z: node.z });
       }
-      linkRendererRef.current.updatePositions(positions);
     }
-
-    // Ensure frustum culling state is up to date immediately after positions are set
-    if (cameraRef.current) {
-      linkRendererRef.current.updateFrustumCulling(cameraRef.current);
-    }
+    
+    linkRendererRef.current.updatePositions(positions);
+    linkRendererRef.current.refresh();
   }, [filtered]);
 
-  // Update link opacity when it changes
+  // Update link opacity
   useEffect(() => {
-    if (linkRendererRef.current) {
-      linkRendererRef.current.setOpacity(linkOpacity);
-    }
+    if (!linkRendererRef.current) return;
+    linkRendererRef.current.setOpacity(linkOpacity);
   }, [linkOpacity]);
 
   // Handle mouse interactions
