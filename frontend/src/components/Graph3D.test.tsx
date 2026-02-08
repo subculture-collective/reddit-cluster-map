@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import Graph3D from './Graph3D';
 
+// Mock webglDetect to return true in tests
+vi.mock('../utils/webglDetect', () => ({
+  detectWebGLSupport: () => true,
+}));
+
 // Mock react-force-graph-3d
 vi.mock('react-force-graph-3d', () => ({
   default: () => <div data-testid="force-graph-3d">Mocked ForceGraph3D</div>,
@@ -41,8 +46,16 @@ describe('Graph3D', () => {
     expect(container).toBeTruthy();
   });
 
-  it('renders the mocked ForceGraph3D component', () => {
-    const { getByTestId } = render(
+  it('renders the mocked ForceGraph3D component', async () => {
+    // Mock fetch to resolve with minimal graph data
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ nodes: [], links: [] }),
+      } as Response)
+    );
+
+    const { findByTestId, queryByText } = render(
       <Graph3D
         filters={mockFilters}
         linkOpacity={0.5}
@@ -51,7 +64,13 @@ describe('Graph3D', () => {
         subredditSize="subscribers"
       />
     );
-    expect(getByTestId('force-graph-3d')).toBeTruthy();
+    
+    // Initially shows loading skeleton
+    expect(queryByText('Loading Graph')).toBeTruthy();
+    
+    // After fetch completes, should show ForceGraph3D
+    const forceGraph = await findByTestId('force-graph-3d');
+    expect(forceGraph).toBeTruthy();
   });
 
   it('accepts optional props', () => {
