@@ -19,6 +19,8 @@ import * as THREE from "three";
 import LoadingSkeleton from "./LoadingSkeleton";
 import { detectWebGLSupport } from "../utils/webglDetect";
 import Graph3DInstanced from "./Graph3DInstanced";
+import { StreamingGraphLoader, type LoadProgress } from "../data/StreamingGraphLoader";
+import LoadingProgress from "./LoadingProgress";
 
 type Filters = {
   subreddit: boolean;
@@ -319,6 +321,7 @@ function Graph3DOriginal(props: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [loadProgress, setLoadProgress] = useState<LoadProgress | null>(null);
   const [webglSupported] = useState(() => detectWebGLSupport());
   // Ref typed as expected by ForceGraph3D definition
   const fgRef = useRef<
@@ -381,10 +384,16 @@ function Graph3DOriginal(props: Props) {
         setGraphData({ nodes: [], links: [] });
         setError(null);
         setLoading(false);
+        setLoadProgress(null);
         return;
       }
       setLoading(true);
       setError(null);
+      setLoadProgress(null);
+      // Reset graph data to start fresh
+      setGraphData({ nodes: [], links: [] });
+      setInitialLoadComplete(false);
+      
       try {
         const base = (import.meta.env?.VITE_API_URL || "/api").replace(
           /\/$/,
@@ -400,16 +409,50 @@ function Graph3DOriginal(props: Props) {
           params.set("types", selected.join(","));
         }
         const url = `${base}/graph?${params.toString()}`;
-        const response = await fetch(url, { signal });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = (await response.json()) as GraphData;
         
-        setGraphData(data);
-        setInitialLoadComplete(true);
+        // Track all nodes and links across batches (use push for O(1) instead of spread)
+        const allNodes: GraphNode[] = [];
+        const allLinks: GraphLink[] = [];
+        let firstBatch = true;
+        
+        // Use StreamingGraphLoader for progressive loading
+        const loader = new StreamingGraphLoader({
+          url,
+          batchSize: 5000,
+          signal,
+          onProgress: (progress) => {
+            // Accumulate nodes and links with push (O(1)) instead of spread (O(n))
+            allNodes.push(...progress.batch.nodes);
+            allLinks.push(...progress.batch.links);
+            
+            // Update graph data - clone arrays only when setting state
+            setGraphData({ nodes: [...allNodes], links: [...allLinks] });
+            setLoadProgress(progress);
+            
+            // Mark initial load as complete after first batch
+            if (firstBatch && progress.batch.nodes.length > 0) {
+              setInitialLoadComplete(true);
+              firstBatch = false;
+            }
+          },
+          onComplete: (data) => {
+            setGraphData(data);
+            setInitialLoadComplete(true);
+            setLoadProgress(null);
+          },
+          onError: (err) => {
+            setError(err.message);
+            setGraphData(null);
+            setLoadProgress(null);
+          },
+        });
+        
+        await loader.load();
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
         setError((err as Error).message);
         setGraphData(null);
+        setLoadProgress(null);
       } finally {
         if (!signal || !signal.aborted) {
           setLoading(false);
@@ -988,6 +1031,16 @@ function Graph3DOriginal(props: Props) {
       onTouchStart={() => frameThrottlerRef.current?.markActive()}
       onTouchMove={() => frameThrottlerRef.current?.markActive()}
     >
+      {/* Progressive loading indicator */}
+      {loadProgress && loadProgress.percentComplete < 100 && (
+        <LoadingProgress
+          nodesLoaded={loadProgress.nodesLoaded}
+          linksLoaded={loadProgress.linksLoaded}
+          totalNodes={loadProgress.totalNodes}
+          totalLinks={loadProgress.totalLinks}
+          percentComplete={loadProgress.percentComplete}
+        />
+      )}
       {error && (
         <div className="absolute top-2 left-2 z-20 bg-red-900/70 text-red-100 rounded px-3 py-2 text-sm max-w-md">
           <div className="flex items-start gap-2">
