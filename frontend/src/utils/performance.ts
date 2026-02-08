@@ -3,9 +3,10 @@
  */
 
 export interface PerformanceStats {
-  raycastTime: number;
-  hoverUpdateTime: number;
-  selectionUpdateTime: number;
+  totalMs: number;
+  lastMs: number;
+  minMs: number;
+  maxMs: number;
   count: number;
 }
 
@@ -56,13 +57,17 @@ class PerformanceMonitor {
   private recordStat(label: string, duration: number): void {
     const existing = this.stats.get(label);
     if (existing) {
-      existing.raycastTime = duration;
+      existing.totalMs += duration;
+      existing.lastMs = duration;
+      existing.minMs = Math.min(existing.minMs, duration);
+      existing.maxMs = Math.max(existing.maxMs, duration);
       existing.count++;
     } else {
       this.stats.set(label, {
-        raycastTime: duration,
-        hoverUpdateTime: 0,
-        selectionUpdateTime: 0,
+        totalMs: duration,
+        lastMs: duration,
+        minMs: duration,
+        maxMs: duration,
         count: 1,
       });
     }
@@ -104,8 +109,8 @@ class PerformanceMonitor {
 
     console.group('[Performance Summary]');
     for (const [label, stat] of this.stats.entries()) {
-      const avg = stat.raycastTime;
-      console.log(`${label}: ${avg.toFixed(2)}ms (${stat.count} calls)`);
+      const avg = stat.totalMs / stat.count;
+      console.log(`${label}: avg=${avg.toFixed(2)}ms, last=${stat.lastMs.toFixed(2)}ms, min=${stat.minMs.toFixed(2)}ms, max=${stat.maxMs.toFixed(2)}ms (${stat.count} calls)`);
     }
     console.groupEnd();
   }
@@ -114,8 +119,8 @@ class PerformanceMonitor {
 // Global instance
 export const perfMonitor = new PerformanceMonitor();
 
-// Auto-log summary every 10 seconds in dev mode
-if (import.meta.env.DEV) {
+// Auto-log summary every 10 seconds in dev mode (but not during tests)
+if (import.meta.env.DEV && import.meta.env.MODE !== 'test' && typeof import.meta.env.VITEST === 'undefined') {
   setInterval(() => {
     perfMonitor.logSummary();
     perfMonitor.clearStats();

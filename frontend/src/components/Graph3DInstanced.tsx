@@ -68,6 +68,7 @@ export default function Graph3DInstanced(props: Props) {
     nodeRelSize,
     physics,
     focusNodeId,
+    selectedId,
     onNodeSelect,
     communityResult,
     usePrecomputedLayout,
@@ -99,6 +100,7 @@ export default function Graph3DInstanced(props: Props) {
   const labelsGroupRef = useRef<THREE.Group | null>(null);
   const lastRaycastTimeRef = useRef<number>(0);
   const hoverThrottleRef = useRef<number | null>(null);
+  const cameraAnimationRef = useRef<number | null>(null);
   
   // State for tooltip
   const [hoveredNode, setHoveredNode] = useState<{
@@ -517,14 +519,77 @@ export default function Graph3DInstanced(props: Props) {
     linkRendererRef.current.setOpacity(linkOpacity);
   }, [linkOpacity]);
 
-  // Clear selection when filtered data changes
+  // Sync selectedId prop with internal selection state
   useEffect(() => {
-    if (selectedNodeRef.current && nodeRendererRef.current) {
-      // Check if selected node still exists in filtered data
-      const nodeExists = filtered.nodes.some((n) => n.id === selectedNodeRef.current);
+    if (!nodeRendererRef.current) return;
+
+    // Only update if the prop is different from internal state
+    if (selectedId !== selectedNodeRef.current) {
+      const previousSelectedId = selectedNodeRef.current;
+      selectedNodeRef.current = selectedId || null;
+
+      // Update visual highlights
+      const colorMap = new Map<string, string>();
+
+      // Restore previous selection's color if exists
+      if (previousSelectedId && previousSelectedId !== selectedId) {
+        const prevNode = filtered.nodes.find((n) => n.id === previousSelectedId);
+        if (prevNode) {
+          let originalColor: string | undefined;
+          if (communityResult) {
+            const commId = communityResult.nodeCommunities.get(prevNode.id);
+            if (commId !== undefined) {
+              const community = communityResult.communities.find((c) => c.id === commId);
+              if (community) originalColor = community.color;
+            }
+          }
+          if (originalColor) {
+            colorMap.set(previousSelectedId, originalColor);
+          }
+        }
+      }
+
+      // Apply highlight to new selection
+      if (selectedId) {
+        const nodeExists = filtered.nodes.some((n) => n.id === selectedId);
+        if (nodeExists) {
+          colorMap.set(selectedId, '#ffff00');
+        }
+      }
+
+      if (colorMap.size > 0) {
+        nodeRendererRef.current.updateColors(colorMap);
+      }
+    }
+  }, [selectedId, filtered, communityResult]);
+
+  // Synchronize selection and instance colors when filtered data changes
+  useEffect(() => {
+    if (!nodeRendererRef.current) return;
+
+    const selectedId = selectedNodeRef.current;
+    const nodeRenderer = nodeRendererRef.current;
+
+    // Check if the previously selected node still exists in the filtered data
+    if (selectedId) {
+      const nodeExists = filtered.nodes.some((n) => n.id === selectedId);
       if (!nodeExists) {
+        // Clear the logical selection since the node is no longer visible
         selectedNodeRef.current = null;
       }
+    }
+
+    // After setNodeData is called in the node renderer effect,
+    // re-apply the highlight if the selected node still exists
+    if (selectedId && filtered.nodes.some((n) => n.id === selectedId)) {
+      // Use a microtask to ensure setNodeData has completed
+      queueMicrotask(() => {
+        if (nodeRenderer) {
+          const colorMap = new Map<string, string>();
+          colorMap.set(selectedId, '#ffff00');
+          nodeRenderer.updateColors(colorMap);
+        }
+      });
     }
   }, [filtered]);
 
@@ -579,6 +644,13 @@ export default function Graph3DInstanced(props: Props) {
         } else {
           setHoveredNode(null);
         }
+      } else if (nodeId && hoveredNode) {
+        // Update mouse position even when hovering the same node
+        setHoveredNode({
+          ...hoveredNode,
+          mouseX: clientX,
+          mouseY: clientY,
+        });
       }
     };
 
@@ -597,14 +669,39 @@ export default function Graph3DInstanced(props: Props) {
       if (hoveredNodeRef.current) {
         const node = filtered.nodes.find((n) => n.id === hoveredNodeRef.current);
         
+        // Capture previously selected node before updating
+        const previousSelectedId = selectedNodeRef.current;
+        
         // Update selection
         selectedNodeRef.current = hoveredNodeRef.current;
         
-        // Highlight selected node with performance monitoring
+        // Highlight selected node and restore previous selection color with performance monitoring
         if (nodeRenderer) {
           perfMonitor.measure('interaction:selection-highlight', () => {
             const colorMap = new Map<string, string>();
+            
+            // Restore the previously selected node's original color, if any
+            if (previousSelectedId && previousSelectedId !== hoveredNodeRef.current) {
+              const prevNode = filtered.nodes.find((n) => n.id === previousSelectedId);
+              if (prevNode) {
+                // Determine the original color from community or type
+                let originalColor: string | undefined;
+                if (communityResult) {
+                  const commId = communityResult.nodeCommunities.get(prevNode.id);
+                  if (commId !== undefined) {
+                    const community = communityResult.communities.find((c) => c.id === commId);
+                    if (community) originalColor = community.color;
+                  }
+                }
+                if (originalColor) {
+                  colorMap.set(previousSelectedId, originalColor);
+                }
+              }
+            }
+            
+            // Apply yellow highlight to the newly selected node
             colorMap.set(hoveredNodeRef.current!, '#ffff00'); // Yellow highlight
+            
             nodeRenderer.updateColors(colorMap);
           });
         }
@@ -623,6 +720,12 @@ export default function Graph3DInstanced(props: Props) {
 
         const position = nodeRenderer.getNodePosition(node.id);
         if (position) {
+          // Cancel any in-flight animation
+          if (cameraAnimationRef.current !== null) {
+            cancelAnimationFrame(cameraAnimationRef.current);
+            cameraAnimationRef.current = null;
+          }
+
           // Animate camera to node
           const distance = 150;
           const targetPos = {
@@ -657,7 +760,9 @@ export default function Graph3DInstanced(props: Props) {
             controls.update();
 
             if (progress < 1) {
-              requestAnimationFrame(animateCamera);
+              cameraAnimationRef.current = requestAnimationFrame(animateCamera);
+            } else {
+              cameraAnimationRef.current = null;
             }
           };
 
@@ -677,8 +782,11 @@ export default function Graph3DInstanced(props: Props) {
       if (hoverThrottleRef.current !== null) {
         cancelAnimationFrame(hoverThrottleRef.current);
       }
+      if (cameraAnimationRef.current !== null) {
+        cancelAnimationFrame(cameraAnimationRef.current);
+      }
     };
-  }, [filtered, onNodeSelect]);
+  }, [filtered, onNodeSelect, communityResult]);
 
   // Focus camera on node
   useEffect(() => {
