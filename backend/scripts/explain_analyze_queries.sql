@@ -7,6 +7,12 @@
 --
 -- Or run individual queries:
 --   psql "$DATABASE_URL" < explain_analyze_queries.sql
+--
+-- NOTE: These queries reflect the optimizations in migration 000023:
+--   - EXISTS subqueries instead of IN
+--   - Materialized CTE for node IDs
+--   - Covering and hash indexes for faster lookups
+--   - 5-second query timeout (enforced at application level)
 
 \echo ''
 \echo '========================================='
