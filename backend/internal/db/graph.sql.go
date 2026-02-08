@@ -795,8 +795,8 @@ WITH sel_nodes AS (
         CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
     ) DESC NULLS LAST, gn.id
     LIMIT $1
-), sel_node_ids AS (
-    -- Materialize just the IDs for efficient lookups
+), sel_node_ids AS MATERIALIZED (
+    -- Explicitly materialize IDs for efficient hash lookups in EXISTS subqueries
     SELECT id FROM sel_nodes
 ), sel_links AS (
     SELECT gl.id, gl.source, gl.target
@@ -853,7 +853,7 @@ type GetPrecalculatedGraphDataCappedAllRow struct {
 
 // Optimized query with improved link filtering
 // Uses EXISTS subqueries for better performance on large datasets
-// Note: statement_timeout is set at connection level in the application
+// Note: statement_timeout is enforced at application level via context timeout
 func (q *Queries) GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg GetPrecalculatedGraphDataCappedAllParams) ([]GetPrecalculatedGraphDataCappedAllRow, error) {
 	rows, err := q.db.QueryContext(ctx, getPrecalculatedGraphDataCappedAll, arg.Limit, arg.Limit_2)
 	if err != nil {
@@ -897,8 +897,8 @@ WITH sel_nodes AS (
         CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
     ) DESC NULLS LAST, gn.id
     LIMIT $2
-), sel_node_ids AS (
-    -- Materialize just the IDs for efficient lookups
+), sel_node_ids AS MATERIALIZED (
+    -- Explicitly materialize IDs for efficient hash lookups in EXISTS subqueries
     SELECT id FROM sel_nodes
 ), sel_links AS (
     SELECT gl.id, gl.source, gl.target
@@ -956,7 +956,7 @@ type GetPrecalculatedGraphDataCappedFilteredRow struct {
 
 // Optimized query with improved link filtering
 // Uses EXISTS subqueries for better performance than IN subqueries
-// Note: statement_timeout is set at connection level in the application
+// Note: statement_timeout is enforced at application level via context timeout
 func (q *Queries) GetPrecalculatedGraphDataCappedFiltered(ctx context.Context, arg GetPrecalculatedGraphDataCappedFilteredParams) ([]GetPrecalculatedGraphDataCappedFilteredRow, error) {
 	rows, err := q.db.QueryContext(ctx, getPrecalculatedGraphDataCappedFiltered, pq.Array(arg.Column1), arg.Limit, arg.Limit_2)
 	if err != nil {

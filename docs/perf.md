@@ -68,7 +68,7 @@ Additional indexes optimize common query patterns:
 
 ### Query Optimization Updates (Migration 000023)
 
-The latest optimization adds covering indexes and hash indexes for faster lookups:
+The latest optimization adds covering indexes and bidirectional link indexes for faster lookups:
 
 1. **idx_graph_nodes_val_covering** - Covering index for queries with positions
    ```sql
@@ -80,17 +80,19 @@ The latest optimization adds covering indexes and hash indexes for faster lookup
    ```
    **Benefits**: Enables index-only scans (no heap access needed), reducing I/O by ~50-70% for queries with positions.
 
-2. **idx_graph_nodes_id_hash** - Hash index for node ID lookups
+2. **Bidirectional Link Indexes** - Separate indexes for source and target lookups
    ```sql
-   CREATE INDEX idx_graph_nodes_id_hash ON graph_nodes USING HASH (id);
+   CREATE INDEX idx_graph_links_source ON graph_links (source);
+   CREATE INDEX idx_graph_links_target ON graph_links (target);
    ```
-   **Benefits**: O(1) lookups for EXISTS subqueries, faster than B-tree for equality checks.
+   **Benefits**: Optimizes both directions of link lookups in EXISTS subqueries.
 
-3. **Statement-Level Timeout** - All graph queries now include:
-   ```sql
-   SET LOCAL statement_timeout = '5s';
+3. **Application-Level Timeout** - Query timeout enforced via context:
+   ```go
+   ctx, cancel := context.WithTimeout(ctx, timeout) // 5s default
+   defer cancel()
    ```
-   **Benefits**: Prevents runaway queries, ensures consistent response times, matches application-level timeout.
+   **Benefits**: Prevents runaway queries, ensures consistent response times. No DB-side `SET LOCAL statement_timeout` needed.
 
 4. **Improved Link Filtering** - Changed from IN subquery to EXISTS with materialized CTE:
    ```sql
@@ -101,7 +103,7 @@ The latest optimization adds covering indexes and hash indexes for faster lookup
    WITH sel_node_ids AS MATERIALIZED (SELECT id FROM sel_nodes)
    WHERE EXISTS (SELECT 1 FROM sel_node_ids WHERE id = gl.source)
    ```
-   **Benefits**: EXISTS short-circuits on first match, better query plan selection, ~30-40% faster for large node sets.
+   **Benefits**: EXISTS short-circuits on first match, explicit MATERIALIZED creates hash table for lookups, ~30-40% faster for large node sets.
 
 ## Query Patterns and Performance
 

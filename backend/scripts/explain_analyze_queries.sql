@@ -9,10 +9,10 @@
 --   psql "$DATABASE_URL" < explain_analyze_queries.sql
 --
 -- NOTE: These queries reflect the optimizations in migration 000023:
---   - EXISTS subqueries instead of IN
---   - Materialized CTE for node IDs
---   - Covering and hash indexes for faster lookups
---   - 5-second query timeout (enforced at application level)
+--   - EXISTS subqueries with MATERIALIZED CTEs instead of IN
+--   - Covering index for position queries
+--   - Bidirectional link indexes
+--   - Timeout enforced at application level (not in SQL)
 
 \echo ''
 \echo '========================================='
@@ -41,7 +41,8 @@ FROM graph_links;
 \echo '========================================='
 \echo ''
 \echo 'This query selects top 20,000 nodes by value and up to 50,000 links between them'
-\echo 'Optimized with EXISTS subqueries (no statement timeout in query itself - set at connection level)'
+\echo 'Optimized with EXISTS subqueries and MATERIALIZED CTEs'
+\echo 'Note: Timeout enforced at application level via context, not SET LOCAL statement_timeout'
 \echo ''
 
 EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
@@ -52,8 +53,8 @@ WITH sel_nodes AS (
         CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
     ) DESC NULLS LAST, gn.id
     LIMIT 20000
-), sel_node_ids AS (
-    -- Materialize just the IDs for efficient lookups
+), sel_node_ids AS MATERIALIZED (
+    -- Explicitly materialize IDs for efficient hash lookups
     SELECT id FROM sel_nodes
 ), sel_links AS (
     SELECT gl.id, gl.source, gl.target
@@ -94,7 +95,8 @@ FROM sel_links l;
 \echo '========================================='
 \echo ''
 \echo 'This query selects top 20,000 subreddit/user nodes and up to 50,000 links'
-\echo 'Optimized with EXISTS subqueries (no statement timeout in query itself - set at connection level)'
+\echo 'Optimized with EXISTS subqueries and MATERIALIZED CTEs'
+\echo 'Note: Timeout enforced at application level via context, not SET LOCAL statement_timeout'
 \echo ''
 
 EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
@@ -106,8 +108,8 @@ WITH sel_nodes AS (
         CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
     ) DESC NULLS LAST, gn.id
     LIMIT 20000
-), sel_node_ids AS (
-    -- Materialize just the IDs for efficient lookups
+), sel_node_ids AS MATERIALIZED (
+    -- Explicitly materialize IDs for efficient hash lookups
     SELECT id FROM sel_nodes
 ), sel_links AS (
     SELECT gl.id, gl.source, gl.target
