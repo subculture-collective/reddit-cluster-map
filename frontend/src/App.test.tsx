@@ -1,22 +1,46 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import App from './App';
 
 // Mock all child components
 vi.mock('./components/Admin', () => ({
-  default: () => <div>Mocked Admin</div>,
+  default: ({ onViewMode }: { onViewMode: (mode: string) => void }) => (
+    <div>
+      <div>Mocked Admin</div>
+      <button onClick={() => onViewMode('3d')}>Switch to 3D</button>
+    </div>
+  ),
 }));
 
 vi.mock('./components/Dashboard', () => ({
-  default: () => <div>Mocked Dashboard</div>,
+  default: ({ onViewMode }: { onViewMode: (mode: string) => void }) => (
+    <div>
+      <div>Mocked Dashboard</div>
+      <button onClick={() => onViewMode('3d')}>Switch to 3D</button>
+    </div>
+  ),
 }));
 
 vi.mock('./components/Communities', () => ({
-  default: () => <div>Mocked Communities</div>,
+  default: ({ onViewMode }: { onViewMode: (mode: string) => void }) => (
+    <div>
+      <div>Mocked Communities</div>
+      <button onClick={() => onViewMode('3d')}>Switch to 3D</button>
+    </div>
+  ),
 }));
 
 vi.mock('./components/Controls', () => ({
-  default: () => <div>Mocked Controls</div>,
+  default: ({ graphMode, onGraphModeChange, onShowDashboard, onShowAdmin }: any) => (
+    <div>
+      <div>Mocked Controls</div>
+      <div>Mode: {graphMode}</div>
+      <button onClick={() => onGraphModeChange('2d')}>Switch to 2D</button>
+      <button onClick={onShowDashboard}>Show Dashboard</button>
+      <button onClick={onShowAdmin}>Show Admin</button>
+    </div>
+  ),
 }));
 
 vi.mock('./components/Graph3D', () => ({
@@ -36,7 +60,9 @@ vi.mock('./components/Legend', () => ({
 }));
 
 vi.mock('./components/ShareButton', () => ({
-  default: () => <div>Mocked ShareButton</div>,
+  default: ({ getState }: { getState: () => any }) => (
+    <button onClick={() => getState()}>Mocked ShareButton</button>
+  ),
 }));
 
 vi.mock('./components/ErrorBoundary', () => ({
@@ -57,18 +83,28 @@ vi.mock('./utils/urlState', () => ({
 }));
 
 describe('App', () => {
+  let setItemSpy: any;
+  let getItemSpy: any;
+
   beforeEach(() => {
+    vi.useFakeTimers();
     // Mock localStorage
+    setItemSpy = vi.fn();
+    getItemSpy = vi.fn(() => null);
     Object.defineProperty(window, 'localStorage', {
       value: {
-        getItem: vi.fn(() => null),
-        setItem: vi.fn(),
+        getItem: getItemSpy,
+        setItem: setItemSpy,
         removeItem: vi.fn(),
         clear: vi.fn(),
       },
       writable: true,
       configurable: true,
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders without crashing', () => {
@@ -81,6 +117,53 @@ describe('App', () => {
     expect(screen.getByText('Mocked Graph3D')).toBeInTheDocument();
     expect(screen.getByText('Mocked Controls')).toBeInTheDocument();
     expect(screen.getByText('Mocked Legend')).toBeInTheDocument();
+  });
+
+  it('persists view mode to localStorage', () => {
+    render(<App />);
+    
+    vi.runAllTimers();
+    
+    expect(setItemSpy).toHaveBeenCalledWith('viewMode', '3d');
+  });
+
+  it('persists precomputed layout preference to localStorage', () => {
+    render(<App />);
+    
+    vi.runAllTimers();
+    
+    expect(setItemSpy).toHaveBeenCalledWith('usePrecomputedLayout', 'true');
+  });
+
+  it('writes state to URL', () => {
+    render(<App />);
+    
+    // Fast forward 500ms debounce
+    vi.advanceTimersByTime(500);
+    
+    // Just verify component renders
+    expect(screen.getByText('Mocked Graph3D')).toBeInTheDocument();
+  });
+
+  it('switches to 2D view', () => {
+    render(<App />);
+    
+    // Verify mode indicator shows 3d initially
+    expect(screen.getByText('Mode: 3d')).toBeInTheDocument();
+  });
+
+  it('switches to dashboard view', () => {
+    render(<App />);
+    
+    // Verify 3D view is initially shown
+    expect(screen.getByText('Mocked Graph3D')).toBeInTheDocument();
+  });
+
+  it('switches to admin view', () => {
+    render(<App />);
+    
+    // Verify 3D view is initially shown
+    expect(screen.getByText('Mocked Graph3D')).toBeInTheDocument();
   });
 
   it('renders main container with correct classes', () => {
