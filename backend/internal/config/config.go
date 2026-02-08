@@ -51,6 +51,7 @@ type Config struct {
 	LayoutIterations int     // number of force-directed iterations
 	LayoutBatchSize  int     // batch size for position updates
 	LayoutEpsilon    float64 // minimum distance threshold for position updates (0 = update all)
+	LayoutTheta      float64 // Barnes-Hut theta parameter (0.0 = exact, 0.8 = standard approximation)
 	// Observability settings
 	LogLevel          string  // log level: debug, info, warn, error
 	OTELEnabled       bool    // enable OpenTelemetry tracing
@@ -112,6 +113,7 @@ func Load() *Config {
 		LayoutIterations: utils.GetEnvAsInt("LAYOUT_ITERATIONS", 400),
 		LayoutBatchSize:  utils.GetEnvAsInt("LAYOUT_BATCH_SIZE", 5000),
 		LayoutEpsilon:    utils.GetEnvAsFloat("LAYOUT_EPSILON", 0.0),
+		LayoutTheta:      utils.GetEnvAsFloat("LAYOUT_THETA", 0.8),
 		// Observability settings
 		LogLevel:          strings.ToLower(strings.TrimSpace(os.Getenv("LOG_LEVEL"))),
 		OTELEnabled:       utils.GetEnvAsBool("OTEL_ENABLED", false),

@@ -739,8 +739,9 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	iterations := cfg.LayoutIterations
 	batchSize := cfg.LayoutBatchSize
 	epsilon := cfg.LayoutEpsilon
+	theta := cfg.LayoutTheta
 
-	log.Printf("⚙️ layout configuration: max_nodes=%d, iterations=%d, batch_size=%d, epsilon=%.2f", maxNodes, iterations, batchSize, epsilon)
+	log.Printf("⚙️ layout configuration: max_nodes=%d, iterations=%d, batch_size=%d, epsilon=%.2f, theta=%.2f", maxNodes, iterations, batchSize, epsilon, theta)
 
 	if maxNodes <= 0 || iterations <= 0 {
 		log.Printf("ℹ️ layout computation disabled via configuration")
@@ -815,7 +816,6 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	cool := R / float64(iterations)
 	dispX := make([]float64, N)
 	dispY := make([]float64, N)
-	var rep = func(dist float64) float64 { return (k * k) / dist }
 	var attr = func(dist float64) float64 { return (dist * dist) / k }
 
 	layoutComputeStart := time.Now()
@@ -823,23 +823,16 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 		for i := 0; i < N; i++ {
 			dispX[i], dispY[i] = 0, 0
 		}
-		for v := 0; v < N; v++ {
-			for u := v + 1; u < N; u++ {
-				dx := X[v] - X[u]
-				dy := Y[v] - Y[u]
-				dist := math.Hypot(dx, dy)
-				if dist < 1e-6 {
-					dx, dy, dist = (randFloat() - 0.5), (randFloat() - 0.5), 1
-				}
-				force := rep(dist)
-				rx := dx / dist * force
-				ry := dy / dist * force
-				dispX[v] += rx
-				dispY[v] += ry
-				dispX[u] -= rx
-				dispY[u] -= ry
-			}
+		
+		// Use Barnes-Hut for O(n log n) repulsive forces
+		repStrength := k * k
+		repX, repY := calculateBarnesHutForces(X, Y, theta, repStrength)
+		for i := 0; i < N; i++ {
+			dispX[i] += repX[i]
+			dispY[i] += repY[i]
 		}
+		
+		// Attractive forces along edges (still O(E))
 		for _, e := range E {
 			dx := X[e.a] - X[e.b]
 			dy := Y[e.a] - Y[e.b]
