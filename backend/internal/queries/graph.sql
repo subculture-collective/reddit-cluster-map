@@ -26,6 +26,9 @@ FROM graph_links
 ORDER BY data_type, id;
 
 -- name: GetPrecalculatedGraphDataCappedAll :many
+-- Optimized query with improved link filtering
+-- Uses EXISTS subqueries for better performance on large datasets
+-- Note: statement_timeout is enforced at application level via context timeout
 WITH sel_nodes AS (
     SELECT gn.id, gn.name, gn.val, gn.type, gn.pos_x, gn.pos_y, gn.pos_z
     FROM graph_nodes gn
@@ -33,11 +36,14 @@ WITH sel_nodes AS (
         CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
     ) DESC NULLS LAST, gn.id
     LIMIT $1
+), sel_node_ids AS MATERIALIZED (
+    -- Explicitly materialize IDs for efficient hash lookups in EXISTS subqueries
+    SELECT id FROM sel_nodes
 ), sel_links AS (
-    SELECT id, source, target
+    SELECT gl.id, gl.source, gl.target
     FROM graph_links gl
-    WHERE gl.source IN (SELECT id FROM sel_nodes)
-        AND gl.target IN (SELECT id FROM sel_nodes)
+    WHERE EXISTS (SELECT 1 FROM sel_node_ids WHERE id = gl.source)
+      AND EXISTS (SELECT 1 FROM sel_node_ids WHERE id = gl.target)
     LIMIT $2
 )
 SELECT
@@ -68,6 +74,9 @@ FROM sel_links l
 ORDER BY data_type, id;
 
 -- name: GetPrecalculatedGraphDataCappedFiltered :many
+-- Optimized query with improved link filtering
+-- Uses EXISTS subqueries for better performance than IN subqueries
+-- Note: statement_timeout is enforced at application level via context timeout
 WITH sel_nodes AS (
     SELECT gn.id, gn.name, gn.val, gn.type, gn.pos_x, gn.pos_y, gn.pos_z
     FROM graph_nodes gn
@@ -76,11 +85,14 @@ WITH sel_nodes AS (
         CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
     ) DESC NULLS LAST, gn.id
     LIMIT $2
+), sel_node_ids AS MATERIALIZED (
+    -- Explicitly materialize IDs for efficient hash lookups in EXISTS subqueries
+    SELECT id FROM sel_nodes
 ), sel_links AS (
-    SELECT id, source, target
+    SELECT gl.id, gl.source, gl.target
     FROM graph_links gl
-    WHERE gl.source IN (SELECT id FROM sel_nodes)
-        AND gl.target IN (SELECT id FROM sel_nodes)
+    WHERE EXISTS (SELECT 1 FROM sel_node_ids WHERE id = gl.source)
+      AND EXISTS (SELECT 1 FROM sel_node_ids WHERE id = gl.target)
     LIMIT $3
 )
 SELECT

@@ -64,6 +64,23 @@ func main() {
 	}
 	defer dbConn.Close()
 
+	// Configure connection pool for precalculation (moderate connections needed)
+	dbConn.SetMaxOpenConns(15)              // Moderate pool for graph computation
+	dbConn.SetMaxIdleConns(5)               // Keep some idle connections
+	dbConn.SetConnMaxLifetime(10 * time.Minute) // Longer lifetime for batch jobs
+	dbConn.SetConnMaxIdleTime(5 * time.Minute)  // Longer idle time for batch jobs
+
+	// Verify connection is working
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := dbConn.PingContext(ctx); err != nil {
+			logger.Error("Failed to ping database", "error", err)
+			log.Fatalf("Failed to ping database: %v", err)
+		}
+		logger.Info("Database connection established")
+	}
+
 	queries := db.New(dbConn)
 	// Honor admin toggle; if disabled, exit cleanly
 	if ok, _ := admin.GetBool(context.Background(), queries, "precalc_enabled", true); !ok {
