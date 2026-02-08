@@ -55,7 +55,7 @@ export class StreamingGraphLoader {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const contentType = response.headers.get('content-type') || '';
+      const contentType = response.headers?.get?.('content-type') ?? '';
       
       // Check if server supports NDJSON streaming
       if (contentType.includes('application/x-ndjson')) {
@@ -65,8 +65,18 @@ export class StreamingGraphLoader {
         return await this.loadJSON(response);
       }
     } catch (error) {
+      // Preserve AbortError semantics so callers can detect and ignore aborts
       if (this.aborted || (error as { name?: string })?.name === 'AbortError') {
-        throw new Error('Load aborted');
+        let abortError: Error;
+        if (error instanceof Error && error.name === 'AbortError') {
+          abortError = error;
+        } else if (typeof DOMException !== 'undefined') {
+          abortError = new DOMException('Load aborted', 'AbortError') as unknown as Error;
+        } else {
+          abortError = new Error('Load aborted');
+          abortError.name = 'AbortError';
+        }
+        throw abortError;
       }
       const err = error instanceof Error ? error : new Error(String(error));
       this.options.onError?.(err);
@@ -157,8 +167,9 @@ export class StreamingGraphLoader {
               currentBatch.links.push(link);
             }
 
-            // Emit batch when reaching batch size
-            if (currentBatch.nodes.length >= this.options.batchSize) {
+            // Emit batch when reaching batch size (nodes or links)
+            if (currentBatch.nodes.length >= this.options.batchSize || 
+                currentBatch.links.length >= this.options.batchSize * 2) {
               this.emitProgress(allNodes, allLinks, currentBatch, totalNodes, totalLinks);
               currentBatch = { nodes: [], links: [] };
             }
@@ -218,6 +229,26 @@ export class StreamingGraphLoader {
     const allNodes: GraphNode[] = [];
     const allLinks: GraphLink[] = [];
     const nodeIds = new Set<string>();
+    const addedLinkIds = new Set<string>(); // Track added links for O(1) deduplication
+    
+    // Pre-index links by source and target for O(1) lookup
+    const linksBySource = new Map<string, GraphLink[]>();
+    const linksByTarget = new Map<string, GraphLink[]>();
+    
+    for (const link of links) {
+      const source = typeof link.source === 'string' ? link.source : (link.source as { id?: string })?.id || '';
+      const target = typeof link.target === 'string' ? link.target : (link.target as { id?: string })?.id || '';
+      
+      if (!linksBySource.has(source)) {
+        linksBySource.set(source, []);
+      }
+      linksBySource.get(source)!.push(link);
+      
+      if (!linksByTarget.has(target)) {
+        linksByTarget.set(target, []);
+      }
+      linksByTarget.get(target)!.push(link);
+    }
 
     for (let i = 0; i < sortedNodes.length; i += this.options.batchSize) {
       if (this.aborted) {
@@ -228,26 +259,42 @@ export class StreamingGraphLoader {
       allNodes.push(...batchNodes);
       
       // Add node IDs to set for link filtering
+      const newNodeIds: string[] = [];
       for (const node of batchNodes) {
         nodeIds.add(node.id);
+        newNodeIds.push(node.id);
       }
 
       // Include links where both source and target are in loaded nodes
+      // Only check links incident to newly added nodes for O(nodes × avg_degree) instead of O(batches × links)
       const batchLinks: GraphLink[] = [];
-      for (const link of links) {
+      const candidateLinks = new Set<GraphLink>();
+      
+      for (const nodeId of newNodeIds) {
+        // Add links where this node is the source
+        const outLinks = linksBySource.get(nodeId) || [];
+        for (const link of outLinks) {
+          candidateLinks.add(link);
+        }
+        
+        // Add links where this node is the target
+        const inLinks = linksByTarget.get(nodeId) || [];
+        for (const link of inLinks) {
+          candidateLinks.add(link);
+        }
+      }
+      
+      // Filter candidate links to those with both endpoints loaded
+      for (const link of candidateLinks) {
         const source = typeof link.source === 'string' ? link.source : (link.source as { id?: string })?.id || '';
         const target = typeof link.target === 'string' ? link.target : (link.target as { id?: string })?.id || '';
         
-        // Only include link if both nodes are loaded AND link not already added
         if (nodeIds.has(source) && nodeIds.has(target)) {
           const linkId = `${source}-${target}`;
-          const alreadyAdded = allLinks.some(l => {
-            const lSource = typeof l.source === 'string' ? l.source : (l.source as { id?: string })?.id || '';
-            const lTarget = typeof l.target === 'string' ? l.target : (l.target as { id?: string })?.id || '';
-            return `${lSource}-${lTarget}` === linkId;
-          });
           
-          if (!alreadyAdded) {
+          // Use Set for O(1) deduplication check
+          if (!addedLinkIds.has(linkId)) {
+            addedLinkIds.add(linkId);
             batchLinks.push(link);
             allLinks.push(link);
           }

@@ -410,9 +410,9 @@ function Graph3DOriginal(props: Props) {
         }
         const url = `${base}/graph?${params.toString()}`;
         
-        // Track all nodes and links across batches
-        let allNodes: GraphNode[] = [];
-        let allLinks: GraphLink[] = [];
+        // Track all nodes and links across batches (use push for O(1) instead of spread)
+        const allNodes: GraphNode[] = [];
+        const allLinks: GraphLink[] = [];
         let firstBatch = true;
         
         // Use StreamingGraphLoader for progressive loading
@@ -421,12 +421,12 @@ function Graph3DOriginal(props: Props) {
           batchSize: 5000,
           signal,
           onProgress: (progress) => {
-            // Accumulate nodes and links
-            allNodes = [...allNodes, ...progress.batch.nodes];
-            allLinks = [...allLinks, ...progress.batch.links];
+            // Accumulate nodes and links with push (O(1)) instead of spread (O(n))
+            allNodes.push(...progress.batch.nodes);
+            allLinks.push(...progress.batch.links);
             
-            // Update graph data with accumulated nodes
-            setGraphData({ nodes: allNodes, links: allLinks });
+            // Update graph data - clone arrays only when setting state
+            setGraphData({ nodes: [...allNodes], links: [...allLinks] });
             setLoadProgress(progress);
             
             // Mark initial load as complete after first batch
