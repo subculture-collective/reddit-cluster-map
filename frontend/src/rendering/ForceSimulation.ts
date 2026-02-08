@@ -32,6 +32,7 @@ export interface PhysicsConfig {
   velocityDecay: number;
   cooldownTicks: number;
   collisionRadius?: number;
+  autoTune?: boolean; // Auto-scale physics parameters based on node count
 }
 
 export interface ForceSimulationConfig {
@@ -66,9 +67,80 @@ export class ForceSimulation {
   private config: ForceSimulationConfig;
   private nodeMap: Map<string, SimNode> = new Map();
   private hasPrecomputedPositions = false;
+  
+  // Physics stability constants
+  private static readonly MAX_VELOCITY = 50;
+  private static readonly POSITION_BOUND = 10000;
+  private static readonly CONVERGENCE_THRESHOLD = 0.1;
 
   constructor(config: ForceSimulationConfig = {}) {
     this.config = config;
+  }
+
+  /**
+   * Calculate auto-tuned charge strength based on node count
+   * Formula: charge = baseCharge * sqrt(1000 / nodeCount)
+   * This scales repulsion down as node count increases
+   */
+  private getAutoTunedChargeStrength(nodeCount: number, baseCharge: number): number {
+    if (nodeCount <= 1) return baseCharge;
+    return baseCharge * Math.sqrt(1000 / nodeCount);
+  }
+
+  /**
+   * Calculate auto-tuned cooldown ticks based on node count
+   * Formula: max(200, nodeCount / 100)
+   * Ensures larger graphs get more time to stabilize
+   */
+  private getAutoTunedCooldownTicks(nodeCount: number): number {
+    return Math.max(200, Math.floor(nodeCount / 100));
+  }
+
+  /**
+   * Clamp velocity to prevent runaway nodes
+   */
+  private clampVelocity(node: SimNode): void {
+    if (node.vx !== undefined && node.vy !== undefined) {
+      const speed = Math.sqrt(node.vx * node.vx + node.vy * node.vy);
+      if (speed > ForceSimulation.MAX_VELOCITY) {
+        const scale = ForceSimulation.MAX_VELOCITY / speed;
+        node.vx *= scale;
+        node.vy *= scale;
+        // Also clamp z velocity if present
+        if (node.vz !== undefined) {
+          node.vz *= scale;
+        }
+      }
+    }
+  }
+
+  /**
+   * Clamp position to prevent nodes from drifting to infinity
+   */
+  private clampPosition(node: SimNode): void {
+    if (node.x !== undefined) {
+      node.x = Math.max(-ForceSimulation.POSITION_BOUND, Math.min(ForceSimulation.POSITION_BOUND, node.x));
+    }
+    if (node.y !== undefined) {
+      node.y = Math.max(-ForceSimulation.POSITION_BOUND, Math.min(ForceSimulation.POSITION_BOUND, node.y));
+    }
+    if (node.z !== undefined) {
+      node.z = Math.max(-ForceSimulation.POSITION_BOUND, Math.min(ForceSimulation.POSITION_BOUND, node.z));
+    }
+  }
+
+  /**
+   * Check if simulation has converged (all velocities below threshold)
+   */
+  private checkConvergence(): boolean {
+    let maxVelocity = 0;
+    for (const node of this.nodes) {
+      if (node.vx !== undefined && node.vy !== undefined) {
+        const speed = Math.sqrt(node.vx * node.vx + node.vy * node.vy);
+        maxVelocity = Math.max(maxVelocity, speed);
+      }
+    }
+    return maxVelocity < ForceSimulation.CONVERGENCE_THRESHOLD;
   }
 
   /**
@@ -158,9 +230,14 @@ export class ForceSimulation {
 
     // Configure forces based on physics config
     const physics = this.config.physics;
+    const nodeCount = this.nodes.length;
+    const autoTune = physics?.autoTune ?? false;
     
-    // Charge force (repulsion)
-    const chargeStrength = physics?.chargeStrength ?? -30;
+    // Charge force (repulsion) - auto-tune if enabled
+    let chargeStrength = physics?.chargeStrength ?? -30;
+    if (autoTune && nodeCount > 0) {
+      chargeStrength = this.getAutoTunedChargeStrength(nodeCount, chargeStrength);
+    }
     this.simulation.force(
       'charge',
       d3.forceManyBody<SimNode>()
@@ -197,10 +274,30 @@ export class ForceSimulation {
     const velocityDecay = physics?.velocityDecay ?? 0.4;
     this.simulation.velocityDecay(velocityDecay);
 
-    // Set up tick handler
+    // Set up tick handler with clamping and convergence detection
     this.simulation.on('tick', () => {
+      // Apply velocity and position clamping to all nodes
+      for (const node of this.nodes) {
+        this.clampVelocity(node);
+        this.clampPosition(node);
+      }
+      
+      // Check for convergence and stop if achieved
+      if (this.checkConvergence() && this.simulation) {
+        this.simulation.alpha(0); // Stop simulation
+      }
+      
       this.emitTick();
     });
+
+    // Auto-tune alpha decay for faster/slower convergence
+    if (autoTune && nodeCount > 0) {
+      const cooldownTicks = this.getAutoTunedCooldownTicks(nodeCount);
+      // Alpha decay formula: 1 - Math.pow(0.001, 1 / cooldownTicks)
+      // This makes alpha reach ~0.001 after 'cooldownTicks' iterations
+      const alphaDecay = 1 - Math.pow(0.001, 1 / cooldownTicks);
+      this.simulation.alphaDecay(alphaDecay);
+    }
 
     // Note: Removed synchronous tick() to avoid blocking the main thread.
     // The simulation will run incrementally via the animation loop.
@@ -251,10 +348,18 @@ export class ForceSimulation {
     
     if (!this.simulation || this.hasPrecomputedPositions) return;
 
-    // Update charge force
+    const nodeCount = this.nodes.length;
+    const autoTune = physics.autoTune ?? false;
+
+    // Update charge force - apply auto-tuning if enabled
+    let chargeStrength = physics.chargeStrength;
+    if (autoTune && nodeCount > 0) {
+      chargeStrength = this.getAutoTunedChargeStrength(nodeCount, chargeStrength);
+    }
+    
     const charge = this.simulation.force<d3.ForceManyBody<SimNode>>('charge');
     if (charge) {
-      charge.strength(physics.chargeStrength);
+      charge.strength(chargeStrength);
     }
 
     // Update link force
@@ -277,6 +382,13 @@ export class ForceSimulation {
       );
     } else {
       this.simulation.force('collide', null);
+    }
+
+    // Update alpha decay if auto-tuning
+    if (autoTune && nodeCount > 0) {
+      const cooldownTicks = this.getAutoTunedCooldownTicks(nodeCount);
+      const alphaDecay = 1 - Math.pow(0.001, 1 / cooldownTicks);
+      this.simulation.alphaDecay(alphaDecay);
     }
 
     // Restart simulation to apply changes
