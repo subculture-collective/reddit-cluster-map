@@ -1,0 +1,368 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as THREE from 'three';
+import { LinkRenderer } from './LinkRenderer';
+
+describe('LinkRenderer', () => {
+  let scene: THREE.Scene;
+  let renderer: LinkRenderer;
+
+  beforeEach(() => {
+    scene = new THREE.Scene();
+    renderer = new LinkRenderer(scene, { maxLinks: 1000 });
+  });
+
+  describe('initialization', () => {
+    it('should create a LinkRenderer instance', () => {
+      expect(renderer).toBeDefined();
+    });
+
+    it('should add LineSegments to the scene', () => {
+      expect(scene.children.length).toBe(1);
+      expect(scene.children[0]).toBeInstanceOf(THREE.LineSegments);
+    });
+
+    it('should initialize with custom opacity', () => {
+      const customRenderer = new LinkRenderer(scene, { opacity: 0.5 });
+      const stats = customRenderer.getStats();
+      expect(stats).toBeDefined();
+      customRenderer.dispose();
+    });
+
+    it('should initialize with custom color', () => {
+      const customRenderer = new LinkRenderer(scene, { color: 0xff0000 });
+      const stats = customRenderer.getStats();
+      expect(stats).toBeDefined();
+      customRenderer.dispose();
+    });
+  });
+
+  describe('setLinks', () => {
+    it('should set links data', () => {
+      const links = [
+        { source: 'node1', target: 'node2' },
+        { source: 'node2', target: 'node3' },
+      ];
+
+      renderer.setLinks(links);
+      const stats = renderer.getStats();
+      expect(stats.totalLinks).toBe(2);
+    });
+
+    it('should handle empty links array', () => {
+      renderer.setLinks([]);
+      const stats = renderer.getStats();
+      expect(stats.totalLinks).toBe(0);
+    });
+
+    it('should handle large link arrays', () => {
+      const links = Array.from({ length: 500 }, (_, i) => ({
+        source: `node${i}`,
+        target: `node${i + 1}`,
+      }));
+
+      renderer.setLinks(links);
+      const stats = renderer.getStats();
+      expect(stats.totalLinks).toBe(500);
+    });
+
+    it('should resize buffer when needed', () => {
+      // Start with small capacity
+      const smallRenderer = new LinkRenderer(scene, { maxLinks: 10 });
+      
+      // Set links that fit in initial buffer
+      smallRenderer.setLinks([
+        { source: 'node1', target: 'node2' },
+      ]);
+      
+      const stats = smallRenderer.getStats();
+      expect(stats.totalLinks).toBe(1);
+      
+      smallRenderer.dispose();
+    });
+  });
+
+  describe('updatePositions', () => {
+    it('should update node positions', () => {
+      const links = [
+        { source: 'node1', target: 'node2' },
+      ];
+      renderer.setLinks(links);
+
+      const positions = new Map([
+        ['node1', { x: 0, y: 0, z: 0 }],
+        ['node2', { x: 10, y: 10, z: 10 }],
+      ]);
+
+      renderer.updatePositions(positions);
+      renderer.refresh();
+
+      const stats = renderer.getStats();
+      expect(stats.bufferedLinks).toBe(1);
+    });
+
+    it('should handle position updates with missing nodes', () => {
+      const links = [
+        { source: 'node1', target: 'node2' },
+        { source: 'node2', target: 'node3' },
+      ];
+      renderer.setLinks(links);
+
+      // Only provide positions for node1 and node2
+      const positions = new Map([
+        ['node1', { x: 0, y: 0, z: 0 }],
+        ['node2', { x: 10, y: 10, z: 10 }],
+      ]);
+
+      renderer.updatePositions(positions);
+      renderer.refresh();
+
+      const stats = renderer.getStats();
+      // Only the first link should be rendered
+      expect(stats.bufferedLinks).toBe(1);
+    });
+  });
+
+  describe('refresh', () => {
+    it('should populate buffer with visible links', () => {
+      const links = [
+        { source: 'node1', target: 'node2' },
+        { source: 'node2', target: 'node3' },
+      ];
+      renderer.setLinks(links);
+
+      const positions = new Map([
+        ['node1', { x: 0, y: 0, z: 0 }],
+        ['node2', { x: 10, y: 10, z: 10 }],
+        ['node3', { x: 20, y: 20, z: 20 }],
+      ]);
+
+      renderer.updatePositions(positions);
+      renderer.refresh();
+
+      const stats = renderer.getStats();
+      expect(stats.bufferedLinks).toBe(2);
+      expect(stats.drawCalls).toBe(1);
+    });
+
+    it('should skip refresh if not needed', () => {
+      const links = [{ source: 'node1', target: 'node2' }];
+      renderer.setLinks(links);
+
+      const positions = new Map([
+        ['node1', { x: 0, y: 0, z: 0 }],
+        ['node2', { x: 10, y: 10, z: 10 }],
+      ]);
+
+      renderer.updatePositions(positions);
+      renderer.refresh();
+      
+      // Second refresh should be skipped (no updates)
+      renderer.refresh();
+
+      const stats = renderer.getStats();
+      expect(stats.bufferedLinks).toBe(1);
+    });
+
+    it('should handle buffer capacity limit', () => {
+      // Create renderer with small capacity
+      const smallRenderer = new LinkRenderer(scene, { maxLinks: 2 });
+      
+      const links = [
+        { source: 'node1', target: 'node2' },
+        { source: 'node2', target: 'node3' },
+        { source: 'node3', target: 'node4' },
+      ];
+      smallRenderer.setLinks(links);
+
+      const positions = new Map([
+        ['node1', { x: 0, y: 0, z: 0 }],
+        ['node2', { x: 10, y: 10, z: 10 }],
+        ['node3', { x: 20, y: 20, z: 20 }],
+        ['node4', { x: 30, y: 30, z: 30 }],
+      ]);
+
+      // Spy on console.warn
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      smallRenderer.updatePositions(positions);
+      smallRenderer.refresh();
+
+      const stats = smallRenderer.getStats();
+      // Should only render up to capacity
+      expect(stats.bufferedLinks).toBeLessThanOrEqual(2);
+      expect(warnSpy).toHaveBeenCalled();
+
+      warnSpy.mockRestore();
+      smallRenderer.dispose();
+    });
+  });
+
+  describe('updateVisibility', () => {
+    it('should filter links based on camera frustum', () => {
+      const links = [
+        { source: 'node1', target: 'node2' },
+        { source: 'node3', target: 'node4' },
+      ];
+      renderer.setLinks(links);
+
+      const positions = new Map([
+        ['node1', { x: 0, y: 0, z: 0 }],
+        ['node2', { x: 10, y: 10, z: 10 }],
+        ['node3', { x: 1000, y: 1000, z: 1000 }], // Far away
+        ['node4', { x: 1010, y: 1010, z: 1010 }],
+      ]);
+
+      renderer.updatePositions(positions);
+
+      const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+      camera.position.set(0, 0, 100);
+      camera.lookAt(0, 0, 0);
+      camera.updateProjectionMatrix();
+
+      renderer.updateVisibility(camera);
+      renderer.refresh();
+
+      const stats = renderer.getStats();
+      // Far away links should be filtered out
+      expect(stats.bufferedLinks).toBeLessThan(2);
+    });
+
+    it('should skip update if camera moved insignificantly', () => {
+      const links = [{ source: 'node1', target: 'node2' }];
+      renderer.setLinks(links);
+
+      const positions = new Map([
+        ['node1', { x: 0, y: 0, z: 0 }],
+        ['node2', { x: 10, y: 10, z: 10 }],
+      ]);
+      renderer.updatePositions(positions);
+
+      const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+      camera.position.set(0, 0, 100);
+      camera.updateProjectionMatrix();
+
+      // First update
+      renderer.updateVisibility(camera);
+      renderer.refresh();
+
+      // Move camera slightly (less than threshold)
+      camera.position.set(0, 0, 101);
+      camera.updateProjectionMatrix();
+
+      // Second update should be skipped
+      renderer.updateVisibility(camera);
+      
+      const stats = renderer.getStats();
+      expect(stats).toBeDefined();
+    });
+  });
+
+  describe('setOpacity', () => {
+    it('should update link opacity', () => {
+      renderer.setOpacity(0.5);
+      // No direct way to test, but should not throw
+      expect(renderer).toBeDefined();
+    });
+
+    it('should clamp opacity to valid range', () => {
+      renderer.setOpacity(1.5);
+      renderer.setOpacity(-0.5);
+      // Should clamp to [0, 1] and not throw
+      expect(renderer).toBeDefined();
+    });
+  });
+
+  describe('setColor', () => {
+    it('should update link color', () => {
+      renderer.setColor(0xff0000);
+      expect(renderer).toBeDefined();
+    });
+  });
+
+  describe('getStats', () => {
+    it('should return accurate statistics', () => {
+      const links = [
+        { source: 'node1', target: 'node2' },
+        { source: 'node2', target: 'node3' },
+      ];
+      renderer.setLinks(links);
+
+      const positions = new Map([
+        ['node1', { x: 0, y: 0, z: 0 }],
+        ['node2', { x: 10, y: 10, z: 10 }],
+        ['node3', { x: 20, y: 20, z: 20 }],
+      ]);
+
+      renderer.updatePositions(positions);
+      renderer.refresh();
+
+      const stats = renderer.getStats();
+      expect(stats.totalLinks).toBe(2);
+      expect(stats.bufferedLinks).toBe(2);
+      expect(stats.drawCalls).toBe(1);
+    });
+
+    it('should report 0 draw calls when no links visible', () => {
+      renderer.setLinks([]);
+      renderer.refresh();
+
+      const stats = renderer.getStats();
+      expect(stats.drawCalls).toBe(0);
+    });
+  });
+
+  describe('dispose', () => {
+    it('should clean up resources', () => {
+      const links = [{ source: 'node1', target: 'node2' }];
+      renderer.setLinks(links);
+
+      const initialChildCount = scene.children.length;
+      renderer.dispose();
+
+      expect(scene.children.length).toBe(initialChildCount - 1);
+    });
+
+    it('should allow multiple dispose calls', () => {
+      renderer.dispose();
+      renderer.dispose();
+      // Should not throw
+      expect(true).toBe(true);
+    });
+  });
+
+  describe('performance', () => {
+    it('should update buffer quickly for large link counts', () => {
+      const linkCount = 10000;
+      const links = Array.from({ length: linkCount }, (_, i) => ({
+        source: `node${i}`,
+        target: `node${i + 1}`,
+      }));
+
+      renderer = new LinkRenderer(scene, { maxLinks: linkCount });
+      renderer.setLinks(links);
+
+      const positions = new Map();
+      for (let i = 0; i <= linkCount; i++) {
+        positions.set(`node${i}`, {
+          x: Math.random() * 100,
+          y: Math.random() * 100,
+          z: Math.random() * 100,
+        });
+      }
+
+      renderer.updatePositions(positions);
+
+      const startTime = performance.now();
+      renderer.refresh();
+      const elapsed = performance.now() - startTime;
+
+      // Should be fast (test environment target: <100ms for 10k links)
+      // In production, 200k links should be <10ms
+      expect(elapsed).toBeLessThan(100);
+
+      const stats = renderer.getStats();
+      expect(stats.bufferedLinks).toBe(linkCount);
+      expect(stats.drawCalls).toBe(1);
+    });
+  });
+});

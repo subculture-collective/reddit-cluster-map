@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GraphData } from '../types/graph';
 import { InstancedNodeRenderer, type NodeData } from '../rendering/InstancedNodeRenderer';
+import { LinkRenderer } from '../rendering/LinkRenderer';
 import { ForceSimulation, type PhysicsConfig } from '../rendering/ForceSimulation';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { detectWebGLSupport } from '../utils/webglDetect';
@@ -87,12 +88,12 @@ export default function Graph3DInstanced(props: Props) {
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const nodeRendererRef = useRef<InstancedNodeRenderer | null>(null);
+  const linkRendererRef = useRef<LinkRenderer | null>(null);
   const simulationRef = useRef<ForceSimulation | null>(null);
   const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
   const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
   const hoveredNodeRef = useRef<string | null>(null);
   const labelsGroupRef = useRef<THREE.Group | null>(null);
-  const linksGroupRef = useRef<THREE.Group | null>(null);
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -238,14 +239,17 @@ export default function Graph3DInstanced(props: Props) {
     });
     nodeRendererRef.current = nodeRenderer;
 
-    // Create groups for labels and links
+    // Create link renderer
+    const linkRenderer = new LinkRenderer(scene, {
+      maxLinks: MAX_RENDER_LINKS,
+      opacity: linkOpacity,
+    });
+    linkRendererRef.current = linkRenderer;
+
+    // Create group for labels
     const labelsGroup = new THREE.Group();
     scene.add(labelsGroup);
     labelsGroupRef.current = labelsGroup;
-
-    const linksGroup = new THREE.Group();
-    scene.add(linksGroup);
-    linksGroupRef.current = linksGroup;
 
     // Set initial camera if provided
     if (initialCamera) {
@@ -254,7 +258,9 @@ export default function Graph3DInstanced(props: Props) {
 
     // Track last camera position for throttling
     let lastCameraUpdate = 0;
+    let lastLinkVisibilityUpdate = 0;
     const CAMERA_UPDATE_INTERVAL = 1000; // Update every 1 second
+    const LINK_VISIBILITY_UPDATE_INTERVAL = 200; // Update link visibility every 200ms
     const lastCamPos = { x: NaN, y: NaN, z: NaN };
     const EPSILON = 1e-3;
 
@@ -263,11 +269,19 @@ export default function Graph3DInstanced(props: Props) {
     const animate = () => {
       animationId = requestAnimationFrame(animate);
       controls.update();
+      
+      // Update link visibility and refresh when camera moves
+      const now = Date.now();
+      if (linkRenderer && now - lastLinkVisibilityUpdate > LINK_VISIBILITY_UPDATE_INTERVAL) {
+        linkRenderer.updateVisibility(camera);
+        linkRenderer.refresh();
+        lastLinkVisibilityUpdate = now;
+      }
+      
       renderer.render(scene, camera);
 
       // Throttle camera change emissions
       if (onCameraChange) {
-        const now = Date.now();
         if (now - lastCameraUpdate > CAMERA_UPDATE_INTERVAL) {
           const { x, y, z } = camera.position;
           // Only emit if position changed significantly
@@ -303,13 +317,14 @@ export default function Graph3DInstanced(props: Props) {
       controls.dispose();
       renderer.dispose();
       nodeRenderer.dispose();
+      linkRenderer.dispose();
       // Copy ref to variable for cleanup to avoid stale closure issue
       const container = containerRef.current;
       if (container && renderer.domElement.parentNode === container) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [webglSupported, nodeRelSize, MAX_RENDER_NODES, initialCamera, onCameraChange]);
+  }, [webglSupported, nodeRelSize, MAX_RENDER_NODES, MAX_RENDER_LINKS, linkOpacity, initialCamera, onCameraChange]);
 
   // Process graph data with filters
   const filtered = useMemo(() => {
@@ -431,6 +446,10 @@ export default function Graph3DInstanced(props: Props) {
           if (nodeRendererRef.current) {
             nodeRendererRef.current.updatePositions(positions);
           }
+          if (linkRendererRef.current) {
+            linkRendererRef.current.updatePositions(positions);
+            linkRendererRef.current.refresh();
+          }
         },
         physics,
         usePrecomputedPositions: usePrecomputedLayout,
@@ -455,86 +474,30 @@ export default function Graph3DInstanced(props: Props) {
     }
   }, [physics]);
 
-  // Render links (simple line rendering for now)
+  // Set up links with LinkRenderer
   useEffect(() => {
-    if (!linksGroupRef.current) return;
+    if (!linkRendererRef.current) return;
 
-    // Clear existing links
-    while (linksGroupRef.current.children.length > 0) {
-      const child = linksGroupRef.current.children[0];
-      linksGroupRef.current.remove(child);
-      if (child instanceof THREE.Line || child instanceof THREE.LineSegments) {
-        child.geometry.dispose();
-        (child.material as THREE.Material).dispose();
+    // Set links data
+    linkRendererRef.current.setLinks(filtered.links);
+    
+    // Build initial positions map from filtered nodes
+    const positions = new Map<string, { x: number; y: number; z: number }>();
+    for (const node of filtered.nodes) {
+      if (node.x !== undefined && node.y !== undefined && node.z !== undefined) {
+        positions.set(node.id, { x: node.x, y: node.y, z: node.z });
       }
     }
+    
+    linkRendererRef.current.updatePositions(positions);
+    linkRendererRef.current.refresh();
+  }, [filtered]);
 
-    const linkCount = filtered.links.length;
-    const LINK_THRESHOLD = 5000;
-
-    // Skip rendering for very large link counts to maintain performance
-    if (linkCount > LINK_THRESHOLD) {
-      console.warn(
-        `Link rendering disabled: ${linkCount} links exceed threshold of ${LINK_THRESHOLD}. ` +
-        `Consider using edge bundling or filtering to reduce link count.`
-      );
-      return;
-    }
-
-    // Build a fast lookup map from node id to node data
-    const nodeById = new Map<string, typeof filtered.nodes[0]>();
-    for (const node of filtered.nodes) {
-      nodeById.set(node.id, node);
-    }
-
-    const material = new THREE.LineBasicMaterial({
-      color: 0x999999,
-      opacity: linkOpacity,
-      transparent: true,
-    });
-
-    // Each link contributes two vertices (source and target), each with 3 components (x, y, z)
-    const positions = new Float32Array(linkCount * 2 * 3);
-    let segmentIndex = 0;
-
-    for (const link of filtered.links) {
-      const sourceNode = nodeById.get(link.source);
-      const targetNode = nodeById.get(link.target);
-
-      if (!sourceNode || !targetNode) continue;
-
-      const baseIndex = segmentIndex * 2 * 3;
-
-      // Source vertex
-      positions[baseIndex] = sourceNode.x || 0;
-      positions[baseIndex + 1] = sourceNode.y || 0;
-      positions[baseIndex + 2] = sourceNode.z || 0;
-
-      // Target vertex
-      positions[baseIndex + 3] = targetNode.x || 0;
-      positions[baseIndex + 4] = targetNode.y || 0;
-      positions[baseIndex + 5] = targetNode.z || 0;
-
-      segmentIndex++;
-    }
-
-    // If no valid segments, nothing to render
-    if (segmentIndex === 0) {
-      return;
-    }
-
-    // If some links were filtered out, trim the positions buffer to the used length
-    const usedPositions =
-      segmentIndex * 2 * 3 === positions.length
-        ? positions
-        : positions.subarray(0, segmentIndex * 2 * 3);
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(usedPositions, 3));
-
-    const lineSegments = new THREE.LineSegments(geometry, material);
-    linksGroupRef.current.add(lineSegments);
-  }, [filtered, linkOpacity]);
+  // Update link opacity
+  useEffect(() => {
+    if (!linkRendererRef.current) return;
+    linkRendererRef.current.setOpacity(linkOpacity);
+  }, [linkOpacity]);
 
   // Handle mouse interactions
   useEffect(() => {
