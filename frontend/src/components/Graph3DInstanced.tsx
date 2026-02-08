@@ -8,6 +8,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { detectWebGLSupport } from '../utils/webglDetect';
 import LoadingSkeleton from './LoadingSkeleton';
 import NodeTooltip from './NodeTooltip';
+import { perfMonitor } from '../utils/performance';
 
 /**
  * Graph3DInstanced - High-performance 3D graph visualization using InstancedMesh
@@ -553,7 +554,11 @@ export default function Graph3DInstanced(props: Props) {
       mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-      const nodeId = nodeRenderer.raycast(raycaster);
+      
+      // Measure raycast performance
+      const nodeId = perfMonitor.measure('interaction:raycast', () => {
+        return nodeRenderer.raycast(raycaster);
+      });
 
       if (nodeId !== hoveredNodeRef.current) {
         hoveredNodeRef.current = nodeId;
@@ -595,11 +600,13 @@ export default function Graph3DInstanced(props: Props) {
         // Update selection
         selectedNodeRef.current = hoveredNodeRef.current;
         
-        // Highlight selected node
+        // Highlight selected node with performance monitoring
         if (nodeRenderer) {
-          const colorMap = new Map<string, string>();
-          colorMap.set(hoveredNodeRef.current, '#ffff00'); // Yellow highlight
-          nodeRenderer.updateColors(colorMap);
+          perfMonitor.measure('interaction:selection-highlight', () => {
+            const colorMap = new Map<string, string>();
+            colorMap.set(hoveredNodeRef.current!, '#ffff00'); // Yellow highlight
+            nodeRenderer.updateColors(colorMap);
+          });
         }
         
         // Fire callback
