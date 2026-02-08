@@ -78,7 +78,7 @@ interface PositionsMessage {
 let simulation: d3.Simulation<SimNode, SimLink> | null = null;
 let nodes: SimNode[] = [];
 let links: SimLink[] = [];
-let nodeMap: Map<string, number> = new Map(); // id -> index in nodes array
+const nodeMap: Map<string, number> = new Map(); // id -> index in nodes array
 let hasPrecomputedPositions = false;
 
 /**
