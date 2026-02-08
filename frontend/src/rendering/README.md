@@ -52,7 +52,46 @@ const nodeId = renderer.raycast(raycaster);
 const stats = renderer.getStats(); // { totalNodes, drawCalls, types }
 ```
 
-#### 2. `ForceSimulation.ts`
+#### 2. `LinkRenderer.ts`
+GPU-accelerated link rendering using THREE.LineSegments.
+
+**Key Features:**
+- Single `LineSegments` object for all links (1 draw call)
+- Pre-allocated Float32Array buffer for positions
+- Viewport-based frustum culling (only render visible links)
+- Dynamic buffer updates when node positions change
+- Opacity control via material uniform
+
+**API:**
+```typescript
+const renderer = new LinkRenderer(scene, {
+  maxLinks: 200000,
+  opacity: 0.6,
+  enableFrustumCulling: true
+});
+
+// Set initial link data
+renderer.setLinks(links);
+
+// Update positions when nodes move
+renderer.updatePositions(nodePositions);
+
+// Update when camera moves (for frustum culling)
+renderer.updateFrustumCulling(camera);
+
+// Change opacity
+renderer.setOpacity(0.3);
+
+// Get stats
+const stats = renderer.getStats(); // { totalLinks, visibleLinks, maxLinks, drawCalls }
+```
+
+**Performance:**
+- **200k links**: 1 draw call
+- **Buffer update**: <10ms for 200k links
+- **Frustum culling**: Automatic (updated every 500ms in animation loop)
+
+#### 3. `ForceSimulation.ts`
 Wraps d3-force simulation to work with the InstancedNodeRenderer.
 
 **Key Features:**
@@ -78,15 +117,15 @@ simulation.setData(nodes, links);
 simulation.start();
 ```
 
-#### 3. `Graph3DInstanced.tsx`
+#### 4. `Graph3DInstanced.tsx`
 React component that integrates the renderer and simulation with Three.js scene management.
 
 **Key Features:**
 - Manual Three.js scene setup (scene, camera, renderer, controls)
-- Integration with InstancedNodeRenderer and ForceSimulation
+- Integration with InstancedNodeRenderer and LinkRenderer
 - Mouse interaction handling (hover, click)
 - Camera controls via OrbitControls
-- Link rendering (basic lines)
+- GPU-accelerated link rendering with frustum culling
 
 ## Usage
 
@@ -116,13 +155,17 @@ This allows for gradual migration and A/B testing.
 
 ### Rendering
 - **100k nodes**: 4 draw calls (one per type)
+- **200k links**: 1 draw call (single LineSegments)
+- **Total draw calls**: ~5 for typical graph (4 node types + 1 for links)
 - **Memory**: Shared geometry reduces memory footprint
 - **GPU**: Single instanced draw call per type is very efficient
 
 ### Position Updates
 - **100k nodes**: ~71ms in test environment (target <5ms in production)
-- **Method**: Direct `instanceMatrix` updates, no scene graph traversal
+- **200k links**: <10ms for buffer update
+- **Method**: Direct buffer updates, no scene graph traversal
 - **Optimization**: Uses `DynamicDrawUsage` for frequently updated attributes
+- **Link sync**: Positions automatically updated on simulation tick
 
 ### Interaction
 - **Raycasting**: Efficient instanced mesh intersection tests
@@ -133,8 +176,10 @@ This allows for gradual migration and A/B testing.
 ### Unit Tests
 ```bash
 npm run test:run -- src/rendering/InstancedNodeRenderer.test.ts
+npm run test:run -- src/rendering/LinkRenderer.test.ts
 ```
 
+#### InstancedNodeRenderer Tests
 24 tests covering:
 - Node data management
 - Position updates
@@ -142,6 +187,15 @@ npm run test:run -- src/rendering/InstancedNodeRenderer.test.ts
 - Size updates
 - Raycasting
 - Performance benchmarks
+
+#### LinkRenderer Tests
+21 tests covering:
+- Link data management
+- Position updates
+- Frustum culling
+- Opacity and color control
+- Buffer updates
+- Performance benchmarks (200k links)
 
 ### Integration Tests
 ```bash
@@ -159,15 +213,15 @@ npm run test:run -- src/rendering/integration.test.ts
 ### Current Limitations
 1. **Labels**: SpriteText labels not yet implemented (deferred)
 2. **Edge Bundling**: Not yet ported from original implementation
-3. **Link Rendering**: Basic line rendering only (no particles, arrows)
+3. **Link Features**: No particles or arrows (basic lines only)
 4. **Camera Animations**: Simplified compared to original
 
 ### Planned Improvements
 1. Add instanced label rendering using texture atlas
 2. Port edge bundling with instanced line rendering
-3. Implement advanced link features (particles, curvature)
+3. Implement link particles and arrows
 4. Add GPU-based particle system for effects
-5. Implement level-of-detail (LOD) for distant nodes
+5. Implement level-of-detail (LOD) for distant nodes/links
 
 ## Implementation Notes
 
@@ -223,8 +277,10 @@ Notable differences:
 | Operation | Time | Target | Notes |
 |-----------|------|--------|-------|
 | Initial render | <100ms | <100ms | ✓ |
-| Position update (100k) | ~71ms | <100ms* | ✓ |
-| Draw calls | 4 | <5 | ✓ |
+| Position update (100k nodes) | ~71ms | <100ms* | ✓ |
+| Position update (200k links) | <10ms | <10ms | ✓ |
+| Draw calls (nodes) | 4 | <5 | ✓ |
+| Draw calls (links) | 1 | 1 | ✓ |
 | Memory (100k nodes) | TBD | <500MB | Pending manual validation |
 
 *Production target is <5ms, but test environment has significant overhead. The ~71ms measurement in tests corresponds to approximately 2-5ms in production environments based on typical overhead ratios. Further optimizations planned:
