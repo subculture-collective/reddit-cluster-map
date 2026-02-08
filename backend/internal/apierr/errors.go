@@ -202,6 +202,14 @@ func CrawlRateLimited(message string) *Error {
 	return New(ErrCrawlRateLimited, message, http.StatusTooManyRequests)
 }
 
+// CrawlNotFound creates a crawl not found error
+func CrawlNotFound(message string) *Error {
+	if message == "" {
+		message = "Crawl job not found"
+	}
+	return New(ErrCrawlNotFound, message, http.StatusNotFound)
+}
+
 // SearchInvalidQuery creates a search invalid query error
 func SearchInvalidQuery(message string) *Error {
 	if message == "" {

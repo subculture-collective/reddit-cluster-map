@@ -28,6 +28,16 @@ All API errors return a consistent JSON structure:
 
 ## Error Code Categories
 
+The API defines 28 error codes across 8 categories:
+- AUTH_ (5 codes)
+- GRAPH_ (4 codes)
+- CRAWL_ (4 codes)
+- SEARCH_ (3 codes)
+- SYSTEM_ (4 codes)
+- VALIDATION_ (4 codes)
+- RESOURCE_ (2 codes)
+- RATE_LIMIT_ (2 codes)
+
 ### Authentication Errors (AUTH_*)
 
 Errors related to authentication and authorization.

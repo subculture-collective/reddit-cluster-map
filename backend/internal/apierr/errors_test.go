@@ -104,6 +104,7 @@ func TestHelperFunctions(t *testing.T) {
 		{"CrawlInvalidSubreddit", func() *Error { return CrawlInvalidSubreddit("") }, ErrCrawlInvalidSubreddit, http.StatusBadRequest},
 		{"CrawlQueueFailed", func() *Error { return CrawlQueueFailed("") }, ErrCrawlQueueFailed, http.StatusInternalServerError},
 		{"CrawlRateLimited", func() *Error { return CrawlRateLimited("") }, ErrCrawlRateLimited, http.StatusTooManyRequests},
+		{"CrawlNotFound", func() *Error { return CrawlNotFound("") }, ErrCrawlNotFound, http.StatusNotFound},
 		{"SearchInvalidQuery", func() *Error { return SearchInvalidQuery("") }, ErrSearchInvalidQuery, http.StatusBadRequest},
 		{"SearchTimeout", func() *Error { return SearchTimeout() }, ErrSearchTimeout, http.StatusRequestTimeout},
 		{"SearchFailed", func() *Error { return SearchFailed("") }, ErrSearchFailed, http.StatusInternalServerError},

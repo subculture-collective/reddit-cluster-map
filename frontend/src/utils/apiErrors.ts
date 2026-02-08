@@ -56,15 +56,31 @@ export interface ErrorResponse {
 
 // Check if an object is a structured error response
 export function isErrorResponse(obj: unknown): obj is ErrorResponse {
-  return (
-    typeof obj === "object" &&
-    obj !== null &&
-    "error" in obj &&
-    typeof (obj as { error: unknown }).error === "object" &&
-    (obj as { error: unknown }).error !== null &&
-    "code" in (obj as { error: { code: unknown } }).error &&
-    "message" in (obj as { error: { message: unknown } }).error
-  );
+  if (typeof obj !== "object" || obj === null || !("error" in obj)) {
+    return false;
+  }
+
+  const error = (obj as { error: unknown }).error;
+
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  if (!("code" in error) || !("message" in error)) {
+    return false;
+  }
+
+  const { code, message } = error as {
+    code: unknown;
+    message: unknown;
+  };
+
+  if (typeof code !== "string" || typeof message !== "string") {
+    return false;
+  }
+
+  // Ensure the code is one of the known ErrorCode values
+  return code in ERROR_MESSAGES;
 }
 
 // User-friendly error messages for each error code
