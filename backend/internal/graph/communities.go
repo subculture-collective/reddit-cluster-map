@@ -27,11 +27,11 @@ type CommunityResult struct {
 
 // HierarchyLevel represents one level in the community hierarchy
 type HierarchyLevel struct {
-	Level               int
-	NodeToCommunity     map[string]int
-	CommunityToParent   map[int]int
-	CommunityCentroids  map[int][3]float64 // community_id -> [x, y, z]
-	Modularity          float64
+	Level              int
+	NodeToCommunity    map[string]int
+	CommunityToParent  map[int]int
+	CommunityCentroids map[int][3]float64 // community_id -> [x, y, z]
+	Modularity         float64
 }
 
 // detectCommunities performs Louvain community detection on the graph
@@ -693,13 +693,13 @@ func (s *Service) storeHierarchy(ctx context.Context, queries *db.Queries, hiera
 			}
 
 			if err := queries.InsertCommunityHierarchy(ctx, db.InsertCommunityHierarchyParams{
-				NodeID:              nodeID,
-				Level:               int32(level.Level),
-				CommunityID:         int32(commID),
-				ParentCommunityID:   parentCommID,
-				CentroidX:           cx,
-				CentroidY:           cy,
-				CentroidZ:           cz,
+				NodeID:            nodeID,
+				Level:             int32(level.Level),
+				CommunityID:       int32(commID),
+				ParentCommunityID: parentCommID,
+				CentroidX:         cx,
+				CentroidY:         cy,
+				CentroidZ:         cz,
 			}); err != nil {
 				log.Printf("⚠️ failed to insert hierarchy row for node %s at level %d: %v", nodeID, level.Level, err)
 			} else {
