@@ -41,7 +41,7 @@ func TestBarnesHutNodeInsertSingle(t *testing.T) {
 
 func TestBarnesHutNodeInsertMultiple(t *testing.T) {
 	node := newBarnesHutNode(0, 0, 100, 100)
-	
+
 	// Insert first particle in NW quadrant
 	node.insert(0, 25, 25, 1.0)
 	if !node.isLeaf {
@@ -56,7 +56,7 @@ func TestBarnesHutNodeInsertMultiple(t *testing.T) {
 	if node.nw == nil || node.se == nil {
 		t.Error("expected quadrants to be created")
 	}
-	
+
 	// Check center of mass (should be at midpoint)
 	expectedX := (25 + 75) / 2.0
 	expectedY := (25 + 75) / 2.0
@@ -70,12 +70,12 @@ func TestBarnesHutNodeInsertMultiple(t *testing.T) {
 
 func TestBarnesHutNodeInsertQuadrants(t *testing.T) {
 	node := newBarnesHutNode(0, 0, 100, 100)
-	
+
 	// Insert particles in each quadrant
-	node.insert(0, 25, 25, 1.0)  // NW
-	node.insert(1, 75, 25, 1.0)  // NE
-	node.insert(2, 25, 75, 1.0)  // SW
-	node.insert(3, 75, 75, 1.0)  // SE
+	node.insert(0, 25, 25, 1.0) // NW
+	node.insert(1, 75, 25, 1.0) // NE
+	node.insert(2, 25, 75, 1.0) // SW
+	node.insert(3, 75, 75, 1.0) // SE
 
 	if node.isLeaf {
 		t.Error("node with multiple particles should not be a leaf")
@@ -122,7 +122,7 @@ func TestCalculateForceTwoParticles(t *testing.T) {
 
 	// Force should be repulsive (pushing particles apart)
 	fx, fy := node.calculateForce(0, 40, 50, 0.8, 1.0)
-	
+
 	// Particle 0 at (40,50) should be pushed left (negative fx)
 	if fx >= 0 {
 		t.Errorf("expected negative force (pushing left), got fx=%f", fx)
@@ -204,7 +204,7 @@ func TestCalculateBarnesHutForcesLarge(t *testing.T) {
 	N := 100
 	X := make([]float64, N)
 	Y := make([]float64, N)
-	
+
 	// Arrange in a grid
 	gridSize := 10
 	for i := 0; i < N; i++ {
@@ -238,10 +238,10 @@ func TestBarnesHutThetaParameter(t *testing.T) {
 
 	// With theta=0.0 (exact, no approximation)
 	dispX0, _ := calculateBarnesHutForces(X, Y, 0.0, 100.0)
-	
+
 	// With theta=0.8 (standard approximation)
 	dispX8, _ := calculateBarnesHutForces(X, Y, 0.8, 100.0)
-	
+
 	// Forces should be similar but not identical
 	// Check that both produce reasonable repulsive forces
 	for i := 0; i < 4; i++ {
@@ -259,7 +259,7 @@ func TestBarnesHutThetaParameter(t *testing.T) {
 // Benchmark Barnes-Hut vs brute force
 func BenchmarkBarnesHutForces(b *testing.B) {
 	sizes := []int{100, 1000, 5000}
-	
+
 	for _, N := range sizes {
 		X := make([]float64, N)
 		Y := make([]float64, N)

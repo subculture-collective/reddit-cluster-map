@@ -823,7 +823,7 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 		for i := 0; i < N; i++ {
 			dispX[i], dispY[i] = 0, 0
 		}
-		
+
 		// Use Barnes-Hut for O(n log n) repulsive forces
 		repStrength := k * k
 		repX, repY := calculateBarnesHutForces(X, Y, theta, repStrength)
@@ -831,7 +831,7 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 			dispX[i] += repX[i]
 			dispY[i] += repY[i]
 		}
-		
+
 		// Attractive forces along edges (still O(E))
 		for _, e := range E {
 			dx := X[e.a] - X[e.b]

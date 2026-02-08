@@ -13,8 +13,8 @@ type barnesHutNode struct {
 	mass             float64
 
 	// Quadtree structure
-	body      int  // Index of particle (if leaf)
-	isLeaf    bool // True if this node contains at most one particle
+	body           int            // Index of particle (if leaf)
+	isLeaf         bool           // True if this node contains at most one particle
 	nw, ne, sw, se *barnesHutNode // Quadrants
 }
 
