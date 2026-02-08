@@ -68,6 +68,7 @@ frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/pnpm-debug.log*
 frontend/lerna-debug.log*
+frontend/coverage/
 
 # Allow this vscode setting to be committed if needed
 !frontend/.vscode/extensions.json
