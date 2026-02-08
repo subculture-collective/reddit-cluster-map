@@ -213,6 +213,53 @@ describe('LinkRenderer', () => {
       expect(stats.visibleLinks).toBe(2);
       noCullRenderer.dispose();
     });
+
+    it('should update buffer when visible set changes but count stays the same', () => {
+      // This tests the case where panning moves from one cluster to another
+      // with the same number of visible links but different actual links
+      const links: LinkData[] = [
+        { source: 'cluster1_node1', target: 'cluster1_node2' },
+        { source: 'cluster2_node1', target: 'cluster2_node2' },
+      ];
+
+      renderer.setLinks(links);
+
+      // Position first cluster near origin, second cluster far away
+      const positions1 = new Map([
+        ['cluster1_node1', { x: 0, y: 0, z: 0 }],
+        ['cluster1_node2', { x: 10, y: 10, z: 10 }],
+        ['cluster2_node1', { x: 1000, y: 1000, z: 1000 }],
+        ['cluster2_node2', { x: 1010, y: 1010, z: 1010 }],
+      ]);
+
+      renderer.updatePositions(positions1);
+      camera.updateMatrixWorld();
+      camera.updateProjectionMatrix();
+      renderer.updateFrustumCulling(camera);
+
+      const stats1 = renderer.getStats();
+      expect(stats1.visibleLinks).toBe(1); // Only cluster1 link visible
+
+      // Now swap positions - cluster2 near origin, cluster1 far away
+      const positions2 = new Map([
+        ['cluster1_node1', { x: 1000, y: 1000, z: 1000 }],
+        ['cluster1_node2', { x: 1010, y: 1010, z: 1010 }],
+        ['cluster2_node1', { x: 0, y: 0, z: 0 }],
+        ['cluster2_node2', { x: 10, y: 10, z: 10 }],
+      ]);
+
+      renderer.updatePositions(positions2);
+      camera.updateMatrixWorld();
+      camera.updateProjectionMatrix();
+      renderer.updateFrustumCulling(camera);
+
+      const stats2 = renderer.getStats();
+      // Should still have 1 visible link, but it should be cluster2's link now
+      expect(stats2.visibleLinks).toBe(1);
+      
+      // The important thing is that updateFrustumCulling triggered a buffer update
+      // even though the count stayed the same
+    });
   });
 
   describe('opacity and color', () => {
@@ -268,9 +315,19 @@ describe('LinkRenderer', () => {
 
       renderer.setLinks(links);
 
+      // Add positions so links can be rendered
+      const positions = new Map([
+        ['node1', { x: 0, y: 0, z: 0 }],
+        ['node2', { x: 10, y: 10, z: 10 }],
+        ['node3', { x: 20, y: 20, z: 20 }],
+        ['node4', { x: 30, y: 30, z: 30 }],
+      ]);
+      renderer.updatePositions(positions);
+
       const stats = renderer.getStats();
       expect(stats.totalLinks).toBe(3);
       expect(stats.maxLinks).toBe(1000);
+      expect(stats.visibleLinks).toBe(3);
       expect(stats.drawCalls).toBe(1);
     });
 

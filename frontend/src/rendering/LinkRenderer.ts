@@ -135,7 +135,7 @@ export class LinkRenderer {
     frustum.setFromProjectionMatrix(projScreenMatrix);
 
     // Update visible link indices based on frustum
-    const prevVisibleCount = this.visibleLinkIndices.size;
+    const prevVisibleIndices = new Set(this.visibleLinkIndices);
     this.visibleLinkIndices.clear();
 
     const sourcePos = new THREE.Vector3();
@@ -151,14 +151,26 @@ export class LinkRenderer {
       sourcePos.set(source.x, source.y, source.z);
       targetPos.set(target.x, target.y, target.z);
 
-      // Only render link if both endpoints are visible
+      // Only render link if at least one endpoint is visible
       if (frustum.containsPoint(sourcePos) || frustum.containsPoint(targetPos)) {
         this.visibleLinkIndices.add(i);
       }
     }
 
-    // Only update buffer if visibility changed
-    if (prevVisibleCount !== this.visibleLinkIndices.size) {
+    // Check if the visible set actually changed
+    let setChanged = prevVisibleIndices.size !== this.visibleLinkIndices.size;
+    if (!setChanged) {
+      // Same size, but check if contents are the same
+      for (const idx of this.visibleLinkIndices) {
+        if (!prevVisibleIndices.has(idx)) {
+          setChanged = true;
+          break;
+        }
+      }
+    }
+
+    // Only update buffer if visibility actually changed
+    if (setChanged) {
       this.needsUpdate = true;
       this.updateBuffer();
     }
@@ -210,7 +222,8 @@ export class LinkRenderer {
     this.needsUpdate = false;
 
     const updateTime = performance.now() - startTime;
-    if (updateTime > 10) {
+    // Only warn in development to avoid console spam in production
+    if (updateTime > 10 && import.meta.env?.DEV) {
       console.warn(`LinkRenderer buffer update took ${updateTime.toFixed(2)}ms`);
     }
   }
@@ -252,11 +265,14 @@ export class LinkRenderer {
     maxLinks: number;
     drawCalls: number;
   } {
+    const renderedVertices = this.geometry ? this.geometry.drawRange.count : 0;
+    const visibleLinks = Math.floor(renderedVertices / 2);
+
     return {
       totalLinks: this.links.length,
-      visibleLinks: this.visibleLinkIndices.size,
+      visibleLinks,
       maxLinks: this.maxLinks,
-      drawCalls: this.links.length > 0 ? 1 : 0,
+      drawCalls: visibleLinks > 0 ? 1 : 0,
     };
   }
 

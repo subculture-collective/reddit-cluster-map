@@ -242,7 +242,7 @@ export default function Graph3DInstanced(props: Props) {
     // Create link renderer
     const linkRenderer = new LinkRenderer(scene, {
       maxLinks: MAX_RENDER_LINKS,
-      opacity: linkOpacity,
+      opacity: 0.6, // Initial opacity, will be updated by separate effect
       enableFrustumCulling: true,
     });
     linkRendererRef.current = linkRenderer;
@@ -324,7 +324,7 @@ export default function Graph3DInstanced(props: Props) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [webglSupported, nodeRelSize, MAX_RENDER_NODES, MAX_RENDER_LINKS, linkOpacity, initialCamera, onCameraChange]);
+  }, [webglSupported, nodeRelSize, MAX_RENDER_NODES, MAX_RENDER_LINKS, initialCamera, onCameraChange]);
 
   // Process graph data with filters
   const filtered = useMemo(() => {
@@ -491,6 +491,11 @@ export default function Graph3DInstanced(props: Props) {
         }
       }
       linkRendererRef.current.updatePositions(positions);
+    }
+
+    // Ensure frustum culling state is up to date immediately after positions are set
+    if (cameraRef.current) {
+      linkRendererRef.current.updateFrustumCulling(cameraRef.current);
     }
   }, [filtered]);
 
