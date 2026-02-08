@@ -141,6 +141,7 @@ CREATE TABLE graph_community_links (
     target_community_id INTEGER NOT NULL REFERENCES graph_communities(id) ON DELETE CASCADE,
     weight INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (source_community_id, target_community_id)
 );
 
