@@ -31,13 +31,15 @@ FROM graph_links;
 
 \echo ''
 \echo '========================================='
-\echo 'Query 1: GetPrecalculatedGraphDataCappedAll'
+\echo 'Query 1: GetPrecalculatedGraphDataCappedAll (OPTIMIZED)'
 \echo '========================================='
 \echo ''
 \echo 'This query selects top 20,000 nodes by value and up to 50,000 links between them'
+\echo 'Optimized with EXISTS subqueries and statement timeout'
 \echo ''
 
 EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
+SET LOCAL statement_timeout = '5s';
 WITH sel_nodes AS (
     SELECT gn.id, gn.name, gn.val, gn.type, gn.pos_x, gn.pos_y, gn.pos_z
     FROM graph_nodes gn
@@ -45,11 +47,14 @@ WITH sel_nodes AS (
         CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
     ) DESC NULLS LAST, gn.id
     LIMIT 20000
+), sel_node_ids AS (
+    -- Materialize just the IDs for efficient lookups
+    SELECT id FROM sel_nodes
 ), sel_links AS (
-    SELECT id, source, target
+    SELECT gl.id, gl.source, gl.target
     FROM graph_links gl
-    WHERE gl.source IN (SELECT id FROM sel_nodes)
-        AND gl.target IN (SELECT id FROM sel_nodes)
+    WHERE EXISTS (SELECT 1 FROM sel_node_ids WHERE id = gl.source)
+      AND EXISTS (SELECT 1 FROM sel_node_ids WHERE id = gl.target)
     LIMIT 50000
 )
 SELECT
@@ -80,13 +85,15 @@ FROM sel_links l;
 
 \echo ''
 \echo '========================================='
-\echo 'Query 2: GetPrecalculatedGraphDataCappedFiltered'
+\echo 'Query 2: GetPrecalculatedGraphDataCappedFiltered (OPTIMIZED)'
 \echo '========================================='
 \echo ''
 \echo 'This query selects top 20,000 subreddit/user nodes and up to 50,000 links'
+\echo 'Optimized with EXISTS subqueries and statement timeout'
 \echo ''
 
 EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
+SET LOCAL statement_timeout = '5s';
 WITH sel_nodes AS (
     SELECT gn.id, gn.name, gn.val, gn.type, gn.pos_x, gn.pos_y, gn.pos_z
     FROM graph_nodes gn
@@ -95,11 +102,14 @@ WITH sel_nodes AS (
         CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
     ) DESC NULLS LAST, gn.id
     LIMIT 20000
+), sel_node_ids AS (
+    -- Materialize just the IDs for efficient lookups
+    SELECT id FROM sel_nodes
 ), sel_links AS (
-    SELECT id, source, target
+    SELECT gl.id, gl.source, gl.target
     FROM graph_links gl
-    WHERE gl.source IN (SELECT id FROM sel_nodes)
-        AND gl.target IN (SELECT id FROM sel_nodes)
+    WHERE EXISTS (SELECT 1 FROM sel_node_ids WHERE id = gl.source)
+      AND EXISTS (SELECT 1 FROM sel_node_ids WHERE id = gl.target)
     LIMIT 50000
 )
 SELECT
