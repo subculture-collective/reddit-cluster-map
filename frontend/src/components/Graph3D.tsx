@@ -16,6 +16,8 @@ import {
 } from "../utils/levelOfDetail";
 import { EdgeBundler } from "../rendering/EdgeBundler";
 import * as THREE from "three";
+import LoadingSkeleton from "./LoadingSkeleton";
+import { detectWebGLSupport } from "../utils/webglDetect";
 
 type Filters = {
   subreddit: boolean;
@@ -299,6 +301,9 @@ export default function Graph3D(props: Props) {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [webglSupported] = useState(() => detectWebGLSupport());
+  const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number } | undefined>(undefined);
   // Ref typed as expected by ForceGraph3D definition
   const fgRef = useRef<
     ForceGraphMethods<RFNodeObject, RFLinkObject> | undefined
@@ -360,10 +365,12 @@ export default function Graph3D(props: Props) {
         setGraphData({ nodes: [], links: [] });
         setError(null);
         setLoading(false);
+        setLoadProgress(undefined);
         return;
       }
       setLoading(true);
       setError(null);
+      setLoadProgress(undefined);
       try {
         const base = (import.meta.env?.VITE_API_URL || "/api").replace(
           /\/$/,
@@ -382,7 +389,14 @@ export default function Graph3D(props: Props) {
         const response = await fetch(url, { signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = (await response.json()) as GraphData;
+        
+        // Track progress as data loads
+        if (data.nodes && data.nodes.length > 0) {
+          setLoadProgress({ loaded: data.nodes.length, total: data.nodes.length });
+        }
+        
         setGraphData(data);
+        setInitialLoadComplete(true);
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
         setError((err as Error).message);
@@ -390,6 +404,8 @@ export default function Graph3D(props: Props) {
       } finally {
         if (!signal || !signal.aborted) {
           setLoading(false);
+          // Clear progress after a short delay
+          setTimeout(() => setLoadProgress(undefined), 500);
         }
       }
     },
@@ -944,9 +960,47 @@ export default function Graph3D(props: Props) {
     };
   }, [useBundling, communityResult, filtered, edgeBundler, adaptiveLinkOpacity]);
 
+  // Show loading skeleton during initial load
+  if (isLoading && !initialLoadComplete) {
+    return <LoadingSkeleton progress={loadProgress} />;
+  }
+
+  // Show WebGL warning if not supported
+  if (!webglSupported) {
+    return (
+      <div className="w-full h-screen bg-black flex items-center justify-center">
+        <div className="bg-yellow-900/20 border border-yellow-500/50 rounded-lg px-8 py-6 max-w-2xl mx-4">
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0">
+              <svg className="w-8 h-8 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h2 className="text-yellow-100 text-xl font-semibold mb-2">
+                WebGL Not Supported
+              </h2>
+              <p className="text-yellow-200 text-sm mb-3">
+                Your browser doesn't support WebGL, which is required for 3D visualization.
+              </p>
+              <p className="text-yellow-200 text-sm mb-4">
+                Please try using a modern browser like Chrome, Firefox, Safari, or Edge.
+              </p>
+              <p className="text-yellow-200 text-sm mb-4">
+                Alternatively, you can switch to the 2D view which doesn't require WebGL.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div 
-      className="w-full h-screen relative"
+      className={`w-full h-screen relative transition-opacity duration-500 ${
+        initialLoadComplete && !isLoading ? 'opacity-100' : 'opacity-0'
+      }`}
       onMouseMove={() => frameThrottlerRef.current?.markActive()}
       onWheel={() => frameThrottlerRef.current?.markActive()}
       onMouseDown={() => frameThrottlerRef.current?.markActive()}
@@ -954,13 +1008,27 @@ export default function Graph3D(props: Props) {
       onTouchMove={() => frameThrottlerRef.current?.markActive()}
     >
       {error && (
-        <div className="absolute top-2 left-2 z-20 bg-red-900/70 text-red-100 rounded px-3 py-2 text-sm">
-          Error: {error}
+        <div className="absolute top-2 left-2 z-20 bg-red-900/70 text-red-100 rounded px-3 py-2 text-sm max-w-md">
+          <div className="flex items-start gap-2">
+            <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1">
+              <p className="font-medium mb-1">Error loading graph</p>
+              <p className="text-xs opacity-90">{error}</p>
+              <button
+                onClick={() => load()}
+                className="mt-2 px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm font-medium transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
         </div>
       )}
-      {isLoading && (
+      {isLoading && initialLoadComplete && (
         <div className="absolute top-2 left-2 z-20 bg-black/50 text-white rounded px-3 py-2 text-sm">
-          Loading graph…
+          Updating graph…
         </div>
       )}
       {!isLoading && activeTypes.length === 0 && (
