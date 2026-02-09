@@ -93,8 +93,8 @@ func TestIntegrationCacheBehavior(t *testing.T) {
 
 // TestCacheSizeLimits verifies that the cache respects size limits.
 func TestCacheSizeLimits(t *testing.T) {
-	// Create a very small cache (only 1KB)
-	cache, err := NewLRU(0, 10, 60*time.Second) // Very small: ~1KB due to cost calculation
+	// Create a very small cache (1MB with 10 entries max)
+	cache, err := NewLRU(1, 10, 60*time.Second)
 	if err != nil {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
