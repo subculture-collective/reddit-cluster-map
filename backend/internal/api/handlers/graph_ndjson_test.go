@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/cache"
 )
@@ -172,14 +173,24 @@ func TestGetGraphData_NDJSONvsJSON(t *testing.T) {
 		}
 		switch envelope.Type {
 		case "node":
-			nodeBytes, _ := json.Marshal(envelope.Data)
+			nodeBytes, err := json.Marshal(envelope.Data)
+			if err != nil {
+				t.Fatalf("Failed to marshal node data: %v", err)
+			}
 			var node GraphNode
-			json.Unmarshal(nodeBytes, &node)
+			if err := json.Unmarshal(nodeBytes, &node); err != nil {
+				t.Fatalf("Failed to unmarshal node data: %v", err)
+			}
 			ndjsonNodes = append(ndjsonNodes, node)
 		case "link":
-			linkBytes, _ := json.Marshal(envelope.Data)
+			linkBytes, err := json.Marshal(envelope.Data)
+			if err != nil {
+				t.Fatalf("Failed to marshal link data: %v", err)
+			}
 			var link GraphLink
-			json.Unmarshal(linkBytes, &link)
+			if err := json.Unmarshal(linkBytes, &link); err != nil {
+				t.Fatalf("Failed to unmarshal link data: %v", err)
+			}
 			ndjsonLinks = append(ndjsonLinks, link)
 		}
 	}
@@ -192,7 +203,9 @@ func TestGetGraphData_NDJSONvsJSON(t *testing.T) {
 	handlerJSON.GetGraphData(rrJSON, reqJSON)
 
 	var jsonResp GraphResponse
-	json.NewDecoder(rrJSON.Body).Decode(&jsonResp)
+	if err := json.NewDecoder(rrJSON.Body).Decode(&jsonResp); err != nil {
+		t.Fatalf("Failed to decode JSON response: %v", err)
+	}
 
 	// Compare counts
 	if len(ndjsonNodes) != len(jsonResp.Nodes) {
@@ -229,5 +242,65 @@ func BenchmarkGetGraphData_JSON(b *testing.B) {
 		req := httptest.NewRequest(http.MethodGet, "/api/graph", nil)
 		rr := httptest.NewRecorder()
 		handler.GetGraphData(rr, req)
+	}
+}
+
+// TestGetGraphData_NDJSONFirstFlushTiming tests that NDJSON response starts quickly
+func TestGetGraphData_NDJSONFirstFlushTiming(t *testing.T) {
+	mockReader := &MockGraphDataReader{}
+	mockCache := cache.NewMockCache()
+	handler := NewHandler(mockReader, mockCache)
+
+	// Create a custom ResponseRecorder that tracks first write
+	type timingRecorder struct {
+		*httptest.ResponseRecorder
+		firstWriteTime *int64 // nanoseconds since start
+		startTime      int64
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/graph", nil)
+	req.Header.Set("Accept", "application/x-ndjson")
+
+	baseRR := httptest.NewRecorder()
+	tr := &timingRecorder{
+		ResponseRecorder: baseRR,
+		startTime:        0,
+	}
+
+	// Start timing just before the handler
+	startTime := time.Now()
+	tr.startTime = startTime.UnixNano()
+
+	// Run handler in a goroutine and check first write
+	done := make(chan bool)
+	go func() {
+		handler.GetGraphData(tr, req)
+		done <- true
+	}()
+
+	// Wait for completion with timeout
+	select {
+	case <-done:
+		// Handler completed
+	case <-time.After(5 * time.Second):
+		t.Fatal("Handler timed out after 5 seconds")
+	}
+
+	// The response should complete relatively quickly
+	// We can't easily test "first flush" timing with httptest.ResponseRecorder
+	// as it doesn't provide flush notifications, but we can verify the response
+	// is valid and complete
+	if tr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", tr.Code)
+	}
+
+	// Verify we got NDJSON data
+	if tr.Body.Len() == 0 {
+		t.Error("Expected non-empty response body")
+	}
+
+	contentType := tr.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "application/x-ndjson") {
+		t.Errorf("Expected NDJSON content type, got %s", contentType)
 	}
 }

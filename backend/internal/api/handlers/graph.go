@@ -233,12 +233,11 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 
 	// Fallback to legacy aggregated JSON (users+subreddits only)
 	if !allowFallback {
+		empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 		if useNDJSON {
-			empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 			writeNDJSONResponse(w, empty)
 		} else {
 			w.Header().Set("Content-Type", "application/json")
-			empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 			b, _ := json.Marshal(empty)
 			_, _ = w.Write(b)
 			// cache empty response too
@@ -357,11 +356,12 @@ func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, r *http.Reque
 		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch graph data"))
 		return
 	}
+	
+	var response GraphResponse
 	if len(data) == 1 {
-		var resp GraphResponse
-		if err := json.Unmarshal(data[0], &resp); err == nil {
-			nodes := make(map[string]GraphNode, len(resp.Nodes))
-			for _, n := range resp.Nodes {
+		if err := json.Unmarshal(data[0], &response); err == nil {
+			nodes := make(map[string]GraphNode, len(response.Nodes))
+			for _, n := range response.Nodes {
 				t := strings.ToLower(n.Type)
 				if !allowAll {
 					if len(allowedTypes) == 0 {
@@ -377,35 +377,33 @@ func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, r *http.Reque
 				n.Type = t
 				nodes[n.ID] = n
 			}
-			capped := capGraph(nodes, resp.Links, maxNodes, maxLinks)
-			
-			// Handle NDJSON streaming vs regular JSON
-			if useNDJSON {
-				writeNDJSONResponse(w, capped)
-				return
-			}
-			
-			// Marshal once so we can write and cache
-			w.Header().Set("Content-Type", "application/json")
-			b, _ := json.Marshal(capped)
-			_, _ = w.Write(b)
-			// store in cache keyed by caps
-			h.cache.Set(cacheKeyStr, b, 0)
-			return
+			response = capGraph(nodes, response.Links, maxNodes, maxLinks)
+		} else {
+			// Unknown legacy format; return empty
+			response = GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 		}
+	} else {
+		// No data or unexpected format; return empty
+		response = GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 	}
-	// Unknown legacy format; return empty and cache it
-	empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 	
+	// Write response based on format
+	writeGraphResponse(w, response, useNDJSON, cacheKeyStr, h)
+}
+
+// writeGraphResponse writes a GraphResponse in either NDJSON or JSON format
+func writeGraphResponse(w http.ResponseWriter, resp GraphResponse, useNDJSON bool, cacheKey string, h *Handler) {
 	if useNDJSON {
-		writeNDJSONResponse(w, empty)
+		writeNDJSONResponse(w, resp)
 		return
 	}
 	
 	w.Header().Set("Content-Type", "application/json")
-	b, _ := json.Marshal(empty)
+	b, _ := json.Marshal(resp)
 	_, _ = w.Write(b)
-	h.cache.Set(cacheKeyStr, b, 0)
+	if h != nil && cacheKey != "" {
+		h.cache.Set(cacheKey, b, 0)
+	}
 }
 
 // preRow is an internal union row type for capped precalc results including optional positions
