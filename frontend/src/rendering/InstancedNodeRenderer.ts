@@ -80,6 +80,8 @@ export class InstancedNodeRenderer {
   private maxNodes: number;
   private nodeRelSize: number;
   private octree: Octree<NodeData>;
+  private _frustum: THREE.Frustum | null = null;
+  private _projectionMatrix: THREE.Matrix4 | null = null;
 
   constructor(scene: THREE.Scene, config: InstancedNodeRendererConfig = {}) {
     this.scene = scene;
@@ -243,7 +245,7 @@ export class InstancedNodeRenderer {
     const rotation = new THREE.Quaternion();
     const scale = new THREE.Vector3();
 
-    // Track items for octree rebuild
+    // Track ALL items for octree rebuild (not just updated ones)
     const octreeItems: OctreeItem<NodeData>[] = [];
 
     for (const [, typedMesh] of this.meshes.entries()) {
@@ -253,34 +255,33 @@ export class InstancedNodeRenderer {
         const nodeId = typedMesh.nodeIds[i];
         const pos = positions.get(nodeId);
         
+        // Get current position
+        typedMesh.mesh.getMatrixAt(i, matrix);
+        matrix.decompose(position, rotation, scale);
+        
         if (pos) {
-          // Get current matrix to preserve scale
-          typedMesh.mesh.getMatrixAt(i, matrix);
-          matrix.decompose(position, rotation, scale);
-          
           // Update position
           position.set(pos.x, pos.y, pos.z);
           matrix.compose(position, rotation, scale);
           typedMesh.mesh.setMatrixAt(i, matrix);
-          
-          // Add to octree items
-          octreeItems.push({
-            id: nodeId,
-            position: new THREE.Vector3(pos.x, pos.y, pos.z),
-            data: {
-              id: nodeId,
-              type: typedMesh.nodeIds[i].startsWith('subreddit_') ? 'subreddit' :
-                    typedMesh.nodeIds[i].startsWith('user_') ? 'user' :
-                    typedMesh.nodeIds[i].startsWith('post_') ? 'post' :
-                    typedMesh.nodeIds[i].startsWith('comment_') ? 'comment' : 'default',
-              x: pos.x,
-              y: pos.y,
-              z: pos.z,
-            },
-          });
-          
           updated = true;
         }
+        
+        // Add ALL nodes to octree (both updated and unchanged)
+        octreeItems.push({
+          id: nodeId,
+          position: new THREE.Vector3(position.x, position.y, position.z),
+          data: {
+            id: nodeId,
+            type: typedMesh.nodeIds[i].startsWith('subreddit_') ? 'subreddit' :
+                  typedMesh.nodeIds[i].startsWith('user_') ? 'user' :
+                  typedMesh.nodeIds[i].startsWith('post_') ? 'post' :
+                  typedMesh.nodeIds[i].startsWith('comment_') ? 'comment' : 'default',
+            x: position.x,
+            y: position.y,
+            z: position.z,
+          },
+        });
       }
 
       if (updated) {
@@ -289,7 +290,7 @@ export class InstancedNodeRenderer {
       }
     }
 
-    // Rebuild octree with new positions
+    // Rebuild octree with ALL node positions
     if (octreeItems.length > 0) {
       this.octree.build(octreeItems);
     }
@@ -366,35 +367,39 @@ export class InstancedNodeRenderer {
    * @returns Node ID if intersected, null otherwise
    */
   public raycast(raycaster: THREE.Raycaster): string | null {
-    // Use octree for fast spatial query
+    // Use octree for fast spatial query to get candidates
     const ray = raycaster.ray;
     const maxDistance = raycaster.far || 1000;
     
     const nearestItem = this.octree.raycast(ray, maxDistance);
     if (!nearestItem) return null;
 
-    // Verify hit with actual geometry
-    const nodeInfo = this.nodeMap.get(nearestItem.id);
-    if (!nodeInfo) return null;
-
-    const typedMesh = this.meshes.get(nodeInfo.type);
-    if (!typedMesh) return null;
-
-    // Only raycast against the specific mesh containing the candidate node
-    const intersects = raycaster.intersectObject(typedMesh.mesh, false);
+    // Verify hit with actual geometry raycasting
+    // Raycast all meshes to find actual intersections
+    const allIntersects: Array<{ nodeId: string; distance: number }> = [];
     
-    for (const intersect of intersects) {
-      if (intersect.instanceId !== undefined) {
-        const hitNodeId = typedMesh.nodeIds[intersect.instanceId];
-        if (hitNodeId === nearestItem.id) {
-          return hitNodeId;
+    for (const [, typedMesh] of this.meshes.entries()) {
+      const intersects = raycaster.intersectObject(typedMesh.mesh, false);
+      
+      for (const intersect of intersects) {
+        if (intersect.instanceId !== undefined) {
+          const hitNodeId = typedMesh.nodeIds[intersect.instanceId];
+          allIntersects.push({
+            nodeId: hitNodeId,
+            distance: intersect.distance,
+          });
         }
       }
     }
 
-    // Fallback: octree found a candidate but geometry raycast missed
-    // This can happen for very small nodes - return the octree result
-    return nearestItem.id;
+    // Return closest actual hit
+    if (allIntersects.length > 0) {
+      allIntersects.sort((a, b) => a.distance - b.distance);
+      return allIntersects[0].nodeId;
+    }
+
+    // No geometry hits - octree candidate was outside pick radius
+    return null;
   }
 
   /**
@@ -404,18 +409,24 @@ export class InstancedNodeRenderer {
    * @returns Array of visible node IDs
    */
   public queryFrustum(camera: THREE.Camera): string[] {
-    // Update frustum from camera
-    const frustum = new THREE.Frustum();
-    const projectionMatrix = new THREE.Matrix4();
+    // Ensure camera matrices are up to date
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
     
-    projectionMatrix.multiplyMatrices(
+    // Reuse frustum and matrix instances to avoid allocations
+    if (!this._frustum) {
+      this._frustum = new THREE.Frustum();
+      this._projectionMatrix = new THREE.Matrix4();
+    }
+    
+    this._projectionMatrix.multiplyMatrices(
       camera.projectionMatrix,
       camera.matrixWorldInverse
     );
-    frustum.setFromProjectionMatrix(projectionMatrix);
+    this._frustum.setFromProjectionMatrix(this._projectionMatrix);
 
     // Query octree for nodes in frustum
-    const visibleItems = this.octree.queryFrustum(frustum);
+    const visibleItems = this.octree.queryFrustum(this._frustum);
     
     return visibleItems.map(item => item.id);
   }

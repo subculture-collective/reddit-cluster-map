@@ -6,10 +6,12 @@ import * as THREE from 'three';
 export class AABB {
     public min: THREE.Vector3;
     public max: THREE.Vector3;
+    private _box: THREE.Box3; // Reusable box for intersection tests
 
     constructor(min: THREE.Vector3, max: THREE.Vector3) {
         this.min = min.clone();
         this.max = max.clone();
+        this._box = new THREE.Box3(this.min, this.max);
     }
 
     /**
@@ -44,19 +46,21 @@ export class AABB {
      * Check if this AABB intersects with a THREE.Frustum
      */
     intersectsFrustum(frustum: THREE.Frustum): boolean {
-        // Use THREE's Box3 for frustum intersection
-        const box = new THREE.Box3(this.min, this.max);
-        return frustum.intersectsBox(box);
+        // Update reusable box and use THREE's Box3 for frustum intersection
+        this._box.min.copy(this.min);
+        this._box.max.copy(this.max);
+        return frustum.intersectsBox(this._box);
     }
 
     /**
      * Check if a ray intersects this AABB
      * Returns distance to intersection or Infinity if no hit
      */
-    intersectsRay(ray: THREE.Ray): number {
-        const box = new THREE.Box3(this.min, this.max);
-        const target = new THREE.Vector3();
-        const result = ray.intersectBox(box, target);
+    intersectsRay(ray: THREE.Ray, target: THREE.Vector3): number {
+        // Update reusable box
+        this._box.min.copy(this.min);
+        this._box.max.copy(this.max);
+        const result = ray.intersectBox(this._box, target);
         return result ? ray.origin.distanceTo(result) : Infinity;
     }
 
@@ -86,8 +90,9 @@ export class AABB {
      * Check if point is within distance of AABB
      */
     distanceToPoint(point: THREE.Vector3): number {
-        const box = new THREE.Box3(this.min, this.max);
-        return box.distanceToPoint(point);
+        this._box.min.copy(this.min);
+        this._box.max.copy(this.max);
+        return this._box.distanceToPoint(point);
     }
 }
 
@@ -382,12 +387,17 @@ export class Octree<T> {
 
         let nearest: OctreeItem<T> | null = null;
         let nearestDistance = maxDistance;
+        
+        // Reusable vector for intersection tests
+        const target = new THREE.Vector3();
 
-        this.raycastRecursive(this.root, ray, maxDistance, (item, distance) => {
+        this.raycastRecursive(this.root, ray, target, nearestDistance, (item, distance) => {
             if (distance < nearestDistance) {
                 nearest = item;
                 nearestDistance = distance;
             }
+            // Return updated nearest distance for pruning
+            return nearestDistance;
         });
 
         return nearest;
@@ -551,41 +561,70 @@ export class Octree<T> {
     private raycastRecursive(
         node: OctreeNode<T>,
         ray: THREE.Ray,
+        target: THREE.Vector3,
         maxDistance: number,
-        callback: (item: OctreeItem<T>, distance: number) => void,
-    ): void {
+        callback: (item: OctreeItem<T>, distance: number) => number,
+    ): number {
         // Check if ray intersects node bounds
-        const distance = node.bounds.intersectsRay(ray);
+        const distance = node.bounds.intersectsRay(ray, target);
         if (distance === Infinity || distance > maxDistance) {
-            return;
+            return maxDistance;
         }
 
-        // Check items in this node
+        let currentMaxDistance = maxDistance;
+
+        // Check items in this node - compute actual ray distance
         for (const item of node.items) {
-            const dist = ray.distanceToPoint(item.position);
-            if (dist <= maxDistance) {
-                callback(item, dist);
+            // Project point onto ray to get distance along ray
+            const directionDot = ray.direction.dot(
+                target.subVectors(item.position, ray.origin)
+            );
+            
+            if (directionDot > 0 && directionDot <= currentMaxDistance) {
+                // Get closest point on ray
+                const closestPoint = ray.origin.clone().addScaledVector(
+                    ray.direction,
+                    directionDot
+                );
+                
+                // Check perpendicular distance (as a pick radius)
+                const perpDistance = closestPoint.distanceTo(item.position);
+                
+                // Use a small pick radius based on typical node sizes
+                const pickRadius = 10; // Adjust based on your node sizes
+                
+                if (perpDistance <= pickRadius) {
+                    // Use distance along ray for ordering
+                    currentMaxDistance = callback(item, directionDot);
+                }
             }
         }
 
         // Recurse into children, sorted by distance for early exit optimization
         if (node.children) {
             // Calculate distances to children for sorting
-            const childDistances = node.children.map((child, index) => ({
+            const childDistances = node.children.map((child) => ({
                 child,
-                distance: child.bounds.intersectsRay(ray),
-                index,
+                distance: child.bounds.intersectsRay(ray, target),
             }));
 
             // Sort by distance (closest first)
             childDistances.sort((a, b) => a.distance - b.distance);
 
             for (const { child, distance } of childDistances) {
-                if (distance !== Infinity && distance <= maxDistance) {
-                    this.raycastRecursive(child, ray, maxDistance, callback);
+                if (distance !== Infinity && distance <= currentMaxDistance) {
+                    currentMaxDistance = this.raycastRecursive(
+                        child,
+                        ray,
+                        target,
+                        currentMaxDistance,
+                        callback
+                    );
                 }
             }
         }
+
+        return currentMaxDistance;
     }
 
     private queryRangeRecursive(
@@ -638,43 +677,45 @@ export class Octree<T> {
 
     /**
      * Expand the root bounds to contain positions that fall outside
-     * Note: position parameter signals need for expansion but isn't used directly
-     * as we reinsert all items which will naturally fill the expanded space
+     * Expands in a loop until the position is contained
      */
-    private expandRoot(_position: THREE.Vector3): void {
+    private expandRoot(position: THREE.Vector3): void {
         if (!this.root) return;
 
-        // Double the size of the root bounds to contain the new position
-        const center = this.root.bounds.getCenter();
-        const size = this.root.bounds.getSize();
-        const maxSize = Math.max(size.x, size.y, size.z);
+        // Keep expanding until position is contained
+        while (!this.root.bounds.containsPoint(position)) {
+            // Double the size of the root bounds
+            const center = this.root.bounds.getCenter();
+            const size = this.root.bounds.getSize();
+            const maxSize = Math.max(size.x, size.y, size.z);
 
-        const newSize = maxSize * 2;
-        const halfSize = newSize / 2;
+            const newSize = maxSize * 2;
+            const halfSize = newSize / 2;
 
-        const newMin = new THREE.Vector3(
-            center.x - halfSize,
-            center.y - halfSize,
-            center.z - halfSize,
-        );
-        const newMax = new THREE.Vector3(
-            center.x + halfSize,
-            center.y + halfSize,
-            center.z + halfSize,
-        );
+            const newMin = new THREE.Vector3(
+                center.x - halfSize,
+                center.y - halfSize,
+                center.z - halfSize,
+            );
+            const newMax = new THREE.Vector3(
+                center.x + halfSize,
+                center.y + halfSize,
+                center.z + halfSize,
+            );
 
-        const newRoot = new OctreeNode<T>(new AABB(newMin, newMax), 0);
+            const newRoot = new OctreeNode<T>(new AABB(newMin, newMax), 0);
 
-        // Reinsert all items into new root
-        const allItems = this.getAllItems();
-        this.root = newRoot;
-        this.itemMap.clear();
-        this.totalItems = 0;
+            // Reinsert all items into new root
+            const allItems = this.getAllItems();
+            this.root = newRoot;
+            this.itemMap.clear();
+            this.totalItems = 0;
 
-        for (const item of allItems) {
-            this.insertIntoNode(this.root, item);
-            this.itemMap.set(item.id, item);
-            this.totalItems++;
+            for (const item of allItems) {
+                this.insertIntoNode(this.root, item);
+                this.itemMap.set(item.id, item);
+                this.totalItems++;
+            }
         }
     }
 }
