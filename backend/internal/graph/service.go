@@ -694,6 +694,11 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 					log.Printf("⚠️ community detection failed: %v", err)
 				} else if err := s.storeCommunities(ctx, queries, result, nodes, links); err != nil {
 					log.Printf("⚠️ failed to store communities: %v", err)
+				} else {
+					// Compute and store edge bundles after communities are stored
+					if err := s.computeAndStoreEdgeBundles(ctx, queries, result, nodes, links); err != nil {
+						log.Printf("⚠️ failed to compute edge bundles: %v", err)
+					}
 				}
 			}
 		}

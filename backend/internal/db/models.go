@@ -56,6 +56,18 @@ type CrawlJob struct {
 	MaxRetries sql.NullInt32
 }
 
+type GraphBundle struct {
+	SourceCommunityID int32
+	TargetCommunityID int32
+	Weight            int32
+	AvgStrength       sql.NullFloat64
+	ControlX          sql.NullFloat64
+	ControlY          sql.NullFloat64
+	ControlZ          sql.NullFloat64
+	CreatedAt         sql.NullTime
+	UpdatedAt         sql.NullTime
+}
+
 type GraphCommunity struct {
 	ID         int32
 	Label      string

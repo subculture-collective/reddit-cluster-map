@@ -29,6 +29,8 @@ type GraphDataReader interface {
 	GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error)
 	GetPrecalculatedGraphDataCappedFiltered(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedFilteredParams) ([]db.GetPrecalculatedGraphDataCappedFilteredRow, error)
 	GetPrecalculatedGraphDataNoPos(ctx context.Context) ([]db.GetPrecalculatedGraphDataNoPosRow, error)
+	// Edge bundles
+	GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error)
 }
 
 // graphCacheEntry holds a cached response and its expiry.
@@ -469,3 +471,116 @@ func writeCachedEmpty(w http.ResponseWriter, maxNodes, maxLinks int, typeKey str
 	graphCache[cacheKey(maxNodes, maxLinks, typeKey, withPos)] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
 	graphCacheMu.Unlock()
 }
+
+// EdgeBundle represents a bundled edge between two communities
+type EdgeBundle struct {
+	SourceCommunity int32    `json:"source_community"`
+	TargetCommunity int32    `json:"target_community"`
+	Weight          int32    `json:"weight"`
+	AvgStrength     *float64 `json:"avg_strength,omitempty"`
+	ControlPoint    *struct {
+		X float64 `json:"x"`
+		Y float64 `json:"y"`
+		Z float64 `json:"z"`
+	} `json:"control_point,omitempty"`
+}
+
+// EdgeBundlesResponse represents the response for edge bundles
+type EdgeBundlesResponse struct {
+	Bundles []EdgeBundle `json:"bundles"`
+}
+
+// GetEdgeBundles returns precomputed edge bundle metadata
+// GET /api/graph/bundles?min_weight=1
+func (h *Handler) GetEdgeBundles(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracing.StartSpan(r.Context(), "handlers.GetEdgeBundles")
+	defer span.End()
+
+	cfg := config.Load()
+	timeout := cfg.GraphQueryTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Parse min_weight parameter
+	minWeight := parseIntDefault(r.URL.Query().Get("min_weight"), 1)
+	if minWeight < 0 {
+		minWeight = 0
+	}
+
+	// Check cache first
+	cacheKeyStr := "bundles:" + strconv.Itoa(minWeight)
+	now := time.Now()
+	graphCacheMu.Lock()
+	entry, found := graphCache[cacheKeyStr]
+	if found && entry.expiresAt.After(now) {
+		graphCacheMu.Unlock()
+		metrics.APICacheHits.WithLabelValues("bundles").Inc()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(entry.data)
+		return
+	}
+	graphCacheMu.Unlock()
+	metrics.APICacheMisses.WithLabelValues("bundles").Inc()
+
+	// Fetch bundles from database
+	bundlesRows, err := h.queries.GetEdgeBundles(ctx, int32(minWeight))
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded || err == context.DeadlineExceeded {
+			logger.WarnContext(ctx, "bundles query timed out", "timeout", timeout)
+			apierr.WriteErrorWithContext(w, r, apierr.GraphTimeout("Bundles query timeout"))
+			return
+		}
+		logger.ErrorContext(ctx, "failed to fetch edge bundles", "error", err)
+		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch edge bundles"))
+		return
+	}
+
+	// Build response
+	bundles := make([]EdgeBundle, 0, len(bundlesRows))
+	for _, row := range bundlesRows {
+		bundle := EdgeBundle{
+			SourceCommunity: row.SourceCommunityID,
+			TargetCommunity: row.TargetCommunityID,
+			Weight:          row.Weight,
+		}
+		
+		if row.AvgStrength.Valid {
+			strength := row.AvgStrength.Float64
+			bundle.AvgStrength = &strength
+		}
+		
+		if row.ControlX.Valid && row.ControlY.Valid && row.ControlZ.Valid {
+			bundle.ControlPoint = &struct {
+				X float64 `json:"x"`
+				Y float64 `json:"y"`
+				Z float64 `json:"z"`
+			}{
+				X: row.ControlX.Float64,
+				Y: row.ControlY.Float64,
+				Z: row.ControlZ.Float64,
+			}
+		}
+		
+		bundles = append(bundles, bundle)
+	}
+
+	resp := EdgeBundlesResponse{Bundles: bundles}
+	b, _ := json.Marshal(resp)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(b)
+
+	// Store in cache
+	graphCacheMu.Lock()
+	graphCache[cacheKeyStr] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
+	graphCacheMu.Unlock()
+
+	span.SetAttributes(
+		attribute.Int("bundles_count", len(bundles)),
+		attribute.Int("min_weight", minWeight),
+	)
+	span.SetStatus(codes.Ok, "bundles fetched successfully")
+}
+
