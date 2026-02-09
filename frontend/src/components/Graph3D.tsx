@@ -16,11 +16,13 @@ import {
 } from "../utils/levelOfDetail";
 import { EdgeBundler } from "../rendering/EdgeBundler";
 import * as THREE from "three";
+import type { WebGLRenderer } from "three";
 import LoadingSkeleton from "./LoadingSkeleton";
 import { detectWebGLSupport } from "../utils/webglDetect";
 import Graph3DInstanced from "./Graph3DInstanced";
 import { StreamingGraphLoader, type LoadProgress } from "../data/StreamingGraphLoader";
 import LoadingProgress from "./LoadingProgress";
+import PerformanceHUD from "./PerformanceHUD";
 
 type Filters = {
   subreddit: boolean;
@@ -1171,6 +1173,13 @@ function Graph3DOriginal(props: Props) {
             powerPreference: "high-performance",
           } as unknown as WebGLContextAttributes
         }
+      />
+      <PerformanceHUD
+        renderer={fgRef.current?.renderer?.() as WebGLRenderer | null || null}
+        nodeCount={filtered.nodes.length}
+        totalNodeCount={graphData?.nodes.length || 0}
+        simulationState={usePrecomputedLayout && hasPrecomputedPositions ? 'precomputed' : 'active'}
+        lodLevel={0}
       />
     </div>
   );
