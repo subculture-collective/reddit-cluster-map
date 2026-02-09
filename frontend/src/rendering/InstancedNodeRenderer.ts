@@ -75,6 +75,7 @@ export class InstancedNodeRenderer {
   private nodeRelSize: number;
   private sizeAttenuation: boolean;
   private camera: THREE.Camera | null = null;
+  private cameraPosVector: THREE.Vector3 = new THREE.Vector3(); // Reusable vector to avoid per-frame allocation
 
   constructor(scene: THREE.Scene, config: InstancedNodeRendererConfig = {}) {
     this.scene = scene;
@@ -413,21 +414,20 @@ export class InstancedNodeRenderer {
           vColor = instanceColor;
           vNormal = normalize(normalMatrix * normal);
           
-          // Get instance transform
-          mat4 instanceMatrix = instanceMatrix;
-          vec4 worldPosition = instanceMatrix * vec4(position, 1.0);
+          // Compute instance center in world space (local origin transformed by instance matrix)
+          vec4 instanceCenter = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
           
-          // Calculate distance from camera
-          float dist = length(cameraPosition - worldPosition.xyz);
+          // Calculate distance from camera using instance center so scale is uniform per instance
+          float dist = length(cameraPosition - instanceCenter.xyz);
           
           // Apply logarithmic attenuation for smooth scaling
           // log(1 + x) provides smooth falloff, scaled by attenuationFactor
           float scaleFactor = 1.0 + attenuationFactor * log(1.0 + dist / 100.0);
           scaleFactor = clamp(scaleFactor, minScale, maxScale);
           
-          // Apply scale to the instance transform
+          // Apply uniform scale to the instance's local vertex position, then transform to world space
           vec3 scaledPosition = position * scaleFactor;
-          worldPosition = instanceMatrix * vec4(scaledPosition, 1.0);
+          vec4 worldPosition = instanceMatrix * vec4(scaledPosition, 1.0);
           
           gl_Position = projectionMatrix * viewMatrix * worldPosition;
         }
@@ -462,13 +462,13 @@ export class InstancedNodeRenderer {
   public updateCameraPosition(): void {
     if (!this.camera || !this.sizeAttenuation) return;
     
-    const cameraPos = new THREE.Vector3();
-    this.camera.getWorldPosition(cameraPos);
+    // Reuse the cached vector to avoid per-frame allocation
+    this.camera.getWorldPosition(this.cameraPosVector);
     
     for (const [, typedMesh] of this.meshes.entries()) {
       const material = typedMesh.mesh.material;
       if (material instanceof THREE.ShaderMaterial && material.uniforms.cameraPosition) {
-        material.uniforms.cameraPosition.value.copy(cameraPos);
+        material.uniforms.cameraPosition.value.copy(this.cameraPosVector);
       }
     }
   }

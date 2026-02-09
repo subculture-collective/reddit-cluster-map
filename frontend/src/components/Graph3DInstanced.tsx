@@ -378,8 +378,6 @@ export default function Graph3DInstanced(props: Props) {
         MAX_RENDER_LINKS,
         initialCamera,
         onCameraChange,
-        sizeAttenuation,
-        linkOpacity,
     ]);
 
     // Process graph data with filters

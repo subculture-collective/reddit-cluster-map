@@ -1,6 +1,6 @@
 # Camera-Distance-Based Node Size Scaling Implementation
 
-**Issue:** #147 (Epic #139 - Large-Scale Rendering Engine)  
+**Issue:** #155 (Epic #139 - Large-Scale Rendering Engine)  
 **Pull Request:** copilot/implement-node-size-scaling  
 **Status:** Complete - Ready for Review
 
