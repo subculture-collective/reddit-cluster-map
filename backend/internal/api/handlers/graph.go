@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -508,6 +509,10 @@ func (h *Handler) GetEdgeBundles(w http.ResponseWriter, r *http.Request) {
 	minWeight := parseIntDefault(r.URL.Query().Get("min_weight"), 1)
 	if minWeight < 0 {
 		minWeight = 0
+	}
+	// Clamp to MaxInt32 to prevent overflow when casting to int32
+	if minWeight > math.MaxInt32 {
+		minWeight = math.MaxInt32
 	}
 
 	// Check cache first

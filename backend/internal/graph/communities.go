@@ -319,12 +319,13 @@ func calculateModularity(nodeToCommunity map[string]int, adjacency map[string]ma
 
 // storeCommunities stores the detected communities in the database
 // Accepts nodes and links fetched during detection to avoid redundant database queries
-func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, result *CommunityResult, nodes []db.ListGraphNodesByWeightRow, links []db.ListGraphLinksAmongRow) error {
+// Returns the mapping from node ID to database community ID for use in bundle computation
+func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, result *CommunityResult, nodes []db.ListGraphNodesByWeightRow, links []db.ListGraphLinksAmongRow) (map[string]int32, error) {
 	log.Printf("💾 Storing community detection results")
 
 	// Clear existing communities
 	if err := queries.ClearCommunityTables(ctx); err != nil {
-		return fmt.Errorf("clear community tables: %w", err)
+		return nil, fmt.Errorf("clear community tables: %w", err)
 	}
 
 	// Insert communities and build mapping from member IDs to database community IDs
@@ -385,45 +386,14 @@ func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, res
 	}
 
 	log.Printf("✅ Stored %d communities with inter-community links", len(result.Communities))
-	return nil
+	return nodeToDB, nil
 }
 
 // computeAndStoreEdgeBundles computes edge bundle metadata for inter-community connections
 // Bundles aggregate links between communities with control points for curved rendering
-func (s *Service) computeAndStoreEdgeBundles(ctx context.Context, queries *db.Queries, result *CommunityResult, nodes []db.ListGraphNodesByWeightRow, links []db.ListGraphLinksAmongRow) error {
+func (s *Service) computeAndStoreEdgeBundles(ctx context.Context, queries *db.Queries, nodeToCommunity map[string]int32, nodes []db.ListGraphNodesByWeightRow, links []db.ListGraphLinksAmongRow) error {
 	log.Printf("🔄 Computing edge bundle metadata")
 
-	// Build mapping from node ID to community ID
-	nodeToCommunity := make(map[string]int32)
-	communityToDBID := make(map[int]int32)
-	
-	// Get all communities to build the mapping
-	allCommunities, err := queries.GetAllCommunities(ctx)
-	if err != nil {
-		return fmt.Errorf("fetch communities: %w", err)
-	}
-	
-	// For each community, get its members and build the mapping
-	for _, comm := range allCommunities {
-		members, err := queries.GetCommunityMembers(ctx, comm.ID)
-		if err != nil {
-			log.Printf("⚠️ failed to fetch members for community %d: %v", comm.ID, err)
-			continue
-		}
-		
-		// Find which result community this matches (by comparing members)
-		for i, resCom := range result.Communities {
-			if len(resCom.Members) == len(members) {
-				// This is a heuristic match - could be improved
-				communityToDBID[i] = comm.ID
-				for _, memberID := range members {
-					nodeToCommunity[memberID] = comm.ID
-				}
-				break
-			}
-		}
-	}
-	
 	// Calculate community centroids from node positions
 	communityCentroids := make(map[int32][3]float64)
 	communityNodeCounts := make(map[int32]int)
@@ -462,7 +432,6 @@ func (s *Service) computeAndStoreEdgeBundles(ctx context.Context, queries *db.Qu
 	// Aggregate inter-community links
 	type bundleKey struct{ src, tgt int32 }
 	bundleWeights := make(map[bundleKey]int)
-	bundleStrengths := make(map[bundleKey][]float64) // For calculating average strength
 	
 	for _, link := range links {
 		srcComm, srcOK := nodeToCommunity[link.Source]
@@ -479,9 +448,6 @@ func (s *Service) computeAndStoreEdgeBundles(ctx context.Context, queries *db.Qu
 		}
 		
 		bundleWeights[key]++
-		// For now, assume uniform link strength of 1.0
-		// In the future, this could be weighted based on link attributes
-		bundleStrengths[key] = append(bundleStrengths[key], 1.0)
 	}
 	
 	// Clear existing bundles
@@ -492,16 +458,6 @@ func (s *Service) computeAndStoreEdgeBundles(ctx context.Context, queries *db.Qu
 	// Store bundles with control points
 	bundleCount := 0
 	for key, weight := range bundleWeights {
-		// Calculate average strength
-		avgStrength := 0.0
-		if strengths, ok := bundleStrengths[key]; ok && len(strengths) > 0 {
-			sum := 0.0
-			for _, s := range strengths {
-				sum += s
-			}
-			avgStrength = sum / float64(len(strengths))
-		}
-		
 		// Get community centroids
 		srcCentroid, srcHasCentroid := communityCentroids[key.src]
 		tgtCentroid, tgtHasCentroid := communityCentroids[key.tgt]
@@ -540,12 +496,12 @@ func (s *Service) computeAndStoreEdgeBundles(ctx context.Context, queries *db.Qu
 			controlZ = sql.NullFloat64{Float64: midZ + perpZ, Valid: true}
 		}
 		
-		// Store the bundle
+		// Store the bundle without avg_strength (set to NULL until we have real strength data)
 		if err := queries.CreateEdgeBundle(ctx, db.CreateEdgeBundleParams{
 			SourceCommunityID: key.src,
 			TargetCommunityID: key.tgt,
 			Weight:            int32(weight),
-			AvgStrength:       sql.NullFloat64{Float64: avgStrength, Valid: true},
+			AvgStrength:       sql.NullFloat64{Valid: false}, // NULL - no real strength data yet
 			ControlX:          controlX,
 			ControlY:          controlY,
 			ControlZ:          controlZ,

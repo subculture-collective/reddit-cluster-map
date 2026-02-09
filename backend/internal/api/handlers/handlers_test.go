@@ -558,114 +558,114 @@ func TestGraphHandler_CacheKeyWithTypes(t *testing.T) {
 
 // Test for GetEdgeBundles endpoint
 func TestGetEdgeBundles(t *testing.T) {
-// Clear cache before test
-graphCacheMu.Lock()
-graphCache = make(map[string]graphCacheEntry)
-graphCacheMu.Unlock()
+	// Clear cache before test
+	graphCacheMu.Lock()
+	graphCache = make(map[string]graphCacheEntry)
+	graphCacheMu.Unlock()
 
-h := &Handler{
-queries: &edgeBundleTestQueries{},
-}
+	h := &Handler{
+		queries: &edgeBundleTestQueries{},
+	}
 
-t.Run("returns_bundles", func(t *testing.T) {
-rr := httptest.NewRecorder()
-req := httptest.NewRequest(http.MethodGet, "/api/graph/bundles?min_weight=1", nil)
-h.GetEdgeBundles(rr, req)
+	t.Run("returns_bundles", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/graph/bundles?min_weight=1", nil)
+		h.GetEdgeBundles(rr, req)
 
-if rr.Code != http.StatusOK {
-t.Fatalf("expected 200, got %d", rr.Code)
-}
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
 
-var out EdgeBundlesResponse
-if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
-t.Fatalf("decode: %v", err)
-}
+		var out EdgeBundlesResponse
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
 
-if len(out.Bundles) != 2 {
-t.Fatalf("expected 2 bundles, got %d", len(out.Bundles))
-}
+		if len(out.Bundles) != 2 {
+			t.Fatalf("expected 2 bundles, got %d", len(out.Bundles))
+		}
 
-// Check first bundle
-if out.Bundles[0].SourceCommunity != 1 || out.Bundles[0].TargetCommunity != 2 {
-t.Fatalf("unexpected bundle: %+v", out.Bundles[0])
-}
-if out.Bundles[0].Weight != 10 {
-t.Fatalf("expected weight 10, got %d", out.Bundles[0].Weight)
-}
-if out.Bundles[0].ControlPoint == nil {
-t.Fatalf("expected control point to be present")
-}
-})
+		// Check first bundle
+		if out.Bundles[0].SourceCommunity != 1 || out.Bundles[0].TargetCommunity != 2 {
+			t.Fatalf("unexpected bundle: %+v", out.Bundles[0])
+		}
+		if out.Bundles[0].Weight != 10 {
+			t.Fatalf("expected weight 10, got %d", out.Bundles[0].Weight)
+		}
+		if out.Bundles[0].ControlPoint == nil {
+			t.Fatalf("expected control point to be present")
+		}
+	})
 
-t.Run("respects_min_weight", func(t *testing.T) {
-rr := httptest.NewRecorder()
-req := httptest.NewRequest(http.MethodGet, "/api/graph/bundles?min_weight=6", nil)
-h.GetEdgeBundles(rr, req)
+	t.Run("respects_min_weight", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/graph/bundles?min_weight=6", nil)
+		h.GetEdgeBundles(rr, req)
 
-if rr.Code != http.StatusOK {
-t.Fatalf("expected 200, got %d", rr.Code)
-}
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
 
-var out EdgeBundlesResponse
-if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
-t.Fatalf("decode: %v", err)
-}
+		var out EdgeBundlesResponse
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
 
-// Should only return bundles with weight >= 6 (i.e., the first one with weight 10)
-if len(out.Bundles) != 1 {
-t.Fatalf("expected 1 bundle, got %d", len(out.Bundles))
-}
-})
+		// Should only return bundles with weight >= 6 (i.e., the first one with weight 10)
+		if len(out.Bundles) != 1 {
+			t.Fatalf("expected 1 bundle, got %d", len(out.Bundles))
+		}
+	})
 }
 
 // edgeBundleTestQueries is a mock that implements GraphDataReader for edge bundle tests
 type edgeBundleTestQueries struct{}
 
 func (e *edgeBundleTestQueries) GetGraphData(ctx context.Context) ([]json.RawMessage, error) {
-return nil, nil
+	return nil, nil
 }
 
 func (e *edgeBundleTestQueries) GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error) {
-return nil, nil
+	return nil, nil
 }
 
 func (e *edgeBundleTestQueries) GetPrecalculatedGraphDataCappedFiltered(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedFilteredParams) ([]db.GetPrecalculatedGraphDataCappedFilteredRow, error) {
-return nil, nil
+	return nil, nil
 }
 
 func (e *edgeBundleTestQueries) GetPrecalculatedGraphDataNoPos(ctx context.Context) ([]db.GetPrecalculatedGraphDataNoPosRow, error) {
-return nil, nil
+	return nil, nil
 }
 
 func (e *edgeBundleTestQueries) GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error) {
-// Return mock bundles based on weight filter
-allBundles := []db.GetEdgeBundlesRow{
-{
-SourceCommunityID: 1,
-TargetCommunityID: 2,
-Weight:            10,
-AvgStrength:       sql.NullFloat64{Float64: 1.0, Valid: true},
-ControlX:          sql.NullFloat64{Float64: 5.0, Valid: true},
-ControlY:          sql.NullFloat64{Float64: 10.0, Valid: true},
-ControlZ:          sql.NullFloat64{Float64: 15.0, Valid: true},
-},
-{
-SourceCommunityID: 2,
-TargetCommunityID: 3,
-Weight:            5,
-AvgStrength:       sql.NullFloat64{Float64: 0.8, Valid: true},
-ControlX:          sql.NullFloat64{Float64: 7.5, Valid: true},
-ControlY:          sql.NullFloat64{Float64: 12.5, Valid: true},
-ControlZ:          sql.NullFloat64{Float64: 17.5, Valid: true},
-},
-}
+	// Return mock bundles based on weight filter
+	allBundles := []db.GetEdgeBundlesRow{
+		{
+			SourceCommunityID: 1,
+			TargetCommunityID: 2,
+			Weight:            10,
+			AvgStrength:       sql.NullFloat64{Float64: 1.0, Valid: true},
+			ControlX:          sql.NullFloat64{Float64: 5.0, Valid: true},
+			ControlY:          sql.NullFloat64{Float64: 10.0, Valid: true},
+			ControlZ:          sql.NullFloat64{Float64: 15.0, Valid: true},
+		},
+		{
+			SourceCommunityID: 2,
+			TargetCommunityID: 3,
+			Weight:            5,
+			AvgStrength:       sql.NullFloat64{Float64: 0.8, Valid: true},
+			ControlX:          sql.NullFloat64{Float64: 7.5, Valid: true},
+			ControlY:          sql.NullFloat64{Float64: 12.5, Valid: true},
+			ControlZ:          sql.NullFloat64{Float64: 17.5, Valid: true},
+		},
+	}
 
-// Filter by weight
-var result []db.GetEdgeBundlesRow
-for _, b := range allBundles {
-if b.Weight >= weight {
-result = append(result, b)
-}
-}
-return result, nil
+	// Filter by weight
+	var result []db.GetEdgeBundlesRow
+	for _, b := range allBundles {
+		if b.Weight >= weight {
+			result = append(result, b)
+		}
+	}
+	return result, nil
 }

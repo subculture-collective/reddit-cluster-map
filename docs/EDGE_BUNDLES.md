@@ -27,12 +27,12 @@ CREATE TABLE graph_bundles (
 
 ## Computation
 
-Edge bundles are computed automatically during graph precalculation:
+Edge bundles are computed automatically during graph precalculation, using the same capped graph subset that community detection runs on (e.g., the top-N highest-weight nodes):
 
-1. **After Community Detection**: Once communities are detected and stored, bundles are computed
-2. **Aggregation**: All links between two communities are aggregated into a single bundle
-3. **Weight Calculation**: Bundle weight = count of constituent links
-4. **Strength Calculation**: Average strength across all constituent links
+1. **After Community Detection**: Once communities are detected and stored for this capped subset of the graph, bundles are computed
+2. **Aggregation**: All links between two communities within this capped subset are aggregated into a single bundle
+3. **Weight Calculation**: Bundle weight = count of constituent links in the subset
+4. **Strength Calculation**: Average strength across all constituent links in the subset
 5. **Control Points**: Calculated as midpoint between community centroids with perpendicular offset for visual appeal
 
 ### Control Point Algorithm
