@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"sort"
 
@@ -318,12 +319,13 @@ func calculateModularity(nodeToCommunity map[string]int, adjacency map[string]ma
 
 // storeCommunities stores the detected communities in the database
 // Accepts nodes and links fetched during detection to avoid redundant database queries
-func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, result *CommunityResult, nodes []db.ListGraphNodesByWeightRow, links []db.ListGraphLinksAmongRow) error {
+// Returns the mapping from node ID to database community ID for use in bundle computation
+func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, result *CommunityResult, nodes []db.ListGraphNodesByWeightRow, links []db.ListGraphLinksAmongRow) (map[string]int32, error) {
 	log.Printf("💾 Storing community detection results")
 
 	// Clear existing communities
 	if err := queries.ClearCommunityTables(ctx); err != nil {
-		return fmt.Errorf("clear community tables: %w", err)
+		return nil, fmt.Errorf("clear community tables: %w", err)
 	}
 
 	// Insert communities and build mapping from member IDs to database community IDs
@@ -384,6 +386,133 @@ func (s *Service) storeCommunities(ctx context.Context, queries *db.Queries, res
 	}
 
 	log.Printf("✅ Stored %d communities with inter-community links", len(result.Communities))
+	return nodeToDB, nil
+}
+
+// computeAndStoreEdgeBundles computes edge bundle metadata for inter-community connections
+// Bundles aggregate links between communities with control points for curved rendering
+func (s *Service) computeAndStoreEdgeBundles(ctx context.Context, queries *db.Queries, nodeToCommunity map[string]int32, nodes []db.ListGraphNodesByWeightRow, links []db.ListGraphLinksAmongRow) error {
+	log.Printf("🔄 Computing edge bundle metadata")
+
+	// Calculate community centroids from node positions
+	communityCentroids := make(map[int32][3]float64)
+	communityNodeCounts := make(map[int32]int)
+	
+	nodePositions := make(map[string][3]float64)
+	for _, n := range nodes {
+		if n.PosX.Valid && n.PosY.Valid && n.PosZ.Valid {
+			nodePositions[n.ID] = [3]float64{n.PosX.Float64, n.PosY.Float64, n.PosZ.Float64}
+		}
+	}
+	
+	// Accumulate positions per community
+	for nodeID, commID := range nodeToCommunity {
+		if pos, hasPos := nodePositions[nodeID]; hasPos {
+			centroid := communityCentroids[commID]
+			centroid[0] += pos[0]
+			centroid[1] += pos[1]
+			centroid[2] += pos[2]
+			communityCentroids[commID] = centroid
+			communityNodeCounts[commID]++
+		}
+	}
+	
+	// Average to get centroids
+	for commID, count := range communityNodeCounts {
+		if count > 0 {
+			centroid := communityCentroids[commID]
+			communityCentroids[commID] = [3]float64{
+				centroid[0] / float64(count),
+				centroid[1] / float64(count),
+				centroid[2] / float64(count),
+			}
+		}
+	}
+	
+	// Aggregate inter-community links
+	type bundleKey struct{ src, tgt int32 }
+	bundleWeights := make(map[bundleKey]int)
+	
+	for _, link := range links {
+		srcComm, srcOK := nodeToCommunity[link.Source]
+		tgtComm, tgtOK := nodeToCommunity[link.Target]
+		
+		if !srcOK || !tgtOK || srcComm == tgtComm {
+			continue // Skip intra-community links
+		}
+		
+		// Create ordered pair
+		key := bundleKey{src: srcComm, tgt: tgtComm}
+		if srcComm > tgtComm {
+			key = bundleKey{src: tgtComm, tgt: srcComm}
+		}
+		
+		bundleWeights[key]++
+	}
+	
+	// Clear existing bundles
+	if err := queries.ClearEdgeBundles(ctx); err != nil {
+		return fmt.Errorf("clear edge bundles: %w", err)
+	}
+	
+	// Store bundles with control points
+	bundleCount := 0
+	for key, weight := range bundleWeights {
+		// Get community centroids
+		srcCentroid, srcHasCentroid := communityCentroids[key.src]
+		tgtCentroid, tgtHasCentroid := communityCentroids[key.tgt]
+		
+		var controlX, controlY, controlZ sql.NullFloat64
+		
+		if srcHasCentroid && tgtHasCentroid {
+			// Calculate midpoint
+			midX := (srcCentroid[0] + tgtCentroid[0]) / 2.0
+			midY := (srcCentroid[1] + tgtCentroid[1]) / 2.0
+			midZ := (srcCentroid[2] + tgtCentroid[2]) / 2.0
+			
+			// Calculate perpendicular offset for visual appeal
+			// Use a vector perpendicular to the line between communities
+			dx := tgtCentroid[0] - srcCentroid[0]
+			dy := tgtCentroid[1] - srcCentroid[1]
+			dz := tgtCentroid[2] - srcCentroid[2]
+			
+			// Get perpendicular vector (rotate 90 degrees in XY plane)
+			perpX := -dy
+			perpY := dx
+			perpZ := 0.0
+			
+			// Normalize and scale
+			perpLen := math.Sqrt(perpX*perpX + perpY*perpY + perpZ*perpZ)
+			if perpLen > 0 {
+				scale := math.Sqrt(dx*dx + dy*dy + dz*dz) * 0.2 // 20% of distance as offset
+				perpX = (perpX / perpLen) * scale
+				perpY = (perpY / perpLen) * scale
+				perpZ = (perpZ / perpLen) * scale
+			}
+			
+			// Apply offset to midpoint
+			controlX = sql.NullFloat64{Float64: midX + perpX, Valid: true}
+			controlY = sql.NullFloat64{Float64: midY + perpY, Valid: true}
+			controlZ = sql.NullFloat64{Float64: midZ + perpZ, Valid: true}
+		}
+		
+		// Store the bundle without avg_strength (set to NULL until we have real strength data)
+		if err := queries.CreateEdgeBundle(ctx, db.CreateEdgeBundleParams{
+			SourceCommunityID: key.src,
+			TargetCommunityID: key.tgt,
+			Weight:            int32(weight),
+			AvgStrength:       sql.NullFloat64{Valid: false}, // NULL - no real strength data yet
+			ControlX:          controlX,
+			ControlY:          controlY,
+			ControlZ:          controlZ,
+		}); err != nil {
+			log.Printf("⚠️ failed to create bundle %d->%d: %v", key.src, key.tgt, err)
+		} else {
+			bundleCount++
+		}
+	}
+	
+	log.Printf("✅ Stored %d edge bundles", bundleCount)
 	return nil
 }
 
