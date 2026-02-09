@@ -94,6 +94,11 @@ function App() {
     }
   );
   
+  const [sizeAttenuation, setSizeAttenuation] = useState<boolean>(() => {
+    if (urlState.sizeAttenuation !== undefined) return urlState.sizeAttenuation;
+    return true; // default: enabled for better depth perception
+  });
+  
   const [camera3dRef, setCamera3dRef] = useState<{ x: number; y: number; z: number } | undefined>(urlState.camera3d);
   const [camera2dRef, setCamera2dRef] = useState<{ x: number; y: number; zoom: number } | undefined>(urlState.camera2d);
 
@@ -137,6 +142,7 @@ function App() {
         camera2d: camera2dRef,
         useCommunityColors,
         usePrecomputedLayout,
+        sizeAttenuation,
       });
     }, 500);
 
@@ -145,7 +151,7 @@ function App() {
         clearTimeout(urlWriteTimeoutRef.current);
       }
     };
-  }, [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout]);
+  }, [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout, sizeAttenuation]);
 
   // Callback to get current state for sharing
   const getShareState = useCallback((): AppState => ({
@@ -157,7 +163,8 @@ function App() {
     camera2d: camera2dRef,
     useCommunityColors,
     usePrecomputedLayout,
-  }), [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout]);
+    sizeAttenuation,
+  }), [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout, sizeAttenuation]);
 
   return (
     <div className="w-full h-screen">
@@ -224,6 +231,10 @@ function App() {
             onTogglePrecomputedLayout={(enabled) =>
               setUsePrecomputedLayout(enabled)
             }
+            sizeAttenuation={sizeAttenuation}
+            onToggleSizeAttenuation={(enabled) =>
+              setSizeAttenuation(enabled)
+            }
           />
           <ShareButton getState={getShareState} />
           {viewMode === "3d" ? (
@@ -257,6 +268,7 @@ function App() {
                 usePrecomputedLayout={usePrecomputedLayout}
                 initialCamera={camera3dRef}
                 onCameraChange={setCamera3dRef}
+                sizeAttenuation={sizeAttenuation}
               />
             </ErrorBoundary>
           ) : (

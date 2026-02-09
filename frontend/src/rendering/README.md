@@ -33,6 +33,7 @@ Core rendering class that manages THREE.InstancedMesh instances for each node ty
 - Per-instance colors via `instanceColor` attribute
 - Per-instance sizes via scale in instance matrix
 - Raycasting support for interactions
+- **Camera-distance-based size scaling** with custom shaders
 
 **API:**
 
@@ -40,13 +41,23 @@ Core rendering class that manages THREE.InstancedMesh instances for each node ty
 const renderer = new InstancedNodeRenderer(scene, {
     maxNodes: 100000,
     nodeRelSize: 4,
+    sizeAttenuation: true,  // Enable distance-based scaling
 });
+
+// Set camera reference for distance calculations
+renderer.setCamera(camera);
 
 // Set initial data
 renderer.setNodeData(nodes);
 
 // Update positions (from layout engine)
 renderer.updatePositions(positionsMap);
+
+// Update camera position for shader (call each frame)
+renderer.updateCameraPosition();
+
+// Toggle size attenuation
+renderer.setSizeAttenuation(false);  // Disable distance scaling
 
 // Update colors (for community detection)
 renderer.updateColors(colorsMap);
@@ -57,6 +68,17 @@ const nodeId = renderer.raycast(raycaster);
 // Get stats
 const stats = renderer.getStats(); // { totalNodes, drawCalls, types }
 ```
+
+**Size Attenuation:**
+
+When `sizeAttenuation` is enabled, nodes scale based on camera distance using a custom shader:
+
+- **Logarithmic attenuation**: Smooth size changes with distance
+- **Configurable bounds**: Min/max scale factors prevent extreme sizes
+- **Depth perception**: Helps visualize 3D structure at all zoom levels
+- **Performance**: Shader-based scaling with minimal CPU overhead
+
+The implementation uses a custom `ShaderMaterial` when enabled, or standard `MeshLambertMaterial` when disabled.
 
 #### 2. `LinkRenderer.ts`
 
@@ -217,6 +239,46 @@ This allows for gradual migration and A/B testing.
 
 ## Performance Characteristics
 
+### Camera-Distance-Based Node Scaling
+
+The renderer supports optional camera-distance-based node scaling to maintain visual clarity at all zoom levels:
+
+**Implementation:**
+- Custom `ShaderMaterial` with vertex shader distance calculation
+- Logarithmic attenuation: `scale = 1 + k * log(1 + distance/100)`
+- Configurable attenuation factor (default: 0.3)
+- Min/max scale bounds (0.3 to 2.0) prevent extreme sizes
+- Per-frame camera position updates via uniforms
+
+**Performance:**
+- Negligible overhead (shader-based calculation)
+- Automatic fallback to standard material when disabled
+- No impact on draw call count
+
+**Usage:**
+```typescript
+// Enable at initialization
+const renderer = new InstancedNodeRenderer(scene, {
+    sizeAttenuation: true,
+});
+
+// Set camera reference
+renderer.setCamera(camera);
+
+// Update each frame
+requestAnimationFrame(() => {
+    renderer.updateCameraPosition();
+});
+
+// Toggle at runtime
+renderer.setSizeAttenuation(false);
+```
+
+**User Control:**
+- Toggle available in Controls panel: "Distance-based node sizing"
+- Setting persists in URL state (`?sizeAttenuation=1`)
+- Enabled by default for better depth perception
+
 ### Rendering
 
 - **100k nodes**: 4 draw calls (one per type)
@@ -250,13 +312,14 @@ npm run test:run -- src/rendering/LinkRenderer.test.ts
 
 #### InstancedNodeRenderer Tests
 
-24 tests covering:
+29 tests covering:
 
 - Node data management
 - Position updates
 - Color updates
 - Size updates
 - Raycasting
+- **Camera-distance-based size attenuation**
 - Performance benchmarks
 
 #### LinkRenderer Tests
