@@ -64,13 +64,13 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 		// Query for nodes in the range x: [-1, 16], y: [-1, 16], z: [-1, 1]
 		// This should return nodes 1-4 but not node 5 or node_outside
 		nodes, err := q.GetNodesInBoundingBox(ctx, db.GetNodesInBoundingBoxParams{
-			Column1: -1.0,  // x_min
-			Column2: 16.0,  // x_max
-			Column3: -1.0,  // y_min
-			Column4: 16.0,  // y_max
-			Column5: -1.0,  // z_min
-			Column6: 1.0,   // z_max
-			Column7: 100,   // limit
+			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true},  // x_min
+			PosX_2: sql.NullFloat64{Float64: 16.0, Valid: true},  // x_max
+			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true},  // y_min
+			PosY_2: sql.NullFloat64{Float64: 16.0, Valid: true},  // y_max
+			PosZ:   sql.NullFloat64{Float64: -1.0, Valid: true},  // z_min
+			PosZ_2: sql.NullFloat64{Float64: 1.0, Valid: true},   // z_max
+			Limit:  100,
 		})
 		if err != nil {
 			t.Fatalf("GetNodesInBoundingBox failed: %v", err)
@@ -83,18 +83,18 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 
 		// Verify nodes are within bounds
 		for _, node := range nodes {
-			if node.PosX == nil || node.PosY == nil || node.PosZ == nil {
-				t.Errorf("node %s has nil position", node.ID)
+			if !node.PosX.Valid || !node.PosY.Valid || !node.PosZ.Valid {
+				t.Errorf("node %s has invalid position", node.ID)
 				continue
 			}
-			if *node.PosX < -1.0 || *node.PosX > 16.0 {
-				t.Errorf("node %s x=%f out of bounds", node.ID, *node.PosX)
+			if node.PosX.Float64 < -1.0 || node.PosX.Float64 > 16.0 {
+				t.Errorf("node %s x=%f out of bounds", node.ID, node.PosX.Float64)
 			}
-			if *node.PosY < -1.0 || *node.PosY > 16.0 {
-				t.Errorf("node %s y=%f out of bounds", node.ID, *node.PosY)
+			if node.PosY.Float64 < -1.0 || node.PosY.Float64 > 16.0 {
+				t.Errorf("node %s y=%f out of bounds", node.ID, node.PosY.Float64)
 			}
-			if *node.PosZ < -1.0 || *node.PosZ > 1.0 {
-				t.Errorf("node %s z=%f out of bounds", node.ID, *node.PosZ)
+			if node.PosZ.Float64 < -1.0 || node.PosZ.Float64 > 1.0 {
+				t.Errorf("node %s z=%f out of bounds", node.ID, node.PosZ.Float64)
 			}
 		}
 	})
@@ -103,11 +103,11 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 		// Query for nodes in the 2D range x: [-1, 11], y: [-1, 11]
 		// This should return nodes 1-3
 		nodes, err := q.GetNodesInBoundingBox2D(ctx, db.GetNodesInBoundingBox2DParams{
-			Column1: -1.0,  // x_min
-			Column2: 11.0,  // x_max
-			Column3: -1.0,  // y_min
-			Column4: 11.0,  // y_max
-			Column5: 100,   // limit
+			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true},  // x_min
+			PosX_2: sql.NullFloat64{Float64: 11.0, Valid: true},  // x_max
+			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true},  // y_min
+			PosY_2: sql.NullFloat64{Float64: 11.0, Valid: true},  // y_max
+			Limit:  100,
 		})
 		if err != nil {
 			t.Fatalf("GetNodesInBoundingBox2D failed: %v", err)
@@ -122,12 +122,12 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 	t.Run("CountNodesInBoundingBox", func(t *testing.T) {
 		// Count nodes in the range x: [-1, 16], y: [-1, 16], z: [-1, 1]
 		count, err := q.CountNodesInBoundingBox(ctx, db.CountNodesInBoundingBoxParams{
-			Column1: -1.0,  // x_min
-			Column2: 16.0,  // x_max
-			Column3: -1.0,  // y_min
-			Column4: 16.0,  // y_max
-			Column5: -1.0,  // z_min
-			Column6: 1.0,   // z_max
+			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true},  // x_min
+			PosX_2: sql.NullFloat64{Float64: 16.0, Valid: true},  // x_max
+			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true},  // y_min
+			PosY_2: sql.NullFloat64{Float64: 16.0, Valid: true},  // y_max
+			PosZ:   sql.NullFloat64{Float64: -1.0, Valid: true},  // z_min
+			PosZ_2: sql.NullFloat64{Float64: 1.0, Valid: true},   // z_max
 		})
 		if err != nil {
 			t.Fatalf("CountNodesInBoundingBox failed: %v", err)
@@ -155,13 +155,13 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 
 		// Query for links where both nodes are in the bounding box
 		links, err := q.GetLinksForNodesInBoundingBox(ctx, db.GetLinksForNodesInBoundingBoxParams{
-			Column1: -1.0,  // x_min
-			Column2: 11.0,  // x_max
-			Column3: -1.0,  // y_min
-			Column4: 11.0,  // y_max
-			Column5: -1.0,  // z_min
-			Column6: 1.0,   // z_max
-			Column7: 100,   // limit
+			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true},  // x_min
+			PosX_2: sql.NullFloat64{Float64: 11.0, Valid: true},  // x_max
+			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true},  // y_min
+			PosY_2: sql.NullFloat64{Float64: 11.0, Valid: true},  // y_max
+			PosZ:   sql.NullFloat64{Float64: -1.0, Valid: true},  // z_min
+			PosZ_2: sql.NullFloat64{Float64: 1.0, Valid: true},   // z_max
+			Limit:  100,
 		})
 		if err != nil {
 			t.Fatalf("GetLinksForNodesInBoundingBox failed: %v", err)
@@ -192,13 +192,13 @@ func TestIntegration_SpatialIndex_Performance(t *testing.T) {
 	// Query existing nodes with positions
 	// This test verifies the spatial index can be used on real data
 	nodes, err := q.GetNodesInBoundingBox(ctx, db.GetNodesInBoundingBoxParams{
-		Column1: -1000.0, // x_min
-		Column2: 1000.0,  // x_max
-		Column3: -1000.0, // y_min
-		Column4: 1000.0,  // y_max
-		Column5: -1000.0, // z_min
-		Column6: 1000.0,  // z_max
-		Column7: 1000,    // limit
+		PosX:   sql.NullFloat64{Float64: -1000.0, Valid: true}, // x_min
+		PosX_2: sql.NullFloat64{Float64: 1000.0, Valid: true},  // x_max
+		PosY:   sql.NullFloat64{Float64: -1000.0, Valid: true}, // y_min
+		PosY_2: sql.NullFloat64{Float64: 1000.0, Valid: true},  // y_max
+		PosZ:   sql.NullFloat64{Float64: -1000.0, Valid: true}, // z_min
+		PosZ_2: sql.NullFloat64{Float64: 1000.0, Valid: true},  // z_max
+		Limit:  1000,
 	})
 	if err != nil {
 		t.Fatalf("GetNodesInBoundingBox failed: %v", err)
@@ -208,7 +208,7 @@ func TestIntegration_SpatialIndex_Performance(t *testing.T) {
 
 	// Verify all returned nodes have positions
 	for _, node := range nodes {
-		if node.PosX == nil || node.PosY == nil || node.PosZ == nil {
+		if !node.PosX.Valid || !node.PosY.Valid || !node.PosZ.Valid {
 			t.Errorf("node %s missing position data", node.ID)
 		}
 	}
