@@ -16,10 +16,10 @@ import (
 // panic recovery that might write uncompressed error responses.
 type compressionResponseWriter struct {
 	http.ResponseWriter
-	writer          io.WriteCloser
-	encoding        string
-	wroteHeader     bool
-	headerSet       bool
+	writer      io.WriteCloser
+	encoding    string
+	wroteHeader bool
+	headerSet   bool
 }
 
 func (w *compressionResponseWriter) WriteHeader(status int) {
@@ -33,14 +33,14 @@ func (w *compressionResponseWriter) Write(b []byte) (int, error) {
 	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
 	}
-	
+
 	// Set Content-Encoding on first write (after WriteHeader is called)
 	if !w.headerSet {
 		w.headerSet = true
 		w.ResponseWriter.Header().Set("Content-Encoding", w.encoding)
 		w.ResponseWriter.Header().Del("Content-Length")
 	}
-	
+
 	return w.writer.Write(b)
 }
 
@@ -59,14 +59,14 @@ func parseAcceptEncoding(header string) string {
 	encodings := strings.Split(header, ",")
 	for _, enc := range encodings {
 		enc = strings.TrimSpace(enc)
-		
+
 		// Split on semicolon to separate encoding from q-value
 		parts := strings.Split(enc, ";")
 		encoding := strings.TrimSpace(parts[0])
-		
+
 		// Default quality is 1.0
 		quality := 1.0
-		
+
 		// Parse q-value if present
 		if len(parts) > 1 {
 			for _, param := range parts[1:] {
@@ -78,12 +78,12 @@ func parseAcceptEncoding(header string) string {
 				}
 			}
 		}
-		
+
 		// Skip if quality is 0 (explicitly disabled)
 		if quality <= 0 {
 			continue
 		}
-		
+
 		// Check if this is better than what we have
 		// Prefer brotli over gzip when quality is equal
 		if encoding == "br" && quality >= bestQuality {
@@ -118,7 +118,7 @@ func Gzip(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Set Vary header for proper caching behavior
 		w.Header().Add("Vary", "Accept-Encoding")
-		
+
 		// Parse Accept-Encoding header with q-value support
 		encoding := parseAcceptEncoding(r.Header.Get("Accept-Encoding"))
 

@@ -65,8 +65,8 @@ func main() {
 	defer dbConn.Close()
 
 	// Configure connection pool for precalculation (moderate connections needed)
-	dbConn.SetMaxOpenConns(15)              // Moderate pool for graph computation
-	dbConn.SetMaxIdleConns(5)               // Keep some idle connections
+	dbConn.SetMaxOpenConns(15)                  // Moderate pool for graph computation
+	dbConn.SetMaxIdleConns(5)                   // Keep some idle connections
 	dbConn.SetConnMaxLifetime(10 * time.Minute) // Longer lifetime for batch jobs
 	dbConn.SetConnMaxIdleTime(5 * time.Minute)  // Longer idle time for batch jobs
 
