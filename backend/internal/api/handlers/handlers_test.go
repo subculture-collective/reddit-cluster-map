@@ -116,6 +116,14 @@ func (f *fakeGraphQueries) GetLinksForNodesInBoundingBox(ctx context.Context, ar
 	return []db.GetLinksForNodesInBoundingBoxRow{}, nil
 }
 
+func (f *fakeGraphQueries) GetPaginatedGraphNodes(ctx context.Context, arg db.GetPaginatedGraphNodesParams) ([]db.GetPaginatedGraphNodesRow, error) {
+	return []db.GetPaginatedGraphNodesRow{}, nil
+}
+
+func (f *fakeGraphQueries) GetLinksForPaginatedNodes(ctx context.Context, arg db.GetLinksForPaginatedNodesParams) ([]db.GetLinksForPaginatedNodesRow, error) {
+	return []db.GetLinksForPaginatedNodesRow{}, nil
+}
+
 func TestGraphHandler_UnwrapsSingleRow(t *testing.T) {
 	h := &Handler{queries: (&fakeGraphQueries{data: [][]byte{[]byte(`{"nodes":[{"id":"x"}],"links":[]}`)}}), cache: cache.NewMockCache()}
 	rr := httptest.NewRecorder()
@@ -177,6 +185,14 @@ func (f *fakeTimeoutQueries) GetNodesInBoundingBox(ctx context.Context, arg db.G
 }
 
 func (f *fakeTimeoutQueries) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetPaginatedGraphNodes(ctx context.Context, arg db.GetPaginatedGraphNodesParams) ([]db.GetPaginatedGraphNodesRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetLinksForPaginatedNodes(ctx context.Context, arg db.GetLinksForPaginatedNodesParams) ([]db.GetLinksForPaginatedNodesRow, error) {
 	return nil, context.DeadlineExceeded
 }
 
@@ -268,6 +284,14 @@ func (f *fakeGraphQueriesWithPositions) GetNodesInBoundingBox(ctx context.Contex
 
 func (f *fakeGraphQueriesWithPositions) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
 	return []db.GetLinksForNodesInBoundingBoxRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetPaginatedGraphNodes(ctx context.Context, arg db.GetPaginatedGraphNodesParams) ([]db.GetPaginatedGraphNodesRow, error) {
+	return []db.GetPaginatedGraphNodesRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetLinksForPaginatedNodes(ctx context.Context, arg db.GetLinksForPaginatedNodesParams) ([]db.GetLinksForPaginatedNodesRow, error) {
+	return []db.GetLinksForPaginatedNodesRow{}, nil
 }
 
 func TestGraphHandler_WithPositions(t *testing.T) {
@@ -709,4 +733,12 @@ func (e *edgeBundleTestQueries) GetNodesInBoundingBox(ctx context.Context, arg d
 
 func (e *edgeBundleTestQueries) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
 	return []db.GetLinksForNodesInBoundingBoxRow{}, nil
+}
+
+func (e *edgeBundleTestQueries) GetPaginatedGraphNodes(ctx context.Context, arg db.GetPaginatedGraphNodesParams) ([]db.GetPaginatedGraphNodesRow, error) {
+	return []db.GetPaginatedGraphNodesRow{}, nil
+}
+
+func (e *edgeBundleTestQueries) GetLinksForPaginatedNodes(ctx context.Context, arg db.GetLinksForPaginatedNodesParams) ([]db.GetLinksForPaginatedNodesRow, error) {
+	return []db.GetLinksForPaginatedNodesRow{}, nil
 }

@@ -98,6 +98,14 @@ func (m *MockGraphDataReader) GetLinksForNodesInBoundingBox(ctx context.Context,
 	return []db.GetLinksForNodesInBoundingBoxRow{}, nil
 }
 
+func (m *MockGraphDataReader) GetPaginatedGraphNodes(ctx context.Context, arg db.GetPaginatedGraphNodesParams) ([]db.GetPaginatedGraphNodesRow, error) {
+	return []db.GetPaginatedGraphNodesRow{}, nil
+}
+
+func (m *MockGraphDataReader) GetLinksForPaginatedNodes(ctx context.Context, arg db.GetLinksForPaginatedNodesParams) ([]db.GetLinksForPaginatedNodesRow, error) {
+	return []db.GetLinksForPaginatedNodesRow{}, nil
+}
+
 // BenchmarkGetGraphData benchmarks the main graph data endpoint
 func BenchmarkGetGraphData(b *testing.B) {
 	handler := NewHandler(&MockGraphDataReader{}, cache.NewMockCache())
