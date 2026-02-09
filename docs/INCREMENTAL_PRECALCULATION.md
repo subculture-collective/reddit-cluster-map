@@ -52,9 +52,9 @@ On each precalculation run, the system:
 
 In incremental mode:
 - Fetches only users/subreddits modified since `last_precalc_at`
-- Uses `INSERT ... ON CONFLICT DO UPDATE` instead of `TRUNCATE`
+- Uses `INSERT ... ON CONFLICT DO UPDATE` instead of `TRUNCATE` for nodes/links
 - Node IDs remain stable (e.g., `user_123`, `subreddit_456`)
-- Links are updated incrementally
+- **Note:** User activity (`user_subreddit_activity`) and subreddit relationships are currently recomputed from all users each run for correctness. Future optimization could make these incremental as well.
 - Community detection runs on the updated graph
 
 ## Usage

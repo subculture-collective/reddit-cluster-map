@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
@@ -498,8 +499,13 @@ func TestIntegration_IncrementalPrecalculation(t *testing.T) {
 	q := db.New(conn)
 	ctx := context.Background()
 
-	// Clean up existing data
-	if _, err := conn.ExecContext(ctx, "TRUNCATE TABLE graph_nodes, graph_links CASCADE"); err != nil {
+	// Clean up ALL data for test isolation
+	if _, err := conn.ExecContext(ctx, `
+		TRUNCATE TABLE graph_nodes, graph_links CASCADE;
+		TRUNCATE TABLE posts, comments CASCADE;
+		DELETE FROM users WHERE id = 999;
+		DELETE FROM subreddits WHERE id = 999;
+	`); err != nil {
 		t.Fatalf("failed to truncate tables: %v", err)
 	}
 
@@ -516,7 +522,7 @@ func TestIntegration_IncrementalPrecalculation(t *testing.T) {
 	if _, err := conn.ExecContext(ctx, `
 		INSERT INTO subreddits (id, name, subscribers, created_at, updated_at)
 		VALUES (999, 'test_sub', 100, NOW(), NOW())
-		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()
 	`); err != nil {
 		t.Fatalf("failed to create test subreddit: %v", err)
 	}
@@ -524,7 +530,7 @@ func TestIntegration_IncrementalPrecalculation(t *testing.T) {
 	if _, err := conn.ExecContext(ctx, `
 		INSERT INTO users (id, username, created_at, updated_at)
 		VALUES (999, 'test_user', NOW(), NOW())
-		ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username
+		ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username, updated_at = NOW()
 	`); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
@@ -545,7 +551,8 @@ func TestIntegration_IncrementalPrecalculation(t *testing.T) {
 	if !state.LastPrecalcAt.Valid {
 		t.Fatalf("expected last_precalc_at to be set after first run")
 	}
-	t.Logf("First precalc completed at: %v", state.LastPrecalcAt.Time)
+	firstPrecalcTime := state.LastPrecalcAt.Time
+	t.Logf("First precalc completed at: %v", firstPrecalcTime)
 
 	// Count nodes after first run
 	var nodeCount int64
@@ -553,23 +560,47 @@ func TestIntegration_IncrementalPrecalculation(t *testing.T) {
 		t.Fatalf("failed to count nodes: %v", err)
 	}
 	t.Logf("Nodes after first run: %d", nodeCount)
+	if nodeCount == 0 {
+		t.Fatal("expected at least some nodes after first run")
+	}
 
-	// Wait a bit to ensure timestamp difference
-	// (In real scenario, there would be time between runs)
+	// Wait a moment to ensure timestamp difference
+	time.Sleep(100 * time.Millisecond)
 	
-	// Second run: incremental precalculation (should detect no changes)
+	// Second run: incremental precalculation (should detect NO changes)
 	t.Log("Running second incremental precalculation (no changes)...")
 	if err := svc.PrecalculateGraphDataWithMode(ctx, false); err != nil {
 		t.Fatalf("second precalc failed: %v", err)
 	}
 
-	// Verify incremental mode was used by checking counts
-	counts, err := q.CountChangedEntities(ctx, state.LastPrecalcAt)
+	// Verify incremental mode was used by checking changed entities = 0
+	state2, err := q.GetPrecalcState(ctx)
+	if err != nil {
+		t.Fatalf("failed to get precalc state: %v", err)
+	}
+	
+	counts, err := q.CountChangedEntities(ctx, sql.NullTime{Time: firstPrecalcTime, Valid: true})
 	if err != nil {
 		t.Fatalf("failed to count changed entities: %v", err)
 	}
-	t.Logf("Changed entities: subs=%d, users=%d, posts=%d, comments=%d",
+	t.Logf("Changed entities since first run: subs=%d, users=%d, posts=%d, comments=%d",
 		counts.ChangedSubreddits, counts.ChangedUsers, counts.ChangedPosts, counts.ChangedComments)
+	
+	// Assert no changes detected (incremental mode should have been used)
+	totalChanges := counts.ChangedSubreddits + counts.ChangedUsers + counts.ChangedPosts + counts.ChangedComments
+	if totalChanges > 2 {  // Allow small margin for timing issues
+		t.Errorf("expected minimal changes, got %d total changes", totalChanges)
+	}
+	
+	// Node count should remain the same
+	var nodeCount2 int64
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_nodes").Scan(&nodeCount2); err != nil {
+		t.Fatalf("failed to count nodes: %v", err)
+	}
+	t.Logf("Nodes after second run: %d", nodeCount2)
+	if nodeCount2 != nodeCount {
+		t.Errorf("expected node count to remain %d, got %d", nodeCount, nodeCount2)
+	}
 
 	// Third run: force full rebuild
 	t.Log("Running third full precalculation (forced)...")
@@ -577,20 +608,26 @@ func TestIntegration_IncrementalPrecalculation(t *testing.T) {
 		t.Fatalf("third precalc failed: %v", err)
 	}
 
-	// Verify state was updated
-	state2, err := q.GetPrecalcState(ctx)
+	// Verify state was updated with full precalc timestamp
+	state3, err := q.GetPrecalcState(ctx)
 	if err != nil {
 		t.Fatalf("failed to get precalc state: %v", err)
 	}
-	if !state2.LastFullPrecalcAt.Valid {
+	if !state3.LastFullPrecalcAt.Valid {
 		t.Fatalf("expected last_full_precalc_at to be set after forced full rebuild")
 	}
-	t.Logf("Last full precalc at: %v", state2.LastFullPrecalcAt.Time)
+	if state3.LastFullPrecalcAt.Time.Before(state2.LastPrecalcAt.Time) {
+		t.Errorf("expected last_full_precalc_at to be more recent than previous last_precalc_at")
+	}
+	t.Logf("Last full precalc at: %v", state3.LastFullPrecalcAt.Time)
 	
-	// Node count should remain the same (same data)
-	var nodeCount2 int64
-	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_nodes").Scan(&nodeCount2); err != nil {
+	// Node count should still be the same (same data)
+	var nodeCount3 int64
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_nodes").Scan(&nodeCount3); err != nil {
 		t.Fatalf("failed to count nodes: %v", err)
 	}
-	t.Logf("Nodes after third run: %d", nodeCount2)
+	t.Logf("Nodes after third run: %d", nodeCount3)
+	if nodeCount3 != nodeCount {
+		t.Errorf("expected node count to remain %d, got %d", nodeCount, nodeCount3)
+	}
 }

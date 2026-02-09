@@ -256,8 +256,65 @@ CREATE TABLE IF NOT EXISTS precalc_state (
     CONSTRAINT single_row_constraint CHECK (id = 1)
 );
 
+-- Ensure singleton precalc_state row exists (id must be 1)
+INSERT INTO precalc_state (id) VALUES (1)
+ON CONFLICT (id) DO NOTHING;
+
 -- Indexes for change detection
 CREATE INDEX IF NOT EXISTS idx_subreddits_updated_at ON subreddits(updated_at);
 CREATE INDEX IF NOT EXISTS idx_users_updated_at ON users(updated_at);
 CREATE INDEX IF NOT EXISTS idx_posts_updated_at ON posts(updated_at);
 CREATE INDEX IF NOT EXISTS idx_comments_updated_at ON comments(updated_at);
+
+-- Triggers to auto-update updated_at columns
+CREATE OR REPLACE FUNCTION update_subreddits_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_subreddits_updated_at
+    BEFORE UPDATE ON subreddits
+    FOR EACH ROW
+    EXECUTE FUNCTION update_subreddits_updated_at();
+
+CREATE OR REPLACE FUNCTION update_users_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_users_updated_at
+    BEFORE UPDATE ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION update_users_updated_at();
+
+CREATE OR REPLACE FUNCTION update_posts_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_posts_updated_at
+    BEFORE UPDATE ON posts
+    FOR EACH ROW
+    EXECUTE FUNCTION update_posts_updated_at();
+
+CREATE OR REPLACE FUNCTION update_comments_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_comments_updated_at
+    BEFORE UPDATE ON comments
+    FOR EACH ROW
+    EXECUTE FUNCTION update_comments_updated_at();
