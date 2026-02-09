@@ -66,6 +66,13 @@ func TestETag(t *testing.T) {
 			if tt.expectStatus == http.StatusOK && cacheControl == "" {
 				t.Error("expected Cache-Control header to be set")
 			}
+			// Verify stale-while-revalidate is present
+			if tt.expectStatus == http.StatusOK {
+				expected := "public, max-age=60, stale-while-revalidate=300"
+				if cacheControl != expected {
+					t.Errorf("expected Cache-Control %q, got %q", expected, cacheControl)
+				}
+			}
 		})
 	}
 
