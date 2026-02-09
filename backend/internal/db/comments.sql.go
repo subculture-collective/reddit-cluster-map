@@ -11,7 +11,7 @@ import (
 )
 
 const getComment = `-- name: GetComment :one
-SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth FROM comments WHERE id = $1
+SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth, updated_at FROM comments WHERE id = $1
 `
 
 func (q *Queries) GetComment(ctx context.Context, id string) (Comment, error) {
@@ -28,12 +28,13 @@ func (q *Queries) GetComment(ctx context.Context, id string) (Comment, error) {
 		&i.Score,
 		&i.LastSeen,
 		&i.Depth,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getCommentsByPost = `-- name: GetCommentsByPost :many
-SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth FROM comments WHERE post_id = $1 ORDER BY created_at DESC
+SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth, updated_at FROM comments WHERE post_id = $1 ORDER BY created_at DESC
 `
 
 func (q *Queries) GetCommentsByPost(ctx context.Context, postID string) ([]Comment, error) {
@@ -56,6 +57,7 @@ func (q *Queries) GetCommentsByPost(ctx context.Context, postID string) ([]Comme
 			&i.Score,
 			&i.LastSeen,
 			&i.Depth,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -71,7 +73,7 @@ func (q *Queries) GetCommentsByPost(ctx context.Context, postID string) ([]Comme
 }
 
 const getCommentsByUser = `-- name: GetCommentsByUser :many
-SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth FROM comments WHERE author_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
+SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth, updated_at FROM comments WHERE author_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
 type GetCommentsByUserParams struct {
@@ -100,6 +102,7 @@ func (q *Queries) GetCommentsByUser(ctx context.Context, arg GetCommentsByUserPa
 			&i.Score,
 			&i.LastSeen,
 			&i.Depth,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -115,7 +118,7 @@ func (q *Queries) GetCommentsByUser(ctx context.Context, arg GetCommentsByUserPa
 }
 
 const listCommentsByPost = `-- name: ListCommentsByPost :many
-SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth FROM comments WHERE post_id = $1 ORDER BY created_at ASC
+SELECT id, post_id, author_id, subreddit_id, parent_id, body, created_at, score, last_seen, depth, updated_at FROM comments WHERE post_id = $1 ORDER BY created_at ASC
 `
 
 func (q *Queries) ListCommentsByPost(ctx context.Context, postID string) ([]Comment, error) {
@@ -138,6 +141,7 @@ func (q *Queries) ListCommentsByPost(ctx context.Context, postID string) ([]Comm
 			&i.Score,
 			&i.LastSeen,
 			&i.Depth,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -130,6 +130,34 @@ func (q *Queries) ClearUserSubredditActivity(ctx context.Context) error {
 	return err
 }
 
+const countChangedEntities = `-- name: CountChangedEntities :one
+SELECT 
+    (SELECT COUNT(*) FROM subreddits s WHERE s.updated_at > $1 OR s.created_at > $1) as changed_subreddits,
+    (SELECT COUNT(*) FROM users u WHERE u.updated_at > $1 OR u.created_at > $1) as changed_users,
+    (SELECT COUNT(*) FROM posts p WHERE p.updated_at > $1) as changed_posts,
+    (SELECT COUNT(*) FROM comments c WHERE c.updated_at > $1) as changed_comments
+`
+
+type CountChangedEntitiesRow struct {
+	ChangedSubreddits int64
+	ChangedUsers      int64
+	ChangedPosts      int64
+	ChangedComments   int64
+}
+
+// Count how many entities have changed since the given timestamp
+func (q *Queries) CountChangedEntities(ctx context.Context, updatedAt sql.NullTime) (CountChangedEntitiesRow, error) {
+	row := q.db.QueryRowContext(ctx, countChangedEntities, updatedAt)
+	var i CountChangedEntitiesRow
+	err := row.Scan(
+		&i.ChangedSubreddits,
+		&i.ChangedUsers,
+		&i.ChangedPosts,
+		&i.ChangedComments,
+	)
+	return i, err
+}
+
 const countNodesInBoundingBox = `-- name: CountNodesInBoundingBox :one
 SELECT COUNT(*)
 FROM graph_nodes
@@ -372,6 +400,101 @@ func (q *Queries) CreateUserSubredditActivity(ctx context.Context, arg CreateUse
 	return i, err
 }
 
+const deleteOrphanedGraphLinks = `-- name: DeleteOrphanedGraphLinks :exec
+DELETE FROM graph_links
+WHERE source NOT IN (SELECT id FROM graph_nodes)
+   OR target NOT IN (SELECT id FROM graph_nodes)
+`
+
+// Delete graph links where source or target nodes no longer exist
+func (q *Queries) DeleteOrphanedGraphLinks(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteOrphanedGraphLinks)
+	return err
+}
+
+const deleteOrphanedGraphNodes = `-- name: DeleteOrphanedGraphNodes :exec
+DELETE FROM graph_nodes
+WHERE (type = 'user' AND id NOT IN (SELECT 'user_' || id::text FROM users))
+   OR (type = 'subreddit' AND id NOT IN (SELECT 'subreddit_' || id::text FROM subreddits))
+`
+
+// Delete graph nodes that no longer have corresponding source entities
+// This is used after incremental updates to clean up stale data
+func (q *Queries) DeleteOrphanedGraphNodes(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteOrphanedGraphNodes)
+	return err
+}
+
+const getAffectedSubredditIDs = `-- name: GetAffectedSubredditIDs :many
+WITH changed_subreddits AS (
+    SELECT DISTINCT subreddit_id FROM posts WHERE posts.updated_at > $1
+    UNION
+    SELECT DISTINCT subreddit_id FROM comments WHERE comments.updated_at > $1
+    UNION
+    SELECT id as subreddit_id FROM subreddits WHERE subreddits.updated_at > $1 OR subreddits.created_at > $1
+)
+SELECT subreddit_id FROM changed_subreddits
+ORDER BY subreddit_id
+`
+
+// Get subreddit IDs affected by changed posts/comments
+func (q *Queries) GetAffectedSubredditIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, getAffectedSubredditIDs, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int32
+	for rows.Next() {
+		var subreddit_id int32
+		if err := rows.Scan(&subreddit_id); err != nil {
+			return nil, err
+		}
+		items = append(items, subreddit_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAffectedUserIDs = `-- name: GetAffectedUserIDs :many
+WITH changed_authors AS (
+    SELECT DISTINCT author_id FROM posts WHERE posts.updated_at > $1
+    UNION
+    SELECT DISTINCT author_id FROM comments WHERE comments.updated_at > $1
+)
+SELECT author_id FROM changed_authors
+ORDER BY author_id
+`
+
+// Get user IDs affected by changed posts/comments
+func (q *Queries) GetAffectedUserIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, getAffectedUserIDs, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int32
+	for rows.Next() {
+		var author_id int32
+		if err := rows.Scan(&author_id); err != nil {
+			return nil, err
+		}
+		items = append(items, author_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAllComments = `-- name: GetAllComments :many
 SELECT id, body, score, post_id
 FROM comments
@@ -602,6 +725,159 @@ func (q *Queries) GetAllUsers(ctx context.Context) ([]GetAllUsersRow, error) {
 	var items []GetAllUsersRow
 	for rows.Next() {
 		var i GetAllUsersRow
+		if err := rows.Scan(&i.ID, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChangedCommentsSince = `-- name: GetChangedCommentsSince :many
+SELECT id, subreddit_id, author_id, post_id
+FROM comments
+WHERE updated_at > $1
+ORDER BY id
+`
+
+type GetChangedCommentsSinceRow struct {
+	ID          string
+	SubredditID int32
+	AuthorID    int32
+	PostID      string
+}
+
+// Get comments that have been created or updated since the given timestamp
+func (q *Queries) GetChangedCommentsSince(ctx context.Context, updatedAt sql.NullTime) ([]GetChangedCommentsSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChangedCommentsSince, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChangedCommentsSinceRow
+	for rows.Next() {
+		var i GetChangedCommentsSinceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SubredditID,
+			&i.AuthorID,
+			&i.PostID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChangedPostsSince = `-- name: GetChangedPostsSince :many
+SELECT id, subreddit_id, author_id
+FROM posts
+WHERE updated_at > $1
+ORDER BY id
+`
+
+type GetChangedPostsSinceRow struct {
+	ID          string
+	SubredditID int32
+	AuthorID    int32
+}
+
+// Get posts that have been created or updated since the given timestamp
+func (q *Queries) GetChangedPostsSince(ctx context.Context, updatedAt sql.NullTime) ([]GetChangedPostsSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChangedPostsSince, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChangedPostsSinceRow
+	for rows.Next() {
+		var i GetChangedPostsSinceRow
+		if err := rows.Scan(&i.ID, &i.SubredditID, &i.AuthorID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChangedSubredditsSince = `-- name: GetChangedSubredditsSince :many
+SELECT id, name, subscribers
+FROM subreddits
+WHERE updated_at > $1 OR created_at > $1
+ORDER BY id
+`
+
+type GetChangedSubredditsSinceRow struct {
+	ID          int32
+	Name        string
+	Subscribers sql.NullInt32
+}
+
+// Get subreddits that have been created or updated since the given timestamp
+func (q *Queries) GetChangedSubredditsSince(ctx context.Context, updatedAt sql.NullTime) ([]GetChangedSubredditsSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChangedSubredditsSince, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChangedSubredditsSinceRow
+	for rows.Next() {
+		var i GetChangedSubredditsSinceRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Subscribers); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChangedUsersSince = `-- name: GetChangedUsersSince :many
+SELECT id, username
+FROM users
+WHERE updated_at > $1 OR created_at > $1
+ORDER BY id
+`
+
+type GetChangedUsersSinceRow struct {
+	ID       int32
+	Username string
+}
+
+// Get users that have been created or updated since the given timestamp
+func (q *Queries) GetChangedUsersSince(ctx context.Context, updatedAt sql.NullTime) ([]GetChangedUsersSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChangedUsersSince, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChangedUsersSinceRow
+	for rows.Next() {
+		var i GetChangedUsersSinceRow
 		if err := rows.Scan(&i.ID, &i.Username); err != nil {
 			return nil, err
 		}
@@ -1368,6 +1644,31 @@ func (q *Queries) GetNodesInBoundingBox2D(ctx context.Context, arg GetNodesInBou
 	return items, nil
 }
 
+const getPrecalcState = `-- name: GetPrecalcState :one
+
+SELECT id, last_precalc_at, last_full_precalc_at, total_nodes, total_links, precalc_duration_ms, created_at, updated_at FROM precalc_state WHERE id = 1
+`
+
+// ============================================================
+// Incremental Precalculation Queries
+// ============================================================
+// Get the current precalculation state
+func (q *Queries) GetPrecalcState(ctx context.Context) (PrecalcState, error) {
+	row := q.db.QueryRowContext(ctx, getPrecalcState)
+	var i PrecalcState
+	err := row.Scan(
+		&i.ID,
+		&i.LastPrecalcAt,
+		&i.LastFullPrecalcAt,
+		&i.TotalNodes,
+		&i.TotalLinks,
+		&i.PrecalcDurationMs,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getPrecalculatedGraphDataCappedAll = `-- name: GetPrecalculatedGraphDataCappedAll :many
 WITH sel_nodes AS (
     SELECT gn.id, gn.name, gn.val, gn.type, gn.pos_x, gn.pos_y, gn.pos_z
@@ -1670,6 +1971,60 @@ func (q *Queries) GetSubredditOverlap(ctx context.Context, arg GetSubredditOverl
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const getUserActivitySince = `-- name: GetUserActivitySince :many
+SELECT DISTINCT
+    u.id,
+    u.username,
+    COALESCE(p.post_count, 0) + COALESCE(c.comment_count, 0) AS total_activity
+FROM users u
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS post_count
+    FROM posts
+    WHERE posts.updated_at > $1
+    GROUP BY author_id
+) p ON p.author_id = u.id
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS comment_count
+    FROM comments
+    WHERE comments.updated_at > $1
+    GROUP BY author_id
+) c ON c.author_id = u.id
+WHERE (p.post_count IS NOT NULL AND p.post_count > 0)
+   OR (c.comment_count IS NOT NULL AND c.comment_count > 0)
+ORDER BY total_activity DESC, u.id
+`
+
+type GetUserActivitySinceRow struct {
+	ID            int32
+	Username      string
+	TotalActivity int32
+}
+
+// Get user activity that has been updated since the given timestamp
+// Returns users who have posted or commented since the given time
+func (q *Queries) GetUserActivitySince(ctx context.Context, updatedAt sql.NullTime) ([]GetUserActivitySinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUserActivitySince, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserActivitySinceRow
+	for rows.Next() {
+		var i GetUserActivitySinceRow
+		if err := rows.Scan(&i.ID, &i.Username, &i.TotalActivity); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getUserSubredditActivityCount = `-- name: GetUserSubredditActivityCount :one
@@ -2018,6 +2373,38 @@ func (q *Queries) UpdateGraphNodePositions(ctx context.Context, arg UpdateGraphN
 		pq.Array(arg.Column2),
 		pq.Array(arg.Column3),
 		pq.Array(arg.Column4),
+	)
+	return err
+}
+
+const updatePrecalcState = `-- name: UpdatePrecalcState :exec
+UPDATE precalc_state
+SET 
+    last_precalc_at = $1,
+    last_full_precalc_at = COALESCE($2, last_full_precalc_at),
+    total_nodes = $3,
+    total_links = $4,
+    precalc_duration_ms = $5,
+    updated_at = now()
+WHERE id = 1
+`
+
+type UpdatePrecalcStateParams struct {
+	LastPrecalcAt     sql.NullTime
+	LastFullPrecalcAt sql.NullTime
+	TotalNodes        sql.NullInt32
+	TotalLinks        sql.NullInt32
+	PrecalcDurationMs sql.NullInt32
+}
+
+// Update the precalculation state after a run
+func (q *Queries) UpdatePrecalcState(ctx context.Context, arg UpdatePrecalcStateParams) error {
+	_, err := q.db.ExecContext(ctx, updatePrecalcState,
+		arg.LastPrecalcAt,
+		arg.LastFullPrecalcAt,
+		arg.TotalNodes,
+		arg.TotalLinks,
+		arg.PrecalcDurationMs,
 	)
 	return err
 }

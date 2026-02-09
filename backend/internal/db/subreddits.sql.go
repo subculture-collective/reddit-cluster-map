@@ -67,7 +67,7 @@ func (q *Queries) GetStaleSubreddits(ctx context.Context) ([]string, error) {
 }
 
 const getSubreddit = `-- name: GetSubreddit :one
-SELECT id, name, title, description, subscribers, created_at, last_seen FROM subreddits WHERE name = $1
+SELECT id, name, title, description, subscribers, created_at, last_seen, updated_at FROM subreddits WHERE name = $1
 `
 
 func (q *Queries) GetSubreddit(ctx context.Context, name string) (Subreddit, error) {
@@ -81,12 +81,13 @@ func (q *Queries) GetSubreddit(ctx context.Context, name string) (Subreddit, err
 		&i.Subscribers,
 		&i.CreatedAt,
 		&i.LastSeen,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getSubredditByID = `-- name: GetSubredditByID :one
-SELECT id, name, title, description, subscribers, created_at, last_seen FROM subreddits WHERE id = $1
+SELECT id, name, title, description, subscribers, created_at, last_seen, updated_at FROM subreddits WHERE id = $1
 `
 
 func (q *Queries) GetSubredditByID(ctx context.Context, id int32) (Subreddit, error) {
@@ -100,12 +101,13 @@ func (q *Queries) GetSubredditByID(ctx context.Context, id int32) (Subreddit, er
 		&i.Subscribers,
 		&i.CreatedAt,
 		&i.LastSeen,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const listSubreddits = `-- name: ListSubreddits :many
-SELECT id, name, title, description, subscribers, created_at, last_seen FROM subreddits ORDER BY last_seen DESC LIMIT $1 OFFSET $2
+SELECT id, name, title, description, subscribers, created_at, last_seen, updated_at FROM subreddits ORDER BY last_seen DESC LIMIT $1 OFFSET $2
 `
 
 type ListSubredditsParams struct {
@@ -130,6 +132,7 @@ func (q *Queries) ListSubreddits(ctx context.Context, arg ListSubredditsParams) 
 			&i.Subscribers,
 			&i.CreatedAt,
 			&i.LastSeen,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

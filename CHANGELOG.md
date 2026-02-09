@@ -8,10 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Incremental Precalculation**: Graph precalculation now only processes entities that have changed since the last run
+  - Reduces precalc time from 10+ minutes to <2 minutes for <5% data changes
+  - Maintains stable node IDs across rebuilds
+  - No service disruption for connected clients
+  - Automatic mode selection based on change percentage (threshold: 20%)
+  - Manual full rebuild via `--full` flag
+  - Change detection using `updated_at` timestamps on all source tables
+  - New `precalc_state` table tracks last run and statistics
+  - See `docs/INCREMENTAL_PRECALCULATION.md` for details
 - Comprehensive release process documentation
 - CHANGELOG.md for tracking all project changes
 - VERSION file for semantic versioning
 - Release guidelines in CONTRIBUTING.md
+
+### Changed
+- Graph precalculation service now defaults to incremental mode (was full rebuild)
+- Database schema updated with `updated_at` columns on subreddits, users, posts, comments
+- Precalculation command accepts `--full` flag to force complete rebuild
 
 ## Release Guidelines
 

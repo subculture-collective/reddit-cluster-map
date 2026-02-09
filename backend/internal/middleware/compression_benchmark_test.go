@@ -47,21 +47,21 @@ func TestCompressionRatio(t *testing.T) {
 	uncompressedSize := len(payload)
 
 	tests := []struct {
-		name            string
-		acceptEncoding  string
-		expectedEncoding string
+		name                string
+		acceptEncoding      string
+		expectedEncoding    string
 		minCompressionRatio float64 // Minimum acceptable ratio (compressed/uncompressed)
 	}{
 		{
-			name:            "gzip compression",
-			acceptEncoding:  "gzip",
-			expectedEncoding: "gzip",
+			name:                "gzip compression",
+			acceptEncoding:      "gzip",
+			expectedEncoding:    "gzip",
 			minCompressionRatio: 0.30, // Should achieve <30% of original size (>70% reduction)
 		},
 		{
-			name:            "brotli compression",
-			acceptEncoding:  "br",
-			expectedEncoding: "br",
+			name:                "brotli compression",
+			acceptEncoding:      "br",
+			expectedEncoding:    "br",
 			minCompressionRatio: 0.25, // Brotli typically achieves better compression
 		},
 	}

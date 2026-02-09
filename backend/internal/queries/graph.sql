@@ -664,3 +664,118 @@ WHERE pos_x IS NOT NULL
   AND pos_x BETWEEN $1 AND $2
   AND pos_y BETWEEN $3 AND $4
   AND pos_z BETWEEN $5 AND $6;
+
+-- ============================================================
+-- Incremental Precalculation Queries
+-- ============================================================
+
+-- name: GetPrecalcState :one
+-- Get the current precalculation state
+SELECT * FROM precalc_state WHERE id = 1;
+
+-- name: UpdatePrecalcState :exec
+-- Update the precalculation state after a run
+UPDATE precalc_state
+SET 
+    last_precalc_at = $1,
+    last_full_precalc_at = COALESCE($2, last_full_precalc_at),
+    total_nodes = $3,
+    total_links = $4,
+    precalc_duration_ms = $5,
+    updated_at = now()
+WHERE id = 1;
+
+-- name: GetChangedSubredditsSince :many
+-- Get subreddits that have been created or updated since the given timestamp
+SELECT id, name, subscribers
+FROM subreddits
+WHERE updated_at > $1 OR created_at > $1
+ORDER BY id;
+
+-- name: GetChangedUsersSince :many
+-- Get users that have been created or updated since the given timestamp
+SELECT id, username
+FROM users
+WHERE updated_at > $1 OR created_at > $1
+ORDER BY id;
+
+-- name: GetChangedPostsSince :many
+-- Get posts that have been created or updated since the given timestamp
+SELECT id, subreddit_id, author_id
+FROM posts
+WHERE updated_at > $1
+ORDER BY id;
+
+-- name: GetChangedCommentsSince :many
+-- Get comments that have been created or updated since the given timestamp
+SELECT id, subreddit_id, author_id, post_id
+FROM comments
+WHERE updated_at > $1
+ORDER BY id;
+
+-- name: GetAffectedUserIDs :many
+-- Get user IDs affected by changed posts/comments
+WITH changed_authors AS (
+    SELECT DISTINCT author_id FROM posts WHERE posts.updated_at > $1
+    UNION
+    SELECT DISTINCT author_id FROM comments WHERE comments.updated_at > $1
+)
+SELECT author_id FROM changed_authors
+ORDER BY author_id;
+
+-- name: GetAffectedSubredditIDs :many
+-- Get subreddit IDs affected by changed posts/comments
+WITH changed_subreddits AS (
+    SELECT DISTINCT subreddit_id FROM posts WHERE posts.updated_at > $1
+    UNION
+    SELECT DISTINCT subreddit_id FROM comments WHERE comments.updated_at > $1
+    UNION
+    SELECT id as subreddit_id FROM subreddits WHERE subreddits.updated_at > $1 OR subreddits.created_at > $1
+)
+SELECT subreddit_id FROM changed_subreddits
+ORDER BY subreddit_id;
+
+-- name: CountChangedEntities :one
+-- Count how many entities have changed since the given timestamp
+SELECT 
+    (SELECT COUNT(*) FROM subreddits s WHERE s.updated_at > $1 OR s.created_at > $1) as changed_subreddits,
+    (SELECT COUNT(*) FROM users u WHERE u.updated_at > $1 OR u.created_at > $1) as changed_users,
+    (SELECT COUNT(*) FROM posts p WHERE p.updated_at > $1) as changed_posts,
+    (SELECT COUNT(*) FROM comments c WHERE c.updated_at > $1) as changed_comments;
+
+-- name: GetUserActivitySince :many
+-- Get user activity that has been updated since the given timestamp
+-- Returns users who have posted or commented since the given time
+SELECT DISTINCT
+    u.id,
+    u.username,
+    COALESCE(p.post_count, 0) + COALESCE(c.comment_count, 0) AS total_activity
+FROM users u
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS post_count
+    FROM posts
+    WHERE posts.updated_at > $1
+    GROUP BY author_id
+) p ON p.author_id = u.id
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS comment_count
+    FROM comments
+    WHERE comments.updated_at > $1
+    GROUP BY author_id
+) c ON c.author_id = u.id
+WHERE (p.post_count IS NOT NULL AND p.post_count > 0)
+   OR (c.comment_count IS NOT NULL AND c.comment_count > 0)
+ORDER BY total_activity DESC, u.id;
+
+-- name: DeleteOrphanedGraphNodes :exec
+-- Delete graph nodes that no longer have corresponding source entities
+-- This is used after incremental updates to clean up stale data
+DELETE FROM graph_nodes
+WHERE (type = 'user' AND id NOT IN (SELECT 'user_' || id::text FROM users))
+   OR (type = 'subreddit' AND id NOT IN (SELECT 'subreddit_' || id::text FROM subreddits));
+
+-- name: DeleteOrphanedGraphLinks :exec
+-- Delete graph links where source or target nodes no longer exist
+DELETE FROM graph_links
+WHERE source NOT IN (SELECT id FROM graph_nodes)
+   OR target NOT IN (SELECT id FROM graph_nodes);

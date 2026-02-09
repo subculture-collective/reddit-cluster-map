@@ -64,9 +64,9 @@ type Config struct {
 	// Performance profiling
 	EnableProfiling bool // enable pprof endpoints for performance profiling
 	// Cache settings
-	CacheMaxSizeMB   int64         // maximum cache size in megabytes
-	CacheMaxEntries  int64         // maximum number of cache entries
-	CacheTTL         time.Duration // default time-to-live for cache entries
+	CacheMaxSizeMB  int64         // maximum cache size in megabytes
+	CacheMaxEntries int64         // maximum number of cache entries
+	CacheTTL        time.Duration // default time-to-live for cache entries
 }
 
 var cached *Config

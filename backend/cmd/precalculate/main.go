@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -20,12 +21,16 @@ import (
 )
 
 func main() {
+	// Parse command-line flags
+	fullRebuild := flag.Bool("full", false, "Force a full rebuild instead of incremental update")
+	flag.Parse()
+
 	// Load configuration
 	cfg := config.Load()
 
 	// Initialize structured logging
 	logger.Init(cfg.LogLevel)
-	logger.Info("Initializing graph precalculation", "version", cfg.SentryRelease, "log_level", cfg.LogLevel)
+	logger.Info("Initializing graph precalculation", "version", cfg.SentryRelease, "log_level", cfg.LogLevel, "full_rebuild", *fullRebuild)
 
 	// Initialize error reporting
 	if err := errorreporting.Init(cfg.SentryEnvironment); err != nil {
@@ -65,8 +70,8 @@ func main() {
 	defer dbConn.Close()
 
 	// Configure connection pool for precalculation (moderate connections needed)
-	dbConn.SetMaxOpenConns(15)              // Moderate pool for graph computation
-	dbConn.SetMaxIdleConns(5)               // Keep some idle connections
+	dbConn.SetMaxOpenConns(15)                  // Moderate pool for graph computation
+	dbConn.SetMaxIdleConns(5)                   // Keep some idle connections
 	dbConn.SetConnMaxLifetime(10 * time.Minute) // Longer lifetime for batch jobs
 	dbConn.SetConnMaxIdleTime(5 * time.Minute)  // Longer idle time for batch jobs
 
@@ -114,7 +119,7 @@ func main() {
 	}
 
 	// Always run once at start when enabled (may defer if not enough data yet)
-	runOnce(ctx, dbConn, queries, graphService)
+	runOnce(ctx, dbConn, queries, graphService, *fullRebuild)
 
 	// Run continuously on a configurable interval (default 1h)
 	interval := time.Hour
@@ -133,7 +138,8 @@ func main() {
 				logger.Info("Precalc disabled by admin flag; skipping this run")
 				continue
 			}
-			runOnce(ctx, dbConn, queries, graphService)
+			// Scheduled runs use incremental mode by default
+			runOnce(ctx, dbConn, queries, graphService, false)
 		}
 	}
 }
@@ -148,7 +154,7 @@ func hasMinSubredditsWithPosts(ctx context.Context, dbc *sql.DB, min int) (bool,
 	return cnt >= min, cnt, nil
 }
 
-func runOnce(ctx context.Context, dbc *sql.DB, queries *db.Queries, graphService *graph.Service) {
+func runOnce(ctx context.Context, dbc *sql.DB, queries *db.Queries, graphService *graph.Service, fullRebuild bool) {
 	// Defer precalc until at least two subreddits have been crawled (i.e., produced posts)
 	if ok, cnt, err := hasMinSubredditsWithPosts(ctx, dbc, 2); err != nil {
 		logger.Error("Precalc readiness check failed", "error", err)
@@ -157,7 +163,7 @@ func runOnce(ctx context.Context, dbc *sql.DB, queries *db.Queries, graphService
 		logger.Info("Precalc deferred: insufficient data", "subreddits_with_posts", cnt, "required", 2)
 		return
 	}
-	if err := graphService.PrecalculateGraphData(ctx); err != nil {
+	if err := graphService.PrecalculateGraphDataWithMode(ctx, fullRebuild); err != nil {
 		logger.Error("Failed to precalculate graph data", "error", err)
 		errorreporting.CaptureError(err)
 		return

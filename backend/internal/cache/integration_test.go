@@ -18,11 +18,11 @@ func TestIntegrationCacheBehavior(t *testing.T) {
 	t.Run("Basic operations", func(t *testing.T) {
 		key := "test-key"
 		value := []byte("test-value")
-		
+
 		cache.Set(key, value, 0)
 		cache.cache.Wait() // Wait for async Set
 		retrieved, found := cache.Get(key)
-		
+
 		if !found {
 			t.Error("Expected to find cached value")
 		}
@@ -35,19 +35,19 @@ func TestIntegrationCacheBehavior(t *testing.T) {
 	t.Run("TTL expiration", func(t *testing.T) {
 		key := "expiring-key"
 		value := []byte("expiring-value")
-		
+
 		cache.Set(key, value, 100*time.Millisecond)
 		cache.cache.Wait() // Wait for async Set
-		
+
 		// Should exist immediately
 		_, found := cache.Get(key)
 		if !found {
 			t.Error("Expected to find value immediately")
 		}
-		
+
 		// Wait for expiration
 		time.Sleep(150 * time.Millisecond)
-		
+
 		// Should be expired
 		_, found = cache.Get(key)
 		if found {
@@ -60,10 +60,10 @@ func TestIntegrationCacheBehavior(t *testing.T) {
 		cache.Set("key1", []byte("value1"), 0)
 		cache.Set("key2", []byte("value2"), 0)
 		cache.cache.Wait() // Wait for async Set
-		
+
 		// Clear the cache
 		cache.Clear()
-		
+
 		// Both keys should be gone
 		_, found := cache.Get("key1")
 		if found {
@@ -79,15 +79,15 @@ func TestIntegrationCacheBehavior(t *testing.T) {
 	t.Run("Stats tracking", func(t *testing.T) {
 		// Clear cache first
 		cache.Clear()
-		
+
 		// Add some entries
 		cache.Set("stat-key1", []byte("value1"), 0)
 		cache.Set("stat-key2", []byte("value2"), 0)
 		cache.cache.Wait() // Wait for async Set
-		
+
 		// Get stats
 		stats := cache.Stats()
-		
+
 		// Verify stats are being tracked (exact values may vary due to async nature)
 		if stats.KeysAdded < 2 {
 			t.Logf("Stats: %+v", stats)

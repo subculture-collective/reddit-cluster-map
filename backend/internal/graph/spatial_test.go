@@ -27,9 +27,9 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 
 	// Insert test nodes with known positions
 	testNodes := []struct {
-		id   string
-		name string
-		val  string
+		id      string
+		name    string
+		val     string
 		x, y, z float64
 	}{
 		{"node_1", "Node 1", "100", 0.0, 0.0, 0.0},
@@ -51,7 +51,7 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 
 	// Insert test nodes
 	for _, n := range testNodes {
-		_, err = conn.ExecContext(ctx, 
+		_, err = conn.ExecContext(ctx,
 			`INSERT INTO graph_nodes (id, name, val, type, pos_x, pos_y, pos_z) 
 			 VALUES ($1, $2, $3, 'test', $4, $5, $6)`,
 			n.id, n.name, n.val, n.x, n.y, n.z)
@@ -64,12 +64,12 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 		// Query for nodes in the range x: [-1, 16], y: [-1, 16], z: [-1, 1]
 		// This should return nodes 1-4 but not node 5 or node_outside
 		nodes, err := q.GetNodesInBoundingBox(ctx, db.GetNodesInBoundingBoxParams{
-			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true},  // x_min
-			PosX_2: sql.NullFloat64{Float64: 16.0, Valid: true},  // x_max
-			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true},  // y_min
-			PosY_2: sql.NullFloat64{Float64: 16.0, Valid: true},  // y_max
-			PosZ:   sql.NullFloat64{Float64: -1.0, Valid: true},  // z_min
-			PosZ_2: sql.NullFloat64{Float64: 1.0, Valid: true},   // z_max
+			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true}, // x_min
+			PosX_2: sql.NullFloat64{Float64: 16.0, Valid: true}, // x_max
+			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true}, // y_min
+			PosY_2: sql.NullFloat64{Float64: 16.0, Valid: true}, // y_max
+			PosZ:   sql.NullFloat64{Float64: -1.0, Valid: true}, // z_min
+			PosZ_2: sql.NullFloat64{Float64: 1.0, Valid: true},  // z_max
 			Limit:  100,
 		})
 		if err != nil {
@@ -103,10 +103,10 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 		// Query for nodes in the 2D range x: [-1, 11], y: [-1, 11]
 		// This should return nodes 1-3
 		nodes, err := q.GetNodesInBoundingBox2D(ctx, db.GetNodesInBoundingBox2DParams{
-			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true},  // x_min
-			PosX_2: sql.NullFloat64{Float64: 11.0, Valid: true},  // x_max
-			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true},  // y_min
-			PosY_2: sql.NullFloat64{Float64: 11.0, Valid: true},  // y_max
+			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true}, // x_min
+			PosX_2: sql.NullFloat64{Float64: 11.0, Valid: true}, // x_max
+			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true}, // y_min
+			PosY_2: sql.NullFloat64{Float64: 11.0, Valid: true}, // y_max
 			Limit:  100,
 		})
 		if err != nil {
@@ -122,12 +122,12 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 	t.Run("CountNodesInBoundingBox", func(t *testing.T) {
 		// Count nodes in the range x: [-1, 16], y: [-1, 16], z: [-1, 1]
 		count, err := q.CountNodesInBoundingBox(ctx, db.CountNodesInBoundingBoxParams{
-			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true},  // x_min
-			PosX_2: sql.NullFloat64{Float64: 16.0, Valid: true},  // x_max
-			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true},  // y_min
-			PosY_2: sql.NullFloat64{Float64: 16.0, Valid: true},  // y_max
-			PosZ:   sql.NullFloat64{Float64: -1.0, Valid: true},  // z_min
-			PosZ_2: sql.NullFloat64{Float64: 1.0, Valid: true},   // z_max
+			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true}, // x_min
+			PosX_2: sql.NullFloat64{Float64: 16.0, Valid: true}, // x_max
+			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true}, // y_min
+			PosY_2: sql.NullFloat64{Float64: 16.0, Valid: true}, // y_max
+			PosZ:   sql.NullFloat64{Float64: -1.0, Valid: true}, // z_min
+			PosZ_2: sql.NullFloat64{Float64: 1.0, Valid: true},  // z_max
 		})
 		if err != nil {
 			t.Fatalf("CountNodesInBoundingBox failed: %v", err)
@@ -141,7 +141,7 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 
 	t.Run("GetLinksForNodesInBoundingBox", func(t *testing.T) {
 		// Create test links between nodes
-		_, err = conn.ExecContext(ctx, 
+		_, err = conn.ExecContext(ctx,
 			`INSERT INTO graph_links (source, target) VALUES ($1, $2), ($3, $4)
 			 ON CONFLICT (source, target) DO NOTHING`,
 			"node_1", "node_2", "node_2", "node_3")
@@ -149,18 +149,18 @@ func TestIntegration_SpatialQueries_BoundingBox(t *testing.T) {
 			t.Fatalf("failed to insert test links: %v", err)
 		}
 		t.Cleanup(func() {
-			conn.ExecContext(context.Background(), 
+			conn.ExecContext(context.Background(),
 				`DELETE FROM graph_links WHERE source LIKE 'node_%' OR target LIKE 'node_%'`)
 		})
 
 		// Query for links where both nodes are in the bounding box
 		links, err := q.GetLinksForNodesInBoundingBox(ctx, db.GetLinksForNodesInBoundingBoxParams{
-			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true},  // x_min
-			PosX_2: sql.NullFloat64{Float64: 11.0, Valid: true},  // x_max
-			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true},  // y_min
-			PosY_2: sql.NullFloat64{Float64: 11.0, Valid: true},  // y_max
-			PosZ:   sql.NullFloat64{Float64: -1.0, Valid: true},  // z_min
-			PosZ_2: sql.NullFloat64{Float64: 1.0, Valid: true},   // z_max
+			PosX:   sql.NullFloat64{Float64: -1.0, Valid: true}, // x_min
+			PosX_2: sql.NullFloat64{Float64: 11.0, Valid: true}, // x_max
+			PosY:   sql.NullFloat64{Float64: -1.0, Valid: true}, // y_min
+			PosY_2: sql.NullFloat64{Float64: 11.0, Valid: true}, // y_max
+			PosZ:   sql.NullFloat64{Float64: -1.0, Valid: true}, // z_min
+			PosZ_2: sql.NullFloat64{Float64: 1.0, Valid: true},  // z_max
 			Limit:  100,
 		})
 		if err != nil {

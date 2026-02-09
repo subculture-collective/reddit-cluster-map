@@ -23,7 +23,7 @@ func TestNew(t *testing.T) {
 func TestWithDetails(t *testing.T) {
 	err := New(ErrValidationInvalidValue, "invalid field", http.StatusBadRequest).
 		WithDetails(map[string]interface{}{"field": "username"})
-	
+
 	if err.Details == nil {
 		t.Fatal("expected details to be set")
 	}
@@ -36,7 +36,7 @@ func TestWithRequestID(t *testing.T) {
 	requestID := "test-request-123"
 	err := New(ErrSystemInternal, "internal error", http.StatusInternalServerError).
 		WithRequestID(requestID)
-	
+
 	if err.RequestID != requestID {
 		t.Errorf("expected request ID %s, got %s", requestID, err.RequestID)
 	}
@@ -54,23 +54,23 @@ func TestWriteError(t *testing.T) {
 	w := httptest.NewRecorder()
 	err := New(ErrGraphTimeout, "timeout", http.StatusRequestTimeout).
 		WithRequestID("req-123")
-	
+
 	WriteError(w, err)
-	
+
 	if w.Code != http.StatusRequestTimeout {
 		t.Errorf("expected status %d, got %d", http.StatusRequestTimeout, w.Code)
 	}
-	
+
 	contentType := w.Header().Get("Content-Type")
 	if contentType != "application/json" {
 		t.Errorf("expected Content-Type application/json, got %s", contentType)
 	}
-	
+
 	var resp ErrorResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	
+
 	if resp.Error == nil {
 		t.Fatal("expected error in response")
 	}
@@ -121,7 +121,7 @@ func TestHelperFunctions(t *testing.T) {
 		{"RateLimitGlobal", func() *Error { return RateLimitGlobal() }, ErrRateLimitGlobal, http.StatusTooManyRequests},
 		{"RateLimitIP", func() *Error { return RateLimitIP() }, ErrRateLimitIP, http.StatusTooManyRequests},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.createErr()
