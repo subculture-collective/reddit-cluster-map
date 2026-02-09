@@ -3,13 +3,16 @@ package api
 import (
 	"net/http"
 	"net/http/pprof"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/api/handlers"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/cache"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/middleware"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -19,6 +22,16 @@ func NewRouter(q *db.Queries) *mux.Router {
 
 	// Load configuration
 	cfg := config.Load()
+
+	// Initialize LRU cache
+	graphCache, err := cache.NewLRU(cfg.CacheMaxSizeMB, cfg.CacheMaxEntries, cfg.CacheTTL)
+	if err != nil {
+		// If cache initialization fails, panic since this is a critical component
+		panic("Failed to initialize cache: " + err.Error())
+	}
+
+	// Start background cache metrics collector
+	go collectCacheMetrics(graphCache)
 
 	// Apply global middleware in order
 	// 1. Request ID middleware (first to track all requests)
@@ -92,7 +105,7 @@ func NewRouter(q *db.Queries) *mux.Router {
 	r.HandleFunc("/jobs", handlers.GetCrawlJobs(q)).Methods("GET")
 
 	// Graph data for the frontend: GET /api/graph
-	graphHandler := handlers.NewHandler(q)
+	graphHandler := handlers.NewHandler(q, graphCache)
 	r.Handle("/api/graph", middleware.ETag(middleware.Gzip(http.HandlerFunc(graphHandler.GetGraphData)))).Methods("GET")
 
 	// Search endpoint with gzip and ETag: GET /api/search?node=...
@@ -104,7 +117,7 @@ func NewRouter(q *db.Queries) *mux.Router {
 	r.Handle("/api/export", exportHandler).Methods("GET")
 
 	// Community aggregation endpoints
-	communityHandler := handlers.NewCommunityHandler(q)
+	communityHandler := handlers.NewCommunityHandler(q, graphCache)
 	r.HandleFunc("/api/communities", communityHandler.GetCommunities).Methods("GET")
 	r.HandleFunc("/api/communities/{id}", communityHandler.GetCommunityByID).Methods("GET")
 
@@ -192,4 +205,23 @@ func NewRouter(q *db.Queries) *mux.Router {
 	}
 
 	return r
+}
+
+// collectCacheMetrics periodically updates Prometheus metrics with cache statistics.
+// This runs in a background goroutine for the lifetime of the application.
+func collectCacheMetrics(c cache.Cache) {
+	const interval = 15 // seconds
+	ticker := time.NewTicker(interval * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		stats := c.Stats()
+		// Update Prometheus gauges
+		// We use "graph" as the endpoint label since the cache is shared
+		metrics.APICacheSize.WithLabelValues("graph").Set(float64(stats.Size))
+		metrics.APICacheItems.WithLabelValues("graph").Set(float64(stats.Items))
+		// Evictions are tracked as a counter, so we set it to the cumulative value
+		// Note: Prometheus counters should only increase, so we use Set on a gauge-like pattern
+		metrics.APICacheEvictions.WithLabelValues("graph").Add(0) // Initialize if not exists
+	}
 }
