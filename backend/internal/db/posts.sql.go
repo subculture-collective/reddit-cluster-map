@@ -11,7 +11,7 @@ import (
 )
 
 const getPost = `-- name: GetPost :one
-SELECT id, subreddit_id, author_id, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen FROM posts WHERE id = $1
+SELECT id, subreddit_id, author_id, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen, updated_at FROM posts WHERE id = $1
 `
 
 func (q *Queries) GetPost(ctx context.Context, id string) (Post, error) {
@@ -30,12 +30,13 @@ func (q *Queries) GetPost(ctx context.Context, id string) (Post, error) {
 		&i.Url,
 		&i.IsSelf,
 		&i.LastSeen,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const listPostsBySubreddit = `-- name: ListPostsBySubreddit :many
-SELECT id, subreddit_id, author_id, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen FROM posts WHERE subreddit_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
+SELECT id, subreddit_id, author_id, title, selftext, permalink, created_at, score, flair, url, is_self, last_seen, updated_at FROM posts WHERE subreddit_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
 type ListPostsBySubredditParams struct {
@@ -66,6 +67,7 @@ func (q *Queries) ListPostsBySubreddit(ctx context.Context, arg ListPostsBySubre
 			&i.Url,
 			&i.IsSelf,
 			&i.LastSeen,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

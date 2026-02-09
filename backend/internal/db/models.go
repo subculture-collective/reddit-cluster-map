@@ -33,6 +33,7 @@ type Comment struct {
 	Score       sql.NullInt32
 	LastSeen    sql.NullTime
 	Depth       sql.NullInt32
+	UpdatedAt   sql.NullTime
 }
 
 type CrawlJob struct {
@@ -158,6 +159,24 @@ type Post struct {
 	Url         sql.NullString
 	IsSelf      sql.NullBool
 	LastSeen    sql.NullTime
+	UpdatedAt   sql.NullTime
+}
+
+// Tracks the state and timestamp of graph precalculation runs
+type PrecalcState struct {
+	ID int32
+	// Timestamp of the last precalculation (incremental or full)
+	LastPrecalcAt sql.NullTime
+	// Timestamp of the last full precalculation
+	LastFullPrecalcAt sql.NullTime
+	// Total number of nodes in the last precalculation
+	TotalNodes sql.NullInt32
+	// Total number of links in the last precalculation
+	TotalLinks sql.NullInt32
+	// Duration of the last precalculation in milliseconds
+	PrecalcDurationMs sql.NullInt32
+	CreatedAt         sql.NullTime
+	UpdatedAt         sql.NullTime
 }
 
 // Scheduled recurring crawl jobs with cron-like scheduling
@@ -192,6 +211,7 @@ type Subreddit struct {
 	Subscribers sql.NullInt32
 	CreatedAt   sql.NullTime
 	LastSeen    sql.NullTime
+	UpdatedAt   sql.NullTime
 }
 
 type SubredditRelationship struct {
@@ -208,6 +228,7 @@ type User struct {
 	Username  string
 	CreatedAt sql.NullTime
 	LastSeen  sql.NullTime
+	UpdatedAt sql.NullTime
 }
 
 type UserSubredditActivity struct {

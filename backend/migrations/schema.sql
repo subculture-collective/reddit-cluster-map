@@ -5,7 +5,8 @@ CREATE TABLE subreddits (
     description TEXT,
     subscribers INT,
     created_at TIMESTAMPTZ DEFAULT now(),
-    last_seen TIMESTAMPTZ DEFAULT now()
+    last_seen TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE users (
@@ -13,7 +14,8 @@ CREATE TABLE users (
     username TEXT UNIQUE NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now(),
     last_seen TIMESTAMPTZ DEFAULT now(),
-    first_seen TIMESTAMPTZ DEFAULT now()
+    first_seen TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE posts (
@@ -28,7 +30,8 @@ CREATE TABLE posts (
     flair TEXT,
     url TEXT,
     is_self BOOLEAN,
-    last_seen TIMESTAMPTZ DEFAULT now()
+    last_seen TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX idx_posts_subreddit_id ON posts(subreddit_id);
@@ -44,7 +47,8 @@ CREATE TABLE comments (
     created_at TIMESTAMPTZ,
     score INT,
     last_seen TIMESTAMPTZ DEFAULT now(),
-    depth INT DEFAULT 0
+    depth INT DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX idx_comments_parent_id ON comments(parent_id);
@@ -238,3 +242,22 @@ CREATE TABLE IF NOT EXISTS service_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Precalculation state tracking
+CREATE TABLE IF NOT EXISTS precalc_state (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    last_precalc_at TIMESTAMPTZ,
+    last_full_precalc_at TIMESTAMPTZ,
+    total_nodes INTEGER DEFAULT 0,
+    total_links INTEGER DEFAULT 0,
+    precalc_duration_ms INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    CONSTRAINT single_row_constraint CHECK (id = 1)
+);
+
+-- Indexes for change detection
+CREATE INDEX IF NOT EXISTS idx_subreddits_updated_at ON subreddits(updated_at);
+CREATE INDEX IF NOT EXISTS idx_users_updated_at ON users(updated_at);
+CREATE INDEX IF NOT EXISTS idx_posts_updated_at ON posts(updated_at);
+CREATE INDEX IF NOT EXISTS idx_comments_updated_at ON comments(updated_at);
