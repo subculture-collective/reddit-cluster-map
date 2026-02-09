@@ -83,6 +83,15 @@ type GraphStore interface {
 	ListPostsBySubreddit(ctx context.Context, arg db.ListPostsBySubredditParams) ([]db.Post, error)
 	ListCommentsByPost(ctx context.Context, postID string) ([]db.Comment, error)
 	GetUserTotalActivity(ctx context.Context, authorID int32) (int32, error)
+	// Incremental precalculation
+	GetPrecalcState(ctx context.Context) (db.PrecalcState, error)
+	UpdatePrecalcState(ctx context.Context, arg db.UpdatePrecalcStateParams) error
+	GetChangedSubredditsSince(ctx context.Context, updatedAt sql.NullTime) ([]db.GetChangedSubredditsSinceRow, error)
+	GetChangedUsersSince(ctx context.Context, updatedAt sql.NullTime) ([]db.GetChangedUsersSinceRow, error)
+	CountChangedEntities(ctx context.Context, updatedAt sql.NullTime) (db.CountChangedEntitiesRow, error)
+	GetUserActivitySince(ctx context.Context, updatedAt sql.NullTime) ([]db.GetUserActivitySinceRow, error)
+	GetAffectedUserIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error)
+	GetAffectedSubredditIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error)
 }
 
 func NewService(store GraphStore) *Service { return &Service{store: store} }
@@ -249,19 +258,100 @@ func (s *Service) CalculateUserActivity(ctx context.Context) error {
 
 // PrecalculateGraphData builds nodes and links. It preserves existing graph rows unless PRECALC_CLEAR_ON_START is set.
 func (s *Service) PrecalculateGraphData(ctx context.Context) error {
+	return s.PrecalculateGraphDataWithMode(ctx, false)
+}
+
+// PrecalculateGraphDataWithMode builds nodes and links with support for full or incremental mode
+// fullRebuild: if true, forces a full rebuild regardless of env vars
+func (s *Service) PrecalculateGraphDataWithMode(ctx context.Context, fullRebuild bool) error {
 	ctx, span := tracing.StartSpan(ctx, "graph.PrecalculateGraphData")
 	defer span.End()
 
 	logger.InfoContext(ctx, "Starting graph data precalculation")
 	startTime := time.Now()
+	
+	// Get precalc state to determine if incremental update is possible
+	precalcState, err := s.store.GetPrecalcState(ctx)
+	var lastPrecalcAt sql.NullTime
+	if err != nil {
+		logger.Warn("Failed to get precalc state, assuming first run", "error", err)
+		fullRebuild = true
+	} else {
+		lastPrecalcAt = precalcState.LastPrecalcAt
+		if !lastPrecalcAt.Valid {
+			logger.InfoContext(ctx, "No previous precalculation found, running full build")
+			fullRebuild = true
+		}
+	}
+	
+	// Determine mode: incremental or full rebuild
+	incrementalMode := !fullRebuild && !config.Load().GetEnvBool("PRECALC_CLEAR_ON_START", false)
+	
+	// Count changes if in incremental mode
+	var changePercent float64
+	if incrementalMode {
+		counts, err := s.store.CountChangedEntities(ctx, lastPrecalcAt)
+		if err != nil {
+			logger.Warn("Failed to count changed entities, falling back to full rebuild", "error", err)
+			incrementalMode = false
+		} else {
+			totalChanges := counts.ChangedSubreddits + counts.ChangedUsers + counts.ChangedPosts + counts.ChangedComments
+			totalEntities := int64(precalcState.TotalNodes.Int32) + int64(precalcState.TotalLinks.Int32)
+			if totalEntities > 0 {
+				changePercent = float64(totalChanges) / float64(totalEntities) * 100
+			}
+			logger.InfoContext(ctx, "Change detection",
+				"changed_subreddits", counts.ChangedSubreddits,
+				"changed_users", counts.ChangedUsers,
+				"changed_posts", counts.ChangedPosts,
+				"changed_comments", counts.ChangedComments,
+				"total_changes", totalChanges,
+				"change_percent", changePercent,
+			)
+			
+			// If changes exceed 20%, do a full rebuild instead
+			if changePercent > 20 {
+				logger.InfoContext(ctx, "Change percentage exceeds threshold, running full rebuild", "change_percent", changePercent)
+				incrementalMode = false
+			}
+		}
+	}
+	
+	span.SetAttributes(
+		attribute.Bool("incremental_mode", incrementalMode),
+		attribute.Float64("change_percent", changePercent),
+	)
+	
+	if incrementalMode {
+		logger.InfoContext(ctx, "Running incremental precalculation", "last_precalc_at", lastPrecalcAt.Time, "change_percent", changePercent)
+	} else {
+		logger.InfoContext(ctx, "Running full precalculation rebuild")
+	}
+	
 	defer func() {
 		duration := time.Since(startTime)
-		logger.InfoContext(ctx, "Graph precalculation completed", "duration", duration)
+		logger.InfoContext(ctx, "Graph precalculation completed", "duration", duration, "incremental", incrementalMode)
 		span.SetAttributes(attribute.String("total_duration", duration.String()))
+		
+		// Update precalc state
+		durationMs := int32(duration.Milliseconds())
+		var fullPrecalcTime sql.NullTime
+		if !incrementalMode {
+			fullPrecalcTime = sql.NullTime{Time: time.Now(), Valid: true}
+		}
+		if err := s.store.UpdatePrecalcState(ctx, db.UpdatePrecalcStateParams{
+			LastPrecalcAt:     sql.NullTime{Time: time.Now(), Valid: true},
+			LastFullPrecalcAt: fullPrecalcTime,
+			TotalNodes:        sql.NullInt32{Int32: 0, Valid: false}, // Will be updated later
+			TotalLinks:        sql.NullInt32{Int32: 0, Valid: false}, // Will be updated later
+			PrecalcDurationMs: sql.NullInt32{Int32: durationMs, Valid: true},
+		}); err != nil {
+			logger.Warn("Failed to update precalc state", "error", err)
+		}
 	}()
 
-	// Optional clear on start (must happen before node/link inserts)
-	if config.Load().GetEnvBool("PRECALC_CLEAR_ON_START", false) {
+	// Optional clear on start (for full rebuild)
+	if !incrementalMode {
 		span.AddEvent("clearing_graph_tables")
 		if err := s.store.ClearGraphTables(ctx); err != nil {
 			span.RecordError(err)
@@ -285,17 +375,59 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	)
 
 	// Users & Subreddits -> nodes (batched upsert inside single transaction for speed)
-	usersWithActivity, err := s.store.ListUsersWithActivity(ctx)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to fetch user activity")
-		return fmt.Errorf("failed to fetch user activity totals: %w", err)
-	}
-	subreddits, err := s.store.GetAllSubreddits(ctx)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to fetch subreddits")
-		return fmt.Errorf("failed to fetch subreddits: %w", err)
+	// In incremental mode, only fetch changed entities
+	var usersWithActivity []db.ListUsersWithActivityRow
+	var subreddits []db.GetAllSubredditsRow
+	
+	if incrementalMode {
+		// Fetch only changed users and subreddits
+		changedUsers, err := s.store.GetUserActivitySince(ctx, lastPrecalcAt)
+		if err != nil {
+			span.RecordError(err)
+			return fmt.Errorf("failed to fetch changed users: %w", err)
+		}
+		// Convert to compatible type
+		for _, u := range changedUsers {
+			usersWithActivity = append(usersWithActivity, db.ListUsersWithActivityRow{
+				ID:            u.ID,
+				Username:      u.Username,
+				TotalActivity: u.TotalActivity,
+			})
+		}
+		
+		changedSubs, err := s.store.GetChangedSubredditsSince(ctx, lastPrecalcAt)
+		if err != nil {
+			span.RecordError(err)
+			return fmt.Errorf("failed to fetch changed subreddits: %w", err)
+		}
+		// Convert to compatible type
+		for _, sr := range changedSubs {
+			subreddits = append(subreddits, db.GetAllSubredditsRow{
+				ID:          sr.ID,
+				Name:        sr.Name,
+				Subscribers: sr.Subscribers,
+			})
+		}
+		
+		logger.InfoContext(ctx, "Incremental mode: processing only changed entities",
+			"changed_users", len(usersWithActivity),
+			"changed_subreddits", len(subreddits),
+		)
+	} else {
+		// Full rebuild: fetch all
+		var err error
+		usersWithActivity, err = s.store.ListUsersWithActivity(ctx)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to fetch user activity")
+			return fmt.Errorf("failed to fetch user activity totals: %w", err)
+		}
+		subreddits, err = s.store.GetAllSubreddits(ctx)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to fetch subreddits")
+			return fmt.Errorf("failed to fetch subreddits: %w", err)
+		}
 	}
 
 	span.SetAttributes(
