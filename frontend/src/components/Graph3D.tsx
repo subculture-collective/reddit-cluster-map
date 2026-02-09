@@ -280,6 +280,7 @@ interface Props {
   usePrecomputedLayout?: boolean;
   initialCamera?: { x: number; y: number; z: number };
   onCameraChange?: (camera: { x: number; y: number; z: number }) => void;
+  sizeAttenuation?: boolean;
 }
 
 export default function Graph3D(props: Props) {

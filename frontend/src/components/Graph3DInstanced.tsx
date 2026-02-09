@@ -63,6 +63,7 @@ interface Props {
     usePrecomputedLayout?: boolean;
     initialCamera?: { x: number; y: number; z: number };
     onCameraChange?: (camera: { x: number; y: number; z: number }) => void;
+    sizeAttenuation?: boolean;
 }
 
 export default function Graph3DInstanced(props: Props) {
@@ -74,12 +75,12 @@ export default function Graph3DInstanced(props: Props) {
         nodeRelSize,
         physics,
         focusNodeId,
-        selectedId,
         onNodeSelect,
         communityResult,
         usePrecomputedLayout,
         initialCamera,
         onCameraChange,
+        sizeAttenuation = true,
     } = props;
 
     // State
@@ -102,14 +103,10 @@ export default function Graph3DInstanced(props: Props) {
     const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
     const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
     const hoveredNodeRef = useRef<string | null>(null);
-    const selectedNodeRef = useRef<string | null>(null);
     const labelsGroupRef = useRef<THREE.Group | null>(null);
-    const lastRaycastTimeRef = useRef<number>(0);
-    const hoverThrottleRef = useRef<number | null>(null);
-    const cameraAnimationRef = useRef<number | null>(null);
 
     // State for tooltip
-    const [hoveredNode, setHoveredNode] = useState<{
+    const [hoveredNode] = useState<{
         id: string;
         name?: string;
         type?: string;
@@ -262,8 +259,12 @@ export default function Graph3DInstanced(props: Props) {
         const nodeRenderer = new InstancedNodeRenderer(scene, {
             maxNodes: MAX_RENDER_NODES,
             nodeRelSize,
+            sizeAttenuation,
         });
         nodeRendererRef.current = nodeRenderer;
+        
+        // Set camera reference for distance-based scaling
+        nodeRenderer.setCamera(camera);
 
         // Create link renderer with initial opacity
         const linkRenderer = new LinkRenderer(scene, {
@@ -301,6 +302,11 @@ export default function Graph3DInstanced(props: Props) {
         const animate = () => {
             animationId = requestAnimationFrame(animate);
             controls.update();
+
+            // Update node camera position for distance-based scaling
+            if (nodeRenderer) {
+                nodeRenderer.updateCameraPosition();
+            }
 
             // Update link visibility when camera moves
             // updateVisibility() skips work if camera hasn't moved significantly
@@ -576,6 +582,12 @@ export default function Graph3DInstanced(props: Props) {
         if (!linkRendererRef.current) return;
         linkRendererRef.current.setOpacity(linkOpacity);
     }, [linkOpacity]);
+
+    // Update size attenuation
+    useEffect(() => {
+        if (!nodeRendererRef.current) return;
+        nodeRendererRef.current.setSizeAttenuation(sizeAttenuation);
+    }, [sizeAttenuation]);
 
     // Handle mouse interactions
     useEffect(() => {
