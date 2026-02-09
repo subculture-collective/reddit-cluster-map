@@ -1218,7 +1218,7 @@ type GetNodesInBoundingBox2DRow struct {
 // Retrieves nodes within a 2D bounding box (ignoring z coordinate)
 // Parameters: x_min, x_max, y_min, y_max, limit
 // Useful for 2D viewport queries where z is not relevant
-// Note: Includes pos_z IS NOT NULL to enable use of the partial GiST index
+// Note: Includes pos_z IS NOT NULL to match the partial GiST index predicate (which requires all position columns to be non-null)
 func (q *Queries) GetNodesInBoundingBox2D(ctx context.Context, arg GetNodesInBoundingBox2DParams) ([]GetNodesInBoundingBox2DRow, error) {
 	rows, err := q.db.QueryContext(ctx, getNodesInBoundingBox2D,
 		arg.PosX,
