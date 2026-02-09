@@ -181,7 +181,7 @@ The cache can be configured via environment variables:
 - `CACHE_TTL_SECONDS` (default: 60) - Time-to-live for cache entries in seconds
 
 **Notes:**
-- The cache uses LRU (Least Recently Used) eviction when limits are reached
+- The cache uses an approximate eviction policy based on access frequency and recency when limits are reached (powered by ristretto, not strict LRU)
 - Cache entries expire after the configured TTL
 - Cache is shared between `/api/graph` and `/api/communities` endpoints
 - Different parameter combinations create separate cache entries

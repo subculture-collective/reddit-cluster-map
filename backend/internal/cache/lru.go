@@ -20,11 +20,12 @@ type cacheItem struct {
 
 // NewLRU creates a new LRU cache with the given configuration.
 // maxSizeMB is the maximum size of the cache in megabytes.
-// maxEntries is the maximum number of entries in the cache.
+// maxEntries influences the internal counter size but does not strictly limit entry count.
+// Ristretto uses cost-based eviction, so the actual number of entries depends on their sizes.
 // defaultTTL is the default time-to-live for cache entries.
 func NewLRU(maxSizeMB int64, maxEntries int64, defaultTTL time.Duration) (*LRUCache, error) {
 	// Ristretto configuration
-	// NumCounters should be ~10x the number of entries for optimal performance
+	// NumCounters should be ~10x the expected number of entries for optimal performance
 	numCounters := maxEntries * 10
 	if numCounters < 1000 {
 		numCounters = 1000
@@ -71,6 +72,8 @@ func (c *LRUCache) Get(key string) ([]byte, bool) {
 }
 
 // Set stores a value in the cache with the given key and TTL.
+// Note: Ristretto's Set is asynchronous. The value may not be immediately available
+// for retrieval. This is acceptable in production use where eventual consistency is fine.
 func (c *LRUCache) Set(key string, value []byte, ttl time.Duration) {
 	if ttl == 0 {
 		ttl = c.defaultTTL
@@ -87,9 +90,6 @@ func (c *LRUCache) Set(key string, value []byte, ttl time.Duration) {
 	// Set will return false if the item could not be added (e.g., due to size limits)
 	// We ignore the return value as ristretto handles eviction internally
 	_ = c.cache.Set(key, item, cost)
-	
-	// Wait for value to pass through buffers (recommended by ristretto docs)
-	c.cache.Wait()
 }
 
 // Delete removes a value from the cache.
@@ -103,16 +103,35 @@ func (c *LRUCache) Clear() {
 }
 
 // Stats returns cache statistics.
+// Note: Size and Items are approximations based on cumulative metrics and may not be exact
+// after cache clears or counter rollovers.
 func (c *LRUCache) Stats() Stats {
 	metrics := c.cache.Metrics
+
+	// Calculate current size/items by subtracting evicted from added
+	// Cast to int64 for safe subtraction (values should never be negative in practice)
+	costAdded := int64(metrics.CostAdded())
+	costEvicted := int64(metrics.CostEvicted())
+	keysAdded := int64(metrics.KeysAdded())
+	keysEvicted := int64(metrics.KeysEvicted())
+
+	currentSize := costAdded - costEvicted
+	if currentSize < 0 {
+		currentSize = 0
+	}
+
+	currentItems := keysAdded - keysEvicted
+	if currentItems < 0 {
+		currentItems = 0
+	}
 
 	return Stats{
 		Hits:      metrics.Hits(),
 		Misses:    metrics.Misses(),
-		KeysAdded: metrics.KeysAdded(),
+		KeysAdded: uint64(keysAdded),
 		Evictions: metrics.KeysEvicted(),
-		Size:      int64(metrics.CostAdded() - metrics.CostEvicted()), // Approximate current size
-		Items:     int64(metrics.KeysAdded() - metrics.KeysEvicted()),
+		Size:      currentSize,
+		Items:     currentItems,
 	}
 }
 

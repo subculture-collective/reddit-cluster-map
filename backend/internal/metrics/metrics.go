@@ -159,7 +159,7 @@ var (
 
 	APICacheItems = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "api_cache_items_total",
+			Name: "api_cache_items",
 			Help: "Current number of items in API cache",
 		},
 		[]string{"endpoint"},

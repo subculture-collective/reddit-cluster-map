@@ -214,10 +214,14 @@ func NewRouter(q *db.Queries) *mux.Router {
 
 // collectCacheMetrics periodically updates Prometheus metrics with cache statistics.
 // This runs in a background goroutine for the lifetime of the application.
+// The goroutine stops when the ticker is garbage collected (on process exit).
 func collectCacheMetrics(c cache.Cache) {
 	const interval = 15 // seconds
 	ticker := time.NewTicker(interval * time.Second)
 	defer ticker.Stop()
+
+	var prevEvictions uint64
+	var havePrevEvictions bool
 
 	for range ticker.C {
 		stats := c.Stats()
@@ -225,8 +229,28 @@ func collectCacheMetrics(c cache.Cache) {
 		// We use "graph" as the endpoint label since the cache is shared
 		metrics.APICacheSize.WithLabelValues("graph").Set(float64(stats.Size))
 		metrics.APICacheItems.WithLabelValues("graph").Set(float64(stats.Items))
-		// Evictions are tracked as a counter, so we set it to the cumulative value
-		// Note: Prometheus counters should only increase, so we use Set on a gauge-like pattern
-		metrics.APICacheEvictions.WithLabelValues("graph").Add(0) // Initialize if not exists
+
+		// Evictions are exposed as a Prometheus counter. The cache reports a cumulative
+		// eviction count, so we compute the delta since the last sample and add that.
+		if !havePrevEvictions {
+			prevEvictions = stats.Evictions
+			havePrevEvictions = true
+			continue
+		}
+
+		if stats.Evictions >= prevEvictions {
+			delta := stats.Evictions - prevEvictions
+			if delta > 0 {
+				metrics.APICacheEvictions.WithLabelValues("graph").Add(float64(delta))
+			}
+		} else {
+			// The underlying counter was reset (e.g., cache cleared or process restarted).
+			// Treat the current value as a fresh cumulative count.
+			if stats.Evictions > 0 {
+				metrics.APICacheEvictions.WithLabelValues("graph").Add(float64(stats.Evictions))
+			}
+		}
+
+		prevEvictions = stats.Evictions
 	}
 }

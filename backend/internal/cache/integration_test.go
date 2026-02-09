@@ -20,6 +20,7 @@ func TestIntegrationCacheBehavior(t *testing.T) {
 		value := []byte("test-value")
 		
 		cache.Set(key, value, 0)
+		cache.cache.Wait() // Wait for async Set
 		retrieved, found := cache.Get(key)
 		
 		if !found {
@@ -36,6 +37,7 @@ func TestIntegrationCacheBehavior(t *testing.T) {
 		value := []byte("expiring-value")
 		
 		cache.Set(key, value, 100*time.Millisecond)
+		cache.cache.Wait() // Wait for async Set
 		
 		// Should exist immediately
 		_, found := cache.Get(key)
@@ -57,6 +59,7 @@ func TestIntegrationCacheBehavior(t *testing.T) {
 	t.Run("Cache invalidation", func(t *testing.T) {
 		cache.Set("key1", []byte("value1"), 0)
 		cache.Set("key2", []byte("value2"), 0)
+		cache.cache.Wait() // Wait for async Set
 		
 		// Clear the cache
 		cache.Clear()
@@ -80,6 +83,7 @@ func TestIntegrationCacheBehavior(t *testing.T) {
 		// Add some entries
 		cache.Set("stat-key1", []byte("value1"), 0)
 		cache.Set("stat-key2", []byte("value2"), 0)
+		cache.cache.Wait() // Wait for async Set
 		
 		// Get stats
 		stats := cache.Stats()
@@ -106,6 +110,7 @@ func TestCacheSizeLimits(t *testing.T) {
 		value := []byte("small value")
 		cache.Set(key, value, 0)
 	}
+	cache.cache.Wait() // Wait for all async Sets to complete
 
 	// At least some items should be retrievable
 	// (exact count depends on ristretto's eviction policy)

@@ -16,6 +16,7 @@ func TestLRUCache_SetAndGet(t *testing.T) {
 	key := "test-key"
 	value := []byte("test-value")
 	cache.Set(key, value, 0)
+	cache.cache.Wait() // Wait for async Set to complete
 
 	retrieved, found := cache.Get(key)
 	if !found {
@@ -49,6 +50,7 @@ func TestLRUCache_Expiration(t *testing.T) {
 	key := "expiring-key"
 	value := []byte("expiring-value")
 	cache.Set(key, value, 100*time.Millisecond)
+	cache.cache.Wait() // Wait for async Set to complete
 
 	// Should exist immediately
 	_, found := cache.Get(key)
@@ -76,6 +78,7 @@ func TestLRUCache_Delete(t *testing.T) {
 	key := "delete-key"
 	value := []byte("delete-value")
 	cache.Set(key, value, 0)
+	cache.cache.Wait() // Wait for async Set to complete
 
 	// Verify it exists
 	_, found := cache.Get(key)
@@ -133,6 +136,7 @@ func TestLRUCache_Stats(t *testing.T) {
 	// Add items and verify they can be retrieved
 	cache.Set("key1", []byte("value1"), 0)
 	cache.Set("key2", []byte("value2"), 0)
+	cache.cache.Wait() // Wait for async Set to complete
 
 	// Verify Get works
 	val, found := cache.Get("key1")
@@ -159,6 +163,7 @@ func TestLRUCache_SizeLimit(t *testing.T) {
 	cache.Set("small1", []byte("value1"), 0)
 	cache.Set("small2", []byte("value2"), 0)
 	cache.Set("small3", []byte("value3"), 0)
+	cache.cache.Wait() // Wait for async Set to complete
 
 	// Verify at least one item can be retrieved
 	_, found := cache.Get("small1")
