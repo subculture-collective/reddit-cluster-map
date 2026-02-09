@@ -107,5 +107,23 @@ func TestETag(t *testing.T) {
 		if rr2.Body.Len() > 0 {
 			t.Error("expected empty body for 304 response")
 		}
+
+		// Verify 304 responses include ETag and Cache-Control headers
+		etag304 := rr2.Header().Get("ETag")
+		if etag304 == "" {
+			t.Error("expected ETag header on 304 response")
+		}
+		if etag304 != etag {
+			t.Errorf("expected ETag %q on 304 response, got %q", etag, etag304)
+		}
+
+		cacheControl304 := rr2.Header().Get("Cache-Control")
+		if cacheControl304 == "" {
+			t.Error("expected Cache-Control header on 304 response")
+		}
+		expected := "public, max-age=60, stale-while-revalidate=300"
+		if cacheControl304 != expected {
+			t.Errorf("expected Cache-Control %q on 304 response, got %q", expected, cacheControl304)
+		}
 	})
 }

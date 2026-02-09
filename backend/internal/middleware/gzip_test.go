@@ -247,13 +247,13 @@ func TestGzipWithPanic(t *testing.T) {
 // TestGzipHeadersOnFirstWrite verifies that Content-Encoding is set on first write, not before
 func TestGzipHeadersOnFirstWrite(t *testing.T) {
 	var headerSetBeforeWrite bool
-	
+
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check if Content-Encoding is set before we write
 		if w.Header().Get("Content-Encoding") != "" {
 			headerSetBeforeWrite = true
 		}
-		
+
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("test content"))
 	})

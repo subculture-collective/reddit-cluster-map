@@ -27,8 +27,8 @@ func InitDB() (*db.Queries, error) {
 
 	// Configure connection pool for optimal performance
 	// These settings prevent connection exhaustion and ensure efficient resource usage
-	conn.SetMaxOpenConns(25)              // Max concurrent connections (adjust based on load)
-	conn.SetMaxIdleConns(10)              // Max idle connections in pool
+	conn.SetMaxOpenConns(25)                 // Max concurrent connections (adjust based on load)
+	conn.SetMaxIdleConns(10)                 // Max idle connections in pool
 	conn.SetConnMaxLifetime(5 * time.Minute) // Recycle connections every 5 minutes
 	conn.SetConnMaxIdleTime(2 * time.Minute) // Close idle connections after 2 minutes
 

@@ -14,17 +14,17 @@ type ErrorCode string
 // Error code constants organized by category
 const (
 	// AUTH_ - Authentication and authorization errors
-	ErrAuthMissing         ErrorCode = "AUTH_MISSING"
-	ErrAuthInvalid         ErrorCode = "AUTH_INVALID"
-	ErrAuthForbidden       ErrorCode = "AUTH_FORBIDDEN"
-	ErrAuthOAuthNotConfig  ErrorCode = "AUTH_OAUTH_NOT_CONFIGURED"
-	ErrAuthOAuthFailed     ErrorCode = "AUTH_OAUTH_FAILED"
+	ErrAuthMissing        ErrorCode = "AUTH_MISSING"
+	ErrAuthInvalid        ErrorCode = "AUTH_INVALID"
+	ErrAuthForbidden      ErrorCode = "AUTH_FORBIDDEN"
+	ErrAuthOAuthNotConfig ErrorCode = "AUTH_OAUTH_NOT_CONFIGURED"
+	ErrAuthOAuthFailed    ErrorCode = "AUTH_OAUTH_FAILED"
 
 	// GRAPH_ - Graph query and processing errors
-	ErrGraphTimeout        ErrorCode = "GRAPH_TIMEOUT"
-	ErrGraphQuery          ErrorCode = "GRAPH_QUERY_FAILED"
-	ErrGraphNoData         ErrorCode = "GRAPH_NO_DATA"
-	ErrGraphInvalidParams  ErrorCode = "GRAPH_INVALID_PARAMS"
+	ErrGraphTimeout       ErrorCode = "GRAPH_TIMEOUT"
+	ErrGraphQuery         ErrorCode = "GRAPH_QUERY_FAILED"
+	ErrGraphNoData        ErrorCode = "GRAPH_NO_DATA"
+	ErrGraphInvalidParams ErrorCode = "GRAPH_INVALID_PARAMS"
 
 	// CRAWL_ - Crawl job errors
 	ErrCrawlInvalidSubreddit ErrorCode = "CRAWL_INVALID_SUBREDDIT"
@@ -33,29 +33,29 @@ const (
 	ErrCrawlNotFound         ErrorCode = "CRAWL_NOT_FOUND"
 
 	// SEARCH_ - Search operation errors
-	ErrSearchInvalidQuery  ErrorCode = "SEARCH_INVALID_QUERY"
-	ErrSearchTimeout       ErrorCode = "SEARCH_TIMEOUT"
-	ErrSearchFailed        ErrorCode = "SEARCH_FAILED"
+	ErrSearchInvalidQuery ErrorCode = "SEARCH_INVALID_QUERY"
+	ErrSearchTimeout      ErrorCode = "SEARCH_TIMEOUT"
+	ErrSearchFailed       ErrorCode = "SEARCH_FAILED"
 
 	// SYSTEM_ - System and server errors
-	ErrSystemInternal      ErrorCode = "SYSTEM_INTERNAL"
-	ErrSystemDatabase      ErrorCode = "SYSTEM_DATABASE"
-	ErrSystemUnavailable   ErrorCode = "SYSTEM_UNAVAILABLE"
-	ErrSystemTimeout       ErrorCode = "SYSTEM_TIMEOUT"
+	ErrSystemInternal    ErrorCode = "SYSTEM_INTERNAL"
+	ErrSystemDatabase    ErrorCode = "SYSTEM_DATABASE"
+	ErrSystemUnavailable ErrorCode = "SYSTEM_UNAVAILABLE"
+	ErrSystemTimeout     ErrorCode = "SYSTEM_TIMEOUT"
 
 	// VALIDATION_ - Request validation errors
-	ErrValidationInvalidJSON    ErrorCode = "VALIDATION_INVALID_JSON"
-	ErrValidationInvalidFormat  ErrorCode = "VALIDATION_INVALID_FORMAT"
-	ErrValidationMissingField   ErrorCode = "VALIDATION_MISSING_FIELD"
-	ErrValidationInvalidValue   ErrorCode = "VALIDATION_INVALID_VALUE"
+	ErrValidationInvalidJSON   ErrorCode = "VALIDATION_INVALID_JSON"
+	ErrValidationInvalidFormat ErrorCode = "VALIDATION_INVALID_FORMAT"
+	ErrValidationMissingField  ErrorCode = "VALIDATION_MISSING_FIELD"
+	ErrValidationInvalidValue  ErrorCode = "VALIDATION_INVALID_VALUE"
 
 	// RESOURCE_ - Resource errors
-	ErrResourceNotFound    ErrorCode = "RESOURCE_NOT_FOUND"
-	ErrResourceConflict    ErrorCode = "RESOURCE_CONFLICT"
+	ErrResourceNotFound ErrorCode = "RESOURCE_NOT_FOUND"
+	ErrResourceConflict ErrorCode = "RESOURCE_CONFLICT"
 
 	// RATE_LIMIT_ - Rate limiting errors
-	ErrRateLimitGlobal     ErrorCode = "RATE_LIMIT_GLOBAL"
-	ErrRateLimitIP         ErrorCode = "RATE_LIMIT_IP"
+	ErrRateLimitGlobal ErrorCode = "RATE_LIMIT_GLOBAL"
+	ErrRateLimitIP     ErrorCode = "RATE_LIMIT_IP"
 )
 
 // Error represents a structured API error
