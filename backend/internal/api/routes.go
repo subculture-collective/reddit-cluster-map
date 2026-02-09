@@ -180,6 +180,11 @@ func NewRouter(q *db.Queries) *mux.Router {
 	r.Handle("/api/admin/settings", adminOnly(http.HandlerFunc(adminSettings.UpdateSettings))).Methods("PUT")
 	r.Handle("/api/admin/audit-log", adminOnly(http.HandlerFunc(adminSettings.GetAuditLog))).Methods("GET")
 
+	// Cache admin endpoints
+	cacheAdmin := handlers.NewCacheAdminHandler(graphCache)
+	r.Handle("/api/admin/cache/invalidate", adminOnly(http.HandlerFunc(cacheAdmin.InvalidateCache))).Methods("POST")
+	r.Handle("/api/admin/cache/stats", adminOnly(http.HandlerFunc(cacheAdmin.GetCacheStats))).Methods("GET")
+
 	// Performance profiling endpoints (admin-only for security)
 	// These endpoints expose runtime profiling data for performance analysis
 	if cfg.EnableProfiling {

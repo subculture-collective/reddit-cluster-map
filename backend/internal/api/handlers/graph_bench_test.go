@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/onnwee/reddit-cluster-map/backend/internal/cache"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
@@ -79,7 +80,7 @@ func (m *MockGraphDataReader) GetPrecalculatedGraphDataNoPos(ctx context.Context
 
 // BenchmarkGetGraphData benchmarks the main graph data endpoint
 func BenchmarkGetGraphData(b *testing.B) {
-	handler := NewHandler(&MockGraphDataReader{})
+	handler := NewHandler(&MockGraphDataReader{}, cache.NewMockCache())
 
 	b.Run("DefaultParams", func(b *testing.B) {
 		req := httptest.NewRequest("GET", "/api/graph", nil)
