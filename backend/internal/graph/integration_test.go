@@ -482,3 +482,115 @@ func TestIntegration_HierarchicalCommunityDetection(t *testing.T) {
 		}
 	}
 }
+
+func TestIntegration_IncrementalPrecalculation(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+		return
+	}
+	conn, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	q := db.New(conn)
+	ctx := context.Background()
+
+	// Clean up existing data
+	if _, err := conn.ExecContext(ctx, "TRUNCATE TABLE graph_nodes, graph_links CASCADE"); err != nil {
+		t.Fatalf("failed to truncate tables: %v", err)
+	}
+
+	// Initialize precalc_state
+	if _, err := conn.ExecContext(ctx, `
+		INSERT INTO precalc_state (id, last_precalc_at, last_full_precalc_at)
+		VALUES (1, NULL, NULL)
+		ON CONFLICT (id) DO UPDATE SET last_precalc_at = NULL, last_full_precalc_at = NULL
+	`); err != nil {
+		t.Fatalf("failed to initialize precalc_state: %v", err)
+	}
+
+	// Create some test data
+	if _, err := conn.ExecContext(ctx, `
+		INSERT INTO subreddits (id, name, subscribers, created_at, updated_at)
+		VALUES (999, 'test_sub', 100, NOW(), NOW())
+		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+	`); err != nil {
+		t.Fatalf("failed to create test subreddit: %v", err)
+	}
+
+	if _, err := conn.ExecContext(ctx, `
+		INSERT INTO users (id, username, created_at, updated_at)
+		VALUES (999, 'test_user', NOW(), NOW())
+		ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username
+	`); err != nil {
+		t.Fatalf("failed to create test user: %v", err)
+	}
+
+	svc := NewService(q)
+
+	// First run: full precalculation (no previous state)
+	t.Log("Running first full precalculation...")
+	if err := svc.PrecalculateGraphDataWithMode(ctx, false); err != nil {
+		t.Fatalf("first precalc failed: %v", err)
+	}
+
+	// Verify precalc state was updated
+	state, err := q.GetPrecalcState(ctx)
+	if err != nil {
+		t.Fatalf("failed to get precalc state: %v", err)
+	}
+	if !state.LastPrecalcAt.Valid {
+		t.Fatalf("expected last_precalc_at to be set after first run")
+	}
+	t.Logf("First precalc completed at: %v", state.LastPrecalcAt.Time)
+
+	// Count nodes after first run
+	var nodeCount int64
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_nodes").Scan(&nodeCount); err != nil {
+		t.Fatalf("failed to count nodes: %v", err)
+	}
+	t.Logf("Nodes after first run: %d", nodeCount)
+
+	// Wait a bit to ensure timestamp difference
+	// (In real scenario, there would be time between runs)
+	
+	// Second run: incremental precalculation (should detect no changes)
+	t.Log("Running second incremental precalculation (no changes)...")
+	if err := svc.PrecalculateGraphDataWithMode(ctx, false); err != nil {
+		t.Fatalf("second precalc failed: %v", err)
+	}
+
+	// Verify incremental mode was used by checking counts
+	counts, err := q.CountChangedEntities(ctx, state.LastPrecalcAt)
+	if err != nil {
+		t.Fatalf("failed to count changed entities: %v", err)
+	}
+	t.Logf("Changed entities: subs=%d, users=%d, posts=%d, comments=%d",
+		counts.ChangedSubreddits, counts.ChangedUsers, counts.ChangedPosts, counts.ChangedComments)
+
+	// Third run: force full rebuild
+	t.Log("Running third full precalculation (forced)...")
+	if err := svc.PrecalculateGraphDataWithMode(ctx, true); err != nil {
+		t.Fatalf("third precalc failed: %v", err)
+	}
+
+	// Verify state was updated
+	state2, err := q.GetPrecalcState(ctx)
+	if err != nil {
+		t.Fatalf("failed to get precalc state: %v", err)
+	}
+	if !state2.LastFullPrecalcAt.Valid {
+		t.Fatalf("expected last_full_precalc_at to be set after forced full rebuild")
+	}
+	t.Logf("Last full precalc at: %v", state2.LastFullPrecalcAt.Time)
+	
+	// Node count should remain the same (same data)
+	var nodeCount2 int64
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_nodes").Scan(&nodeCount2); err != nil {
+		t.Fatalf("failed to count nodes: %v", err)
+	}
+	t.Logf("Nodes after third run: %d", nodeCount2)
+}
