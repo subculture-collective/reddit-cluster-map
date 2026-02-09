@@ -570,7 +570,7 @@ LIMIT $7;
 -- Retrieves nodes within a 2D bounding box (ignoring z coordinate)
 -- Parameters: x_min, x_max, y_min, y_max, limit
 -- Useful for 2D viewport queries where z is not relevant
--- Note: Includes pos_z IS NOT NULL to enable use of the partial GiST index
+-- Note: Includes pos_z IS NOT NULL to match the partial GiST index predicate (which requires all position columns to be non-null)
 SELECT 
     id,
     name,
