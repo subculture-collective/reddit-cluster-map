@@ -228,7 +228,7 @@ func TestIntegration_SpatialIndex_Exists(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Check if the spatial index exists
+	// Check if the spatial index exists - fail if missing to ensure migrations are applied
 	var indexExists bool
 	err = conn.QueryRowContext(ctx, `
 		SELECT EXISTS (
@@ -241,7 +241,7 @@ func TestIntegration_SpatialIndex_Exists(t *testing.T) {
 	}
 
 	if !indexExists {
-		t.Skip("Spatial index not yet created; run migrations first")
+		t.Fatal("Spatial index 'idx_graph_nodes_spatial_nonnull' not found; ensure migrations are applied in CI/test environment")
 	}
 
 	// Check if btree_gist extension is enabled
@@ -257,7 +257,7 @@ func TestIntegration_SpatialIndex_Exists(t *testing.T) {
 	}
 
 	if !extensionExists {
-		t.Error("btree_gist extension is not enabled")
+		t.Fatal("btree_gist extension is not enabled; ensure migrations are applied in CI/test environment")
 	}
 
 	t.Logf("Spatial index and btree_gist extension are properly configured")

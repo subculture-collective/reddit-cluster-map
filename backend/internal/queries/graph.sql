@@ -570,6 +570,7 @@ LIMIT $7;
 -- Retrieves nodes within a 2D bounding box (ignoring z coordinate)
 -- Parameters: x_min, x_max, y_min, y_max, limit
 -- Useful for 2D viewport queries where z is not relevant
+-- Note: Includes pos_z IS NOT NULL to enable use of the partial GiST index
 SELECT 
     id,
     name,
@@ -581,6 +582,7 @@ SELECT
 FROM graph_nodes
 WHERE pos_x IS NOT NULL
   AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
   AND pos_x BETWEEN $1 AND $2
   AND pos_y BETWEEN $3 AND $4
 ORDER BY (

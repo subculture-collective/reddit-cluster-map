@@ -11,25 +11,20 @@ The spatial R-tree index enables fast bounding box queries on the `graph_nodes` 
 ### Database Extension
 - **Extension**: `btree_gist` (included in standard PostgreSQL, no PostGIS required)
 - **Migration**: `000025_spatial_index.up.sql`
+- **Privilege Requirement**: Creating the `btree_gist` extension requires superuser or appropriate privileges. In managed PostgreSQL environments, ensure the extension is enabled before running migrations.
 
-### Indexes Created
+### Index Created
 
-Two GiST (Generalized Search Tree) indexes are created:
+A single partial GiST (Generalized Search Tree) index is created:
 
-1. **`idx_graph_nodes_spatial`** - Full index on all nodes
-   ```sql
-   CREATE INDEX idx_graph_nodes_spatial ON graph_nodes 
-   USING gist (pos_x, pos_y, pos_z);
-   ```
+**`idx_graph_nodes_spatial_nonnull`** - Optimized partial index for non-null positions
+```sql
+CREATE INDEX idx_graph_nodes_spatial_nonnull ON graph_nodes 
+USING gist (pos_x, pos_y, pos_z)
+WHERE pos_x IS NOT NULL AND pos_y IS NOT NULL AND pos_z IS NOT NULL;
+```
 
-2. **`idx_graph_nodes_spatial_nonnull`** - Partial index (optimized)
-   ```sql
-   CREATE INDEX idx_graph_nodes_spatial_nonnull ON graph_nodes 
-   USING gist (pos_x, pos_y, pos_z)
-   WHERE pos_x IS NOT NULL AND pos_y IS NOT NULL AND pos_z IS NOT NULL;
-   ```
-
-The partial index is more efficient as it only indexes nodes that have position data.
+This partial index reduces overhead by only indexing nodes that have position data, eliminating the need for a separate full index.
 
 ### Queries Available
 
@@ -255,6 +250,6 @@ Potential improvements for v2.0+:
 - PostgreSQL GiST Indexes: https://www.postgresql.org/docs/current/gist.html
 - btree_gist Extension: https://www.postgresql.org/docs/current/btree-gist.html
 - sqlc Documentation: https://docs.sqlc.dev/
-- Issue #169: Build spatial R-tree index for node positions
+- Issue #169: Build spatial R-tree index for node positions (this work)
 - Epic #141: Graph Data Pipeline (E3)
 - Roadmap #138: MVP to Professional Grade v2.0
