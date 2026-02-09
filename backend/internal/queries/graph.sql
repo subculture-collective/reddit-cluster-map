@@ -581,3 +581,86 @@ FROM graph_community_hierarchy
 WHERE level = $1
 GROUP BY community_id
 ORDER BY member_count DESC;
+
+-- name: GetNodesInBoundingBox :many
+-- Retrieves nodes within a 3D bounding box using the spatial index
+-- Parameters: x_min, x_max, y_min, y_max, z_min, z_max, limit
+-- The spatial index (idx_graph_nodes_spatial_nonnull) makes this query efficient
+SELECT 
+    id,
+    name,
+    val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+  AND pos_z BETWEEN $5 AND $6
+ORDER BY (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, id
+LIMIT $7;
+
+-- name: GetNodesInBoundingBox2D :many
+-- Retrieves nodes within a 2D bounding box (ignoring z coordinate)
+-- Parameters: x_min, x_max, y_min, y_max, limit
+-- Useful for 2D viewport queries where z is not relevant
+-- Note: Includes pos_z IS NOT NULL to match the partial GiST index predicate (which requires all position columns to be non-null)
+SELECT 
+    id,
+    name,
+    val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+ORDER BY (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, id
+LIMIT $5;
+
+-- name: GetLinksForNodesInBoundingBox :many
+-- Retrieves links where both source and target nodes are within the bounding box
+-- Uses the same spatial filtering approach
+-- Parameters: x_min, x_max, y_min, y_max, z_min, z_max, limit
+WITH bbox_nodes AS (
+    SELECT id
+    FROM graph_nodes
+    WHERE pos_x IS NOT NULL
+      AND pos_y IS NOT NULL
+      AND pos_z IS NOT NULL
+      AND pos_x BETWEEN $1 AND $2
+      AND pos_y BETWEEN $3 AND $4
+      AND pos_z BETWEEN $5 AND $6
+)
+SELECT 
+    gl.id,
+    gl.source,
+    gl.target
+FROM graph_links gl
+WHERE EXISTS (SELECT 1 FROM bbox_nodes WHERE id = gl.source)
+  AND EXISTS (SELECT 1 FROM bbox_nodes WHERE id = gl.target)
+LIMIT $7;
+
+-- name: CountNodesInBoundingBox :one
+-- Count nodes within a bounding box (useful for pagination)
+-- Parameters: x_min, x_max, y_min, y_max, z_min, z_max
+SELECT COUNT(*)
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+  AND pos_z BETWEEN $5 AND $6;
