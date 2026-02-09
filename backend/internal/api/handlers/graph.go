@@ -674,7 +674,14 @@ func (h *Handler) GetGraphOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := GraphResponse{Nodes: nodes, Links: links}
-	b, _ := json.Marshal(resp)
+	b, err := json.Marshal(resp)
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to marshal overview response", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "marshal failed")
+		apierr.WriteErrorWithContext(w, r, apierr.SystemInternal("Failed to marshal response"))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(b)
 
@@ -868,7 +875,14 @@ func (h *Handler) GetGraphRegion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := GraphResponse{Nodes: nodes, Links: links}
-	b, _ := json.Marshal(resp)
+	b, err := json.Marshal(resp)
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to marshal region response", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "marshal failed")
+		apierr.WriteErrorWithContext(w, r, apierr.SystemInternal("Failed to marshal response"))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(b)
 
