@@ -34,8 +34,10 @@ Here's what the Performance HUD looks like when toggled on (press F12):
 │                                                               │
 └──────────────────────────────────────────────────────────────┘
 
-   Press F12 or Ctrl+Shift+P to toggle Performance HUD
+   Press Ctrl+Shift+P to toggle Performance HUD
 ```
+
+**Note:** F12 is intentionally not used to avoid blocking browser DevTools.
 
 ## Color Scheme
 

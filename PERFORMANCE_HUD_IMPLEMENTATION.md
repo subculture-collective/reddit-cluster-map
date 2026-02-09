@@ -45,14 +45,15 @@ The HUD appears as a semi-transparent black overlay in the top-left corner of th
 
 ### Keyboard Shortcuts
 
-- **F12** - Toggle HUD visibility
-- **Ctrl+Shift+P** - Alternate toggle shortcut
+- **Ctrl+Shift+P** - Toggle HUD visibility (case-insensitive)
+
+**Note:** F12 was intentionally not used to avoid blocking browser DevTools.
 
 ### Visibility Control
 
 - **Default:** Hidden in production builds
 - **Development:** Remembers last state in localStorage
-- **Override:** Set `VITE_SHOW_PERFORMANCE_HUD=true` to show in production
+- **Force Show:** Set `VITE_SHOW_PERFORMANCE_HUD=true` to always show in production (overrides localStorage)
 
 ### Performance Impact
 
