@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/cache"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/logger"
@@ -34,18 +34,6 @@ type GraphDataReader interface {
 	GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error)
 }
 
-// graphCacheEntry holds a cached response and its expiry.
-type graphCacheEntry struct {
-	data      []byte
-	expiresAt time.Time
-}
-
-var (
-	graphCache    = make(map[string]graphCacheEntry)
-	graphCacheMu  sync.Mutex
-	graphCacheTTL = 60 * time.Second
-)
-
 func cacheKey(maxNodes, maxLinks int, typeKey string, withPositions bool) string {
 	if typeKey == "" {
 		typeKey = "all"
@@ -57,10 +45,18 @@ func cacheKey(maxNodes, maxLinks int, typeKey string, withPositions bool) string
 	return key
 }
 
-type Handler struct{ queries GraphDataReader }
+type Handler struct {
+	queries GraphDataReader
+	cache   cache.Cache
+}
 
 // NewHandler creates a new graph handler.
-func NewHandler(q GraphDataReader) *Handler { return &Handler{queries: q} }
+func NewHandler(q GraphDataReader, c cache.Cache) *Handler {
+	return &Handler{
+		queries: q,
+		cache:   c,
+	}
+}
 
 type GraphNode struct {
 	ID   string   `json:"id"`
@@ -119,24 +115,19 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 
 	if !allowAll && len(allowedTypes) == 0 {
 		span.SetAttributes(attribute.String("result", "empty_filter"))
-		writeCachedEmpty(w, maxNodes, maxLinks, typeKey, withPos)
+		writeCachedEmpty(w, h, maxNodes, maxLinks, typeKey, withPos)
 		return
 	}
 
 	// Check cache first
 	key := cacheKey(maxNodes, maxLinks, typeKey, withPos)
-	now := time.Now()
-	graphCacheMu.Lock()
-	entry, found := graphCache[key]
-	if found && entry.expiresAt.After(now) {
-		graphCacheMu.Unlock()
+	if cachedData, found := h.cache.Get(key); found {
 		metrics.APICacheHits.WithLabelValues("graph").Inc()
 		span.SetAttributes(attribute.Bool("cache_hit", true))
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(entry.data)
+		w.Write(cachedData)
 		return
 	}
-	graphCacheMu.Unlock()
 	metrics.APICacheMisses.WithLabelValues("graph").Inc()
 	span.SetAttributes(attribute.Bool("cache_hit", false))
 
@@ -216,9 +207,7 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(b)
 		// store in cache
-		graphCacheMu.Lock()
-		graphCache[key] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
-		graphCacheMu.Unlock()
+		h.cache.Set(key, b, 0) // 0 means use default TTL
 		return
 	}
 
@@ -229,9 +218,7 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 		b, _ := json.Marshal(empty)
 		_, _ = w.Write(b)
 		// cache empty response too
-		graphCacheMu.Lock()
-		graphCache[key] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
-		graphCacheMu.Unlock()
+		h.cache.Set(key, b, 0)
 		return
 	}
 	handleLegacyGraph(ctx, w, r, h, maxNodes, maxLinks, allowAll, allowedTypes, typeKey, withPos)
@@ -371,9 +358,7 @@ func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, r *http.Reque
 			b, _ := json.Marshal(capped)
 			_, _ = w.Write(b)
 			// store in cache keyed by caps
-			graphCacheMu.Lock()
-			graphCache[cacheKeyStr] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
-			graphCacheMu.Unlock()
+			h.cache.Set(cacheKeyStr, b, 0)
 			return
 		}
 	}
@@ -381,9 +366,7 @@ func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 	b, _ := json.Marshal(empty)
 	_, _ = w.Write(b)
-	graphCacheMu.Lock()
-	graphCache[cacheKeyStr] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
-	graphCacheMu.Unlock()
+	h.cache.Set(cacheKeyStr, b, 0)
 }
 
 // preRow is an internal union row type for capped precalc results including optional positions
@@ -463,14 +446,12 @@ func parseTypes(raw string) (map[string]struct{}, []string, string, bool) {
 	return allowed, list, strings.Join(list, ","), false
 }
 
-func writeCachedEmpty(w http.ResponseWriter, maxNodes, maxLinks int, typeKey string, withPos bool) {
+func writeCachedEmpty(w http.ResponseWriter, h *Handler, maxNodes, maxLinks int, typeKey string, withPos bool) {
 	w.Header().Set("Content-Type", "application/json")
 	empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 	b, _ := json.Marshal(empty)
 	_, _ = w.Write(b)
-	graphCacheMu.Lock()
-	graphCache[cacheKey(maxNodes, maxLinks, typeKey, withPos)] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
-	graphCacheMu.Unlock()
+	h.cache.Set(cacheKey(maxNodes, maxLinks, typeKey, withPos), b, 0)
 }
 
 // EdgeBundle represents a bundled edge between two communities

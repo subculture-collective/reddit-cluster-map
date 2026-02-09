@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/onnwee/reddit-cluster-map/backend/internal/cache"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
@@ -100,7 +101,7 @@ func (f *fakeGraphQueries) GetEdgeBundles(ctx context.Context, weight int32) ([]
 }
 
 func TestGraphHandler_UnwrapsSingleRow(t *testing.T) {
-	h := &Handler{queries: (&fakeGraphQueries{data: [][]byte{[]byte(`{"nodes":[{"id":"x"}],"links":[]}`)}})}
+	h := &Handler{queries: (&fakeGraphQueries{data: [][]byte{[]byte(`{"nodes":[{"id":"x"}],"links":[]}`)}}), cache: cache.NewMockCache()}
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/graph", nil)
 	h.GetGraphData(rr, req)
@@ -148,12 +149,13 @@ func (f *fakeTimeoutQueries) GetEdgeBundles(ctx context.Context, weight int32) (
 }
 
 func TestGraphHandler_TimeoutHandling(t *testing.T) {
-	// Clear the cache to avoid interference from other tests
-	graphCacheMu.Lock()
-	graphCache = make(map[string]graphCacheEntry)
-	graphCacheMu.Unlock()
+	// Create a fresh cache for this test
+	testCache := cache.NewMockCache()
 
-	h := &Handler{queries: &fakeTimeoutQueries{}}
+	h := &Handler{
+		queries: &fakeTimeoutQueries{},
+		cache:   testCache,
+	}
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/graph", nil)
 	h.GetGraphData(rr, req)
@@ -222,11 +224,8 @@ func (f *fakeGraphQueriesWithPositions) GetEdgeBundles(ctx context.Context, weig
 
 func TestGraphHandler_WithPositions(t *testing.T) {
 	// Clear cache before test
-	graphCacheMu.Lock()
-	graphCache = make(map[string]graphCacheEntry)
-	graphCacheMu.Unlock()
 
-	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}, cache: cache.NewMockCache()}
 
 	// Test with with_positions=true
 	t.Run("with_positions=true", func(t *testing.T) {
@@ -273,9 +272,6 @@ func TestGraphHandler_WithPositions(t *testing.T) {
 	// Test without with_positions parameter (should not include positions)
 	t.Run("without_positions", func(t *testing.T) {
 		// Clear cache
-		graphCacheMu.Lock()
-		graphCache = make(map[string]graphCacheEntry)
-		graphCacheMu.Unlock()
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/graph", nil)
@@ -384,11 +380,8 @@ func TestCacheKey(t *testing.T) {
 // use separate cache entries and don't interfere with each other
 func TestGraphHandler_CacheKeyIsolation(t *testing.T) {
 	// Clear cache before test
-	graphCacheMu.Lock()
-	graphCache = make(map[string]graphCacheEntry)
-	graphCacheMu.Unlock()
 
-	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}, cache: cache.NewMockCache()}
 
 	// Request 1: with_positions=true
 	rr1 := httptest.NewRecorder()
@@ -448,9 +441,7 @@ func TestGraphHandler_CacheKeyIsolation(t *testing.T) {
 	}
 
 	// Verify we have two separate cache entries
-	graphCacheMu.Lock()
-	cacheSize := len(graphCache)
-	graphCacheMu.Unlock()
+	cacheSize := h.cache.Stats().Items
 
 	if cacheSize != 2 {
 		t.Errorf("expected 2 cache entries (one with positions, one without), got %d", cacheSize)
@@ -460,11 +451,8 @@ func TestGraphHandler_CacheKeyIsolation(t *testing.T) {
 // TestGraphHandler_CacheBehavior verifies cache hit/miss scenarios
 func TestGraphHandler_CacheBehavior(t *testing.T) {
 	// Clear cache before test
-	graphCacheMu.Lock()
-	graphCache = make(map[string]graphCacheEntry)
-	graphCacheMu.Unlock()
 
-	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}, cache: cache.NewMockCache()}
 
 	// First request - cache miss
 	rr1 := httptest.NewRecorder()
@@ -501,9 +489,7 @@ func TestGraphHandler_CacheBehavior(t *testing.T) {
 	}
 
 	// Verify we now have 2 cache entries
-	graphCacheMu.Lock()
-	cacheSize := len(graphCache)
-	graphCacheMu.Unlock()
+	cacheSize := h.cache.Stats().Items
 
 	if cacheSize != 2 {
 		t.Errorf("expected 2 cache entries for different parameters, got %d", cacheSize)
@@ -513,11 +499,8 @@ func TestGraphHandler_CacheBehavior(t *testing.T) {
 // TestGraphHandler_CacheKeyWithTypes verifies type filtering in cache keys
 func TestGraphHandler_CacheKeyWithTypes(t *testing.T) {
 	// Clear cache before test
-	graphCacheMu.Lock()
-	graphCache = make(map[string]graphCacheEntry)
-	graphCacheMu.Unlock()
 
-	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}, cache: cache.NewMockCache()}
 
 	// Request 1: no type filter
 	rr1 := httptest.NewRecorder()
@@ -547,9 +530,7 @@ func TestGraphHandler_CacheKeyWithTypes(t *testing.T) {
 	}
 
 	// Verify we have 3 separate cache entries
-	graphCacheMu.Lock()
-	cacheSize := len(graphCache)
-	graphCacheMu.Unlock()
+	cacheSize := h.cache.Stats().Items
 
 	if cacheSize != 3 {
 		t.Errorf("expected 3 cache entries for different type filters, got %d", cacheSize)
