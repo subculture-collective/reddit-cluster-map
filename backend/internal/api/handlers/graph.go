@@ -532,12 +532,12 @@ func (h *Handler) GetEdgeBundles(w http.ResponseWriter, r *http.Request) {
 			TargetCommunity: row.TargetCommunityID,
 			Weight:          row.Weight,
 		}
-		
+
 		if row.AvgStrength.Valid {
 			strength := row.AvgStrength.Float64
 			bundle.AvgStrength = &strength
 		}
-		
+
 		if row.ControlX.Valid && row.ControlY.Valid && row.ControlZ.Valid {
 			bundle.ControlPoint = &struct {
 				X float64 `json:"x"`
@@ -549,7 +549,7 @@ func (h *Handler) GetEdgeBundles(w http.ResponseWriter, r *http.Request) {
 				Z: row.ControlZ.Float64,
 			}
 		}
-		
+
 		bundles = append(bundles, bundle)
 	}
 
@@ -569,4 +569,3 @@ func (h *Handler) GetEdgeBundles(w http.ResponseWriter, r *http.Request) {
 	)
 	span.SetStatus(codes.Ok, "bundles fetched successfully")
 }
-

@@ -77,7 +77,7 @@ func TestErrorSerialization(t *testing.T) {
 func TestErrorWithRequestID(t *testing.T) {
 	// Create a mock request with request ID in context
 	r := httptest.NewRequest("GET", "/test", nil)
-	
+
 	// Add request ID to context using middleware
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify request ID is in context
@@ -144,7 +144,7 @@ func TestWriteErrorWithContext(t *testing.T) {
 // Test error details
 func TestErrorDetails(t *testing.T) {
 	w := httptest.NewRecorder()
-	
+
 	// Create error with details
 	err := apierr.New(apierr.ErrValidationInvalidValue, "must be positive", http.StatusBadRequest).
 		WithDetails(map[string]interface{}{
@@ -152,7 +152,7 @@ func TestErrorDetails(t *testing.T) {
 			"value": -5,
 			"min":   0,
 		})
-	
+
 	apierr.WriteError(w, err)
 
 	var resp apierr.ErrorResponse
@@ -189,7 +189,7 @@ func TestGetRequestIDEmpty(t *testing.T) {
 // Test that GetRequestID returns the value from context
 func TestGetRequestIDFromContext(t *testing.T) {
 	r := httptest.NewRequest("GET", "/test", nil)
-	
+
 	// Simulate RequestID middleware
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqID := apierr.GetRequestID(r.Context())
@@ -198,7 +198,7 @@ func TestGetRequestIDFromContext(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	
+
 	wrapped := middleware.RequestID(handler)
 	w := httptest.NewRecorder()
 	wrapped.ServeHTTP(w, r)

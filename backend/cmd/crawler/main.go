@@ -76,8 +76,8 @@ func main() {
 	defer conn.Close()
 
 	// Configure connection pool for crawler (fewer connections needed than API)
-	conn.SetMaxOpenConns(10)              // Crawler needs fewer concurrent connections
-	conn.SetMaxIdleConns(5)               // Keep some idle connections ready
+	conn.SetMaxOpenConns(10)                  // Crawler needs fewer concurrent connections
+	conn.SetMaxIdleConns(5)                   // Keep some idle connections ready
 	conn.SetConnMaxLifetime(10 * time.Minute) // Longer lifetime for background service
 	conn.SetConnMaxIdleTime(5 * time.Minute)  // Longer idle time for background service
 

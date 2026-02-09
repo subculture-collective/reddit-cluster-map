@@ -11,8 +11,8 @@ import (
 	"github.com/onnwee/reddit-cluster-map/backend/internal/cache"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
-	"github.com/onnwee/reddit-cluster-map/backend/internal/middleware"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -106,23 +106,23 @@ func NewRouter(q *db.Queries) *mux.Router {
 
 	// Graph data for the frontend: GET /api/graph
 	graphHandler := handlers.NewHandler(q, graphCache)
-	r.Handle("/api/graph", middleware.ETag(middleware.Gzip(http.HandlerFunc(graphHandler.GetGraphData)))).Methods("GET")
+	r.Handle("/api/graph", middleware.Gzip(middleware.ETag(http.HandlerFunc(graphHandler.GetGraphData)))).Methods("GET")
 
-	// Edge bundles endpoint: GET /api/graph/bundles
-	r.HandleFunc("/api/graph/bundles", graphHandler.GetEdgeBundles).Methods("GET")
+	// Edge bundles endpoint with gzip and ETag: GET /api/graph/bundles
+	r.Handle("/api/graph/bundles", middleware.Gzip(middleware.ETag(http.HandlerFunc(graphHandler.GetEdgeBundles)))).Methods("GET")
 
 	// Search endpoint with gzip and ETag: GET /api/search?node=...
-	searchHandler := middleware.ETag(middleware.Gzip(http.HandlerFunc(handlers.SearchNode(q))))
+	searchHandler := middleware.Gzip(middleware.ETag(http.HandlerFunc(handlers.SearchNode(q))))
 	r.Handle("/api/search", searchHandler).Methods("GET")
 
 	// Export endpoint with gzip and ETag: GET /api/export?format=json|csv
-	exportHandler := middleware.ETag(middleware.Gzip(http.HandlerFunc(handlers.ExportGraph(q))))
+	exportHandler := middleware.Gzip(middleware.ETag(http.HandlerFunc(handlers.ExportGraph(q))))
 	r.Handle("/api/export", exportHandler).Methods("GET")
 
-	// Community aggregation endpoints
+	// Community aggregation endpoints with gzip and ETag
 	communityHandler := handlers.NewCommunityHandler(q, graphCache)
-	r.HandleFunc("/api/communities", communityHandler.GetCommunities).Methods("GET")
-	r.HandleFunc("/api/communities/{id}", communityHandler.GetCommunityByID).Methods("GET")
+	r.Handle("/api/communities", middleware.Gzip(middleware.ETag(http.HandlerFunc(communityHandler.GetCommunities)))).Methods("GET")
+	r.Handle("/api/communities/{id}", middleware.Gzip(middleware.ETag(http.HandlerFunc(communityHandler.GetCommunityByID)))).Methods("GET")
 
 	// Admin: toggle background services (gated)
 	admin := handlers.NewAdminHandler(q)
