@@ -115,10 +115,18 @@ func (h *CommunityHandler) GetCommunities(w http.ResponseWriter, r *http.Request
 			Val:  v,
 			Type: "community",
 		}
-		if withPos && row.PosX != 0 && row.PosY != 0 {
-			x := row.PosX
-			y := row.PosY
-			z := row.PosZ
+		if withPos {
+			// Convert interface{} to float64 (sqlc generates interface{} for COALESCE results)
+			var x, y, z float64
+			if posX, ok := row.PosX.(float64); ok {
+				x = posX
+			}
+			if posY, ok := row.PosY.(float64); ok {
+				y = posY
+			}
+			if posZ, ok := row.PosZ.(float64); ok {
+				z = posZ
+			}
 			gn.X = &x
 			gn.Y = &y
 			gn.Z = &z

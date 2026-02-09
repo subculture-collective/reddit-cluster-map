@@ -100,6 +100,22 @@ func (f *fakeGraphQueries) GetEdgeBundles(ctx context.Context, weight int32) ([]
 	return []db.GetEdgeBundlesRow{}, nil
 }
 
+func (f *fakeGraphQueries) GetCommunitySupernodesWithPositions(ctx context.Context) ([]db.GetCommunitySupernodesWithPositionsRow, error) {
+	return []db.GetCommunitySupernodesWithPositionsRow{}, nil
+}
+
+func (f *fakeGraphQueries) GetCommunityLinks(ctx context.Context, limit int32) ([]db.GetCommunityLinksRow, error) {
+	return []db.GetCommunityLinksRow{}, nil
+}
+
+func (f *fakeGraphQueries) GetNodesInBoundingBox(ctx context.Context, arg db.GetNodesInBoundingBoxParams) ([]db.GetNodesInBoundingBoxRow, error) {
+	return []db.GetNodesInBoundingBoxRow{}, nil
+}
+
+func (f *fakeGraphQueries) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
+	return []db.GetLinksForNodesInBoundingBoxRow{}, nil
+}
+
 func TestGraphHandler_UnwrapsSingleRow(t *testing.T) {
 	h := &Handler{queries: (&fakeGraphQueries{data: [][]byte{[]byte(`{"nodes":[{"id":"x"}],"links":[]}`)}}), cache: cache.NewMockCache()}
 	rr := httptest.NewRecorder()
@@ -145,6 +161,22 @@ func (f *fakeTimeoutQueries) GetPrecalculatedGraphDataNoPos(ctx context.Context)
 }
 
 func (f *fakeTimeoutQueries) GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetCommunitySupernodesWithPositions(ctx context.Context) ([]db.GetCommunitySupernodesWithPositionsRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetCommunityLinks(ctx context.Context, limit int32) ([]db.GetCommunityLinksRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetNodesInBoundingBox(ctx context.Context, arg db.GetNodesInBoundingBoxParams) ([]db.GetNodesInBoundingBoxRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
 	return nil, context.DeadlineExceeded
 }
 
@@ -220,6 +252,22 @@ func (f *fakeGraphQueriesWithPositions) GetPrecalculatedGraphDataNoPos(ctx conte
 
 func (f *fakeGraphQueriesWithPositions) GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error) {
 	return []db.GetEdgeBundlesRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetCommunitySupernodesWithPositions(ctx context.Context) ([]db.GetCommunitySupernodesWithPositionsRow, error) {
+	return []db.GetCommunitySupernodesWithPositionsRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetCommunityLinks(ctx context.Context, limit int32) ([]db.GetCommunityLinksRow, error) {
+	return []db.GetCommunityLinksRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetNodesInBoundingBox(ctx context.Context, arg db.GetNodesInBoundingBoxParams) ([]db.GetNodesInBoundingBoxRow, error) {
+	return []db.GetNodesInBoundingBoxRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
+	return []db.GetLinksForNodesInBoundingBoxRow{}, nil
 }
 
 func TestGraphHandler_WithPositions(t *testing.T) {
@@ -539,13 +587,9 @@ func TestGraphHandler_CacheKeyWithTypes(t *testing.T) {
 
 // Test for GetEdgeBundles endpoint
 func TestGetEdgeBundles(t *testing.T) {
-	// Clear cache before test
-	graphCacheMu.Lock()
-	graphCache = make(map[string]graphCacheEntry)
-	graphCacheMu.Unlock()
-
 	h := &Handler{
 		queries: &edgeBundleTestQueries{},
+		cache:   cache.NewMockCache(),
 	}
 
 	t.Run("returns_bundles", func(t *testing.T) {
@@ -649,4 +693,20 @@ func (e *edgeBundleTestQueries) GetEdgeBundles(ctx context.Context, weight int32
 		}
 	}
 	return result, nil
+}
+
+func (e *edgeBundleTestQueries) GetCommunitySupernodesWithPositions(ctx context.Context) ([]db.GetCommunitySupernodesWithPositionsRow, error) {
+	return []db.GetCommunitySupernodesWithPositionsRow{}, nil
+}
+
+func (e *edgeBundleTestQueries) GetCommunityLinks(ctx context.Context, limit int32) ([]db.GetCommunityLinksRow, error) {
+	return []db.GetCommunityLinksRow{}, nil
+}
+
+func (e *edgeBundleTestQueries) GetNodesInBoundingBox(ctx context.Context, arg db.GetNodesInBoundingBoxParams) ([]db.GetNodesInBoundingBoxRow, error) {
+	return []db.GetNodesInBoundingBoxRow{}, nil
+}
+
+func (e *edgeBundleTestQueries) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
+	return []db.GetLinksForNodesInBoundingBoxRow{}, nil
 }

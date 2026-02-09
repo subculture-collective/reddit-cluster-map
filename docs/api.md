@@ -35,6 +35,98 @@ Performance notes:
     - Large datasets may take longer to query; consider reducing max_nodes/max_links if timeouts occur
     - The server enforces a configurable query timeout (GRAPH_QUERY_TIMEOUT_MS, default 30000ms)
 
+### GET /api/graph/overview
+
+Returns a lightweight community-level overview of the graph. This endpoint returns community supernodes and inter-community links, providing a high-level view before drill-down.
+
+Query params:
+    - Optional: `max_nodes` (default 100) - maximum number of community supernodes to return
+    - Optional: `max_links` (default 500) - maximum number of inter-community links to return
+    - Optional: `with_positions=true` to include precomputed positions as `x,y,z` on nodes
+
+Response format:
+```json
+{
+  "nodes": [
+    {
+      "id": "community_1",
+      "name": "Community 1", 
+      "val": 100,
+      "type": "community",
+      "x": 1.5,
+      "y": 2.5,
+      "z": 3.5
+    }
+  ],
+  "links": [
+    {
+      "source": "community_1",
+      "target": "community_2"
+    }
+  ]
+}
+```
+
+Response codes:
+    - `200 OK` - successful response with overview data
+    - `408 Request Timeout` - query exceeded timeout
+    - `500 Internal Server Error` - server error
+
+Performance notes:
+    - Typically returns <1k nodes, optimized for fast overview rendering
+    - Results are cached independently from main graph endpoint
+    - Target response time: <100ms
+
+### GET /api/graph/region
+
+Returns nodes and links within a 3D bounding box for spatial viewport queries.
+
+Query params:
+    - Required:
+        - `x_min`, `x_max` - X-axis bounds (float)
+        - `y_min`, `y_max` - Y-axis bounds (float)
+        - `z_min`, `z_max` - Z-axis bounds (float)
+    - Optional:
+        - `max_nodes` (default 10000) - maximum nodes to return
+        - `max_links` (default 50000) - maximum links to return
+
+Response format: Same as `/api/graph` with positions always included
+
+Response codes:
+    - `200 OK` - successful response with region data
+    - `400 Bad Request` - invalid bounding box parameters
+    - `408 Request Timeout` - query exceeded timeout
+    - `500 Internal Server Error` - server error
+
+Performance notes:
+    - Uses spatial index for efficient bounding box queries
+    - Results are cached per bounding box and limits
+    - Target response time: <200ms
+
+### GET /api/graph/community/{id}
+
+Returns the full subgraph of nodes and links within a specific community (drill-down view). This is an alias for `/api/communities/{id}` following the tiered API convention.
+
+Path params:
+    - `id` - Community ID (integer)
+
+Query params:
+    - Optional: `max_nodes` (default 10000) - maximum nodes to return
+    - Optional: `max_links` (default 50000) - maximum links to return  
+    - Optional: `with_positions=true` to include positions
+
+Response format: Same as `/api/graph`
+
+Response codes:
+    - `200 OK` - successful response with community subgraph
+    - `404 Not Found` - community does not exist
+    - `408 Request Timeout` - query exceeded timeout
+    - `500 Internal Server Error` - server error
+
+Performance notes:
+    - Results are cached per community and limits
+    - Target response time: <200ms
+
 ### POST /api/crawl
 
 Enqueue a subreddit crawl job.

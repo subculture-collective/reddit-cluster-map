@@ -108,6 +108,10 @@ func NewRouter(q *db.Queries) *mux.Router {
 	graphHandler := handlers.NewHandler(q, graphCache)
 	r.Handle("/api/graph", middleware.Gzip(middleware.ETag(http.HandlerFunc(graphHandler.GetGraphData)))).Methods("GET")
 
+	// Tiered graph endpoints for overview and drill-down
+	r.Handle("/api/graph/overview", middleware.Gzip(middleware.ETag(http.HandlerFunc(graphHandler.GetGraphOverview)))).Methods("GET")
+	r.Handle("/api/graph/region", middleware.Gzip(middleware.ETag(http.HandlerFunc(graphHandler.GetGraphRegion)))).Methods("GET")
+
 	// Edge bundles endpoint with gzip and ETag: GET /api/graph/bundles
 	r.Handle("/api/graph/bundles", middleware.Gzip(middleware.ETag(http.HandlerFunc(graphHandler.GetEdgeBundles)))).Methods("GET")
 
@@ -123,6 +127,9 @@ func NewRouter(q *db.Queries) *mux.Router {
 	communityHandler := handlers.NewCommunityHandler(q, graphCache)
 	r.Handle("/api/communities", middleware.Gzip(middleware.ETag(http.HandlerFunc(communityHandler.GetCommunities)))).Methods("GET")
 	r.Handle("/api/communities/{id}", middleware.Gzip(middleware.ETag(http.HandlerFunc(communityHandler.GetCommunityByID)))).Methods("GET")
+
+	// Alias for drill-down - same as /api/communities/{id} but matches tiered API convention
+	r.Handle("/api/graph/community/{id}", middleware.Gzip(middleware.ETag(http.HandlerFunc(communityHandler.GetCommunityByID)))).Methods("GET")
 
 	// Admin: toggle background services (gated)
 	admin := handlers.NewAdminHandler(q)
