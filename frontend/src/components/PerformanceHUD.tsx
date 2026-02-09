@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
-import * as THREE from 'three';
+import type { WebGLRenderer } from 'three';
 
 interface PerformanceHUDProps {
-    renderer: THREE.WebGLRenderer | null;
+    renderer: WebGLRenderer | null;
     nodeCount?: number;
     totalNodeCount?: number;
     simulationState?: 'active' | 'idle' | 'precomputed';
@@ -44,7 +44,11 @@ export default function PerformanceHUD({
         const forceShow = import.meta.env.VITE_SHOW_PERFORMANCE_HUD === 'true';
         
         let initialVisibility = false;
-        if (!isProduction || forceShow) {
+        if (forceShow) {
+            // Force show when explicitly enabled via env var
+            initialVisibility = true;
+        } else if (!isProduction) {
+            // In development, restore from localStorage
             try {
                 const saved = localStorage.getItem('performanceHUD:visible');
                 initialVisibility = saved === 'true';
@@ -61,12 +65,18 @@ export default function PerformanceHUD({
 
     // Keyboard shortcut handler
     useEffect(() => {
+        const isProduction = import.meta.env.PROD;
+        const forceShow = import.meta.env.VITE_SHOW_PERFORMANCE_HUD === 'true';
+
+        // In production, keep HUD inert unless explicitly enabled
+        if (isProduction && !forceShow) {
+            return;
+        }
+
         const handleKeyDown = (e: KeyboardEvent) => {
-            // F12 or Ctrl+Shift+P
-            if (
-                e.key === 'F12' ||
-                (e.ctrlKey && e.shiftKey && e.key === 'P')
-            ) {
+            // Ctrl+Shift+P toggles the Performance HUD
+            // Don't use F12 to avoid blocking DevTools
+            if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'p') {
                 e.preventDefault();
                 isVisibleRef.current = !isVisibleRef.current;
                 

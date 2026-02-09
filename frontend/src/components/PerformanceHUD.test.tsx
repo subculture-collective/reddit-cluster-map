@@ -46,11 +46,35 @@ describe('PerformanceHUD', () => {
         expect(element).toBeInTheDocument();
     });
 
-    it('is hidden by default in production', () => {
-        vi.stubEnv('PROD', true);
+    it('is hidden by default', () => {
         render(<PerformanceHUD renderer={mockRenderer} />);
         const element = screen.getByLabelText('Performance metrics overlay');
         expect(element).toHaveStyle({ display: 'none' });
+    });
+
+    it('cannot be toggled in production without explicit enable', async () => {
+        // Mock production environment
+        vi.stubEnv('PROD', true);
+        
+        render(<PerformanceHUD renderer={mockRenderer} />);
+        const element = screen.getByLabelText('Performance metrics overlay');
+        
+        // Should be hidden
+        expect(element).toHaveStyle({ display: 'none' });
+        
+        // Try to toggle with Ctrl+Shift+P - should not work
+        const event = new KeyboardEvent('keydown', {
+            key: 'p',
+            ctrlKey: true,
+            shiftKey: true,
+        });
+        window.dispatchEvent(event);
+        
+        // Should still be hidden
+        await waitFor(() => {
+            expect(element).toHaveStyle({ display: 'none' });
+        });
+        
         vi.unstubAllEnvs();
     });
 
@@ -113,26 +137,14 @@ describe('PerformanceHUD', () => {
         expect(element).toHaveClass('z-50');
     });
 
-    it('toggles visibility with F12 key', async () => {
+    it('toggles visibility with Ctrl+Shift+P (case insensitive)', async () => {
         render(<PerformanceHUD renderer={mockRenderer} />);
         const element = screen.getByLabelText('Performance metrics overlay');
         const initialDisplay = element.style.display;
         
-        const event = new KeyboardEvent('keydown', { key: 'F12' });
-        window.dispatchEvent(event);
-        
-        await waitFor(() => {
-            expect(element.style.display).not.toBe(initialDisplay);
-        });
-    });
-
-    it('toggles visibility with Ctrl+Shift+P', async () => {
-        render(<PerformanceHUD renderer={mockRenderer} />);
-        const element = screen.getByLabelText('Performance metrics overlay');
-        const initialDisplay = element.style.display;
-        
+        // Test with lowercase 'p'
         const event = new KeyboardEvent('keydown', {
-            key: 'P',
+            key: 'p',
             ctrlKey: true,
             shiftKey: true,
         });
