@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/cache"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
@@ -88,7 +89,7 @@ func TestGetCommunities_Success(t *testing.T) {
 		},
 	}
 
-	handler := NewCommunityHandler(mock)
+	handler := NewCommunityHandler(mock, cache.NewMockCache())
 	req := httptest.NewRequest("GET", "/api/communities?with_positions=true", nil)
 	w := httptest.NewRecorder()
 
@@ -134,7 +135,7 @@ func TestGetCommunities_WithoutPositions(t *testing.T) {
 		links: []db.GetCommunityLinksRow{},
 	}
 
-	handler := NewCommunityHandler(mock)
+	handler := NewCommunityHandler(mock, cache.NewMockCache())
 	req := httptest.NewRequest("GET", "/api/communities?with_positions=false", nil)
 	w := httptest.NewRecorder()
 
@@ -188,7 +189,7 @@ func TestGetCommunityByID_Success(t *testing.T) {
 		},
 	}
 
-	handler := NewCommunityHandler(mock)
+	handler := NewCommunityHandler(mock, cache.NewMockCache())
 	req := httptest.NewRequest("GET", "/api/communities/1", nil)
 	w := httptest.NewRecorder()
 
@@ -220,7 +221,7 @@ func TestGetCommunityByID_NotFound(t *testing.T) {
 		communities: []db.GraphCommunity{},
 	}
 
-	handler := NewCommunityHandler(mock)
+	handler := NewCommunityHandler(mock, cache.NewMockCache())
 	req := httptest.NewRequest("GET", "/api/communities/999", nil)
 	w := httptest.NewRecorder()
 
@@ -236,7 +237,7 @@ func TestGetCommunityByID_NotFound(t *testing.T) {
 
 func TestGetCommunityByID_InvalidID(t *testing.T) {
 	mock := &mockCommunityDataReader{}
-	handler := NewCommunityHandler(mock)
+	handler := NewCommunityHandler(mock, cache.NewMockCache())
 	req := httptest.NewRequest("GET", "/api/communities/invalid", nil)
 	w := httptest.NewRecorder()
 
@@ -264,7 +265,7 @@ func TestCommunityCaching(t *testing.T) {
 		links: []db.GetCommunityLinksRow{},
 	}
 
-	handler := NewCommunityHandler(mock)
+	handler := NewCommunityHandler(mock, cache.NewMockCache())
 
 	// First request - cache miss
 	req1 := httptest.NewRequest("GET", "/api/communities", nil)

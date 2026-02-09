@@ -449,6 +449,46 @@ WHERE gl.source IN (SELECT node_id FROM member_nodes)
 ORDER BY data_type, id
 LIMIT $2;
 
+-- ============================================================
+-- Edge Bundle Queries
+-- ============================================================
+
+-- name: ClearEdgeBundles :exec
+TRUNCATE TABLE graph_bundles;
+
+-- name: CreateEdgeBundle :exec
+INSERT INTO graph_bundles (
+    source_community_id,
+    target_community_id,
+    weight,
+    avg_strength,
+    control_x,
+    control_y,
+    control_z
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+) ON CONFLICT (source_community_id, target_community_id)
+DO UPDATE SET 
+    weight = EXCLUDED.weight,
+    avg_strength = EXCLUDED.avg_strength,
+    control_x = EXCLUDED.control_x,
+    control_y = EXCLUDED.control_y,
+    control_z = EXCLUDED.control_z,
+    updated_at = now();
+
+-- name: GetEdgeBundles :many
+SELECT
+    source_community_id,
+    target_community_id,
+    weight,
+    avg_strength,
+    control_x,
+    control_y,
+    control_z
+FROM graph_bundles
+WHERE weight >= $1
+ORDER BY weight DESC;
+
 -- name: SearchGraphNodes :many
 -- Fuzzy search for graph nodes by name or ID
 -- Uses ILIKE for case-insensitive partial matching

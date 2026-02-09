@@ -3,13 +3,16 @@ package api
 import (
 	"net/http"
 	"net/http/pprof"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/api/handlers"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/cache"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/middleware"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -19,6 +22,16 @@ func NewRouter(q *db.Queries) *mux.Router {
 
 	// Load configuration
 	cfg := config.Load()
+
+	// Initialize LRU cache
+	graphCache, err := cache.NewLRU(cfg.CacheMaxSizeMB, cfg.CacheMaxEntries, cfg.CacheTTL)
+	if err != nil {
+		// If cache initialization fails, panic since this is a critical component
+		panic("Failed to initialize cache: " + err.Error())
+	}
+
+	// Start background cache metrics collector
+	go collectCacheMetrics(graphCache)
 
 	// Apply global middleware in order
 	// 1. Request ID middleware (first to track all requests)
@@ -92,8 +105,11 @@ func NewRouter(q *db.Queries) *mux.Router {
 	r.HandleFunc("/jobs", handlers.GetCrawlJobs(q)).Methods("GET")
 
 	// Graph data for the frontend: GET /api/graph
-	graphHandler := handlers.NewHandler(q)
+	graphHandler := handlers.NewHandler(q, graphCache)
 	r.Handle("/api/graph", middleware.ETag(middleware.Gzip(http.HandlerFunc(graphHandler.GetGraphData)))).Methods("GET")
+
+	// Edge bundles endpoint: GET /api/graph/bundles
+	r.HandleFunc("/api/graph/bundles", graphHandler.GetEdgeBundles).Methods("GET")
 
 	// Search endpoint with gzip and ETag: GET /api/search?node=...
 	searchHandler := middleware.ETag(middleware.Gzip(http.HandlerFunc(handlers.SearchNode(q))))
@@ -104,7 +120,7 @@ func NewRouter(q *db.Queries) *mux.Router {
 	r.Handle("/api/export", exportHandler).Methods("GET")
 
 	// Community aggregation endpoints
-	communityHandler := handlers.NewCommunityHandler(q)
+	communityHandler := handlers.NewCommunityHandler(q, graphCache)
 	r.HandleFunc("/api/communities", communityHandler.GetCommunities).Methods("GET")
 	r.HandleFunc("/api/communities/{id}", communityHandler.GetCommunityByID).Methods("GET")
 
@@ -167,6 +183,11 @@ func NewRouter(q *db.Queries) *mux.Router {
 	r.Handle("/api/admin/settings", adminOnly(http.HandlerFunc(adminSettings.UpdateSettings))).Methods("PUT")
 	r.Handle("/api/admin/audit-log", adminOnly(http.HandlerFunc(adminSettings.GetAuditLog))).Methods("GET")
 
+	// Cache admin endpoints
+	cacheAdmin := handlers.NewCacheAdminHandler(graphCache)
+	r.Handle("/api/admin/cache/invalidate", adminOnly(http.HandlerFunc(cacheAdmin.InvalidateCache))).Methods("POST")
+	r.Handle("/api/admin/cache/stats", adminOnly(http.HandlerFunc(cacheAdmin.GetCacheStats))).Methods("GET")
+
 	// Performance profiling endpoints (admin-only for security)
 	// These endpoints expose runtime profiling data for performance analysis
 	if cfg.EnableProfiling {
@@ -192,4 +213,47 @@ func NewRouter(q *db.Queries) *mux.Router {
 	}
 
 	return r
+}
+
+// collectCacheMetrics periodically updates Prometheus metrics with cache statistics.
+// This runs in a background goroutine for the lifetime of the application.
+// The goroutine stops when the ticker is garbage collected (on process exit).
+func collectCacheMetrics(c cache.Cache) {
+	const interval = 15 // seconds
+	ticker := time.NewTicker(interval * time.Second)
+	defer ticker.Stop()
+
+	var prevEvictions uint64
+	var havePrevEvictions bool
+
+	for range ticker.C {
+		stats := c.Stats()
+		// Update Prometheus gauges
+		// We use "graph" as the endpoint label since the cache is shared
+		metrics.APICacheSize.WithLabelValues("graph").Set(float64(stats.Size))
+		metrics.APICacheItems.WithLabelValues("graph").Set(float64(stats.Items))
+
+		// Evictions are exposed as a Prometheus counter. The cache reports a cumulative
+		// eviction count, so we compute the delta since the last sample and add that.
+		if !havePrevEvictions {
+			prevEvictions = stats.Evictions
+			havePrevEvictions = true
+			continue
+		}
+
+		if stats.Evictions >= prevEvictions {
+			delta := stats.Evictions - prevEvictions
+			if delta > 0 {
+				metrics.APICacheEvictions.WithLabelValues("graph").Add(float64(delta))
+			}
+		} else {
+			// The underlying counter was reset (e.g., cache cleared or process restarted).
+			// Treat the current value as a fresh cumulative count.
+			if stats.Evictions > 0 {
+				metrics.APICacheEvictions.WithLabelValues("graph").Add(float64(stats.Evictions))
+			}
+		}
+
+		prevEvictions = stats.Evictions
+	}
 }

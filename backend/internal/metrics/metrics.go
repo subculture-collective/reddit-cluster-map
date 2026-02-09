@@ -149,6 +149,30 @@ var (
 		[]string{"endpoint"},
 	)
 
+	APICacheSize = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "api_cache_size_bytes",
+			Help: "Current size of API cache in bytes",
+		},
+		[]string{"endpoint"},
+	)
+
+	APICacheItems = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "api_cache_items",
+			Help: "Current number of items in API cache",
+		},
+		[]string{"endpoint"},
+	)
+
+	APICacheEvictions = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "api_cache_evictions_total",
+			Help: "Total number of cache evictions",
+		},
+		[]string{"endpoint"},
+	)
+
 	// Graph metrics
 	GraphNodesTotal = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{

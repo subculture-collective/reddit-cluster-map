@@ -90,6 +90,19 @@ func (q *Queries) ClearCommunityTables(ctx context.Context) error {
 	return err
 }
 
+const clearEdgeBundles = `-- name: ClearEdgeBundles :exec
+
+TRUNCATE TABLE graph_bundles
+`
+
+// ============================================================
+// Edge Bundle Queries
+// ============================================================
+func (q *Queries) ClearEdgeBundles(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearEdgeBundles)
+	return err
+}
+
 const clearGraphTables = `-- name: ClearGraphTables :exec
 TRUNCATE TABLE graph_nodes, graph_links
 `
@@ -221,6 +234,50 @@ type CreateCommunityMemberParams struct {
 
 func (q *Queries) CreateCommunityMember(ctx context.Context, arg CreateCommunityMemberParams) error {
 	_, err := q.db.ExecContext(ctx, createCommunityMember, arg.CommunityID, arg.NodeID)
+	return err
+}
+
+const createEdgeBundle = `-- name: CreateEdgeBundle :exec
+INSERT INTO graph_bundles (
+    source_community_id,
+    target_community_id,
+    weight,
+    avg_strength,
+    control_x,
+    control_y,
+    control_z
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+) ON CONFLICT (source_community_id, target_community_id)
+DO UPDATE SET 
+    weight = EXCLUDED.weight,
+    avg_strength = EXCLUDED.avg_strength,
+    control_x = EXCLUDED.control_x,
+    control_y = EXCLUDED.control_y,
+    control_z = EXCLUDED.control_z,
+    updated_at = now()
+`
+
+type CreateEdgeBundleParams struct {
+	SourceCommunityID int32
+	TargetCommunityID int32
+	Weight            int32
+	AvgStrength       sql.NullFloat64
+	ControlX          sql.NullFloat64
+	ControlY          sql.NullFloat64
+	ControlZ          sql.NullFloat64
+}
+
+func (q *Queries) CreateEdgeBundle(ctx context.Context, arg CreateEdgeBundleParams) error {
+	_, err := q.db.ExecContext(ctx, createEdgeBundle,
+		arg.SourceCommunityID,
+		arg.TargetCommunityID,
+		arg.Weight,
+		arg.AvgStrength,
+		arg.ControlX,
+		arg.ControlY,
+		arg.ControlZ,
+	)
 	return err
 }
 
@@ -926,6 +983,61 @@ func (q *Queries) GetCommunitySupernodesWithPositions(ctx context.Context) ([]Ge
 			&i.PosZ,
 			&i.Source,
 			&i.Target,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getEdgeBundles = `-- name: GetEdgeBundles :many
+SELECT
+    source_community_id,
+    target_community_id,
+    weight,
+    avg_strength,
+    control_x,
+    control_y,
+    control_z
+FROM graph_bundles
+WHERE weight >= $1
+ORDER BY weight DESC
+`
+
+type GetEdgeBundlesRow struct {
+	SourceCommunityID int32
+	TargetCommunityID int32
+	Weight            int32
+	AvgStrength       sql.NullFloat64
+	ControlX          sql.NullFloat64
+	ControlY          sql.NullFloat64
+	ControlZ          sql.NullFloat64
+}
+
+func (q *Queries) GetEdgeBundles(ctx context.Context, weight int32) ([]GetEdgeBundlesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getEdgeBundles, weight)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetEdgeBundlesRow
+	for rows.Next() {
+		var i GetEdgeBundlesRow
+		if err := rows.Scan(
+			&i.SourceCommunityID,
+			&i.TargetCommunityID,
+			&i.Weight,
+			&i.AvgStrength,
+			&i.ControlX,
+			&i.ControlY,
+			&i.ControlZ,
 		); err != nil {
 			return nil, err
 		}
