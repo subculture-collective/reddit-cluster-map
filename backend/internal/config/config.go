@@ -63,6 +63,10 @@ type Config struct {
 	SentrySampleRate  float64 // Sentry error sampling rate (0.0 to 1.0)
 	// Performance profiling
 	EnableProfiling bool // enable pprof endpoints for performance profiling
+	// Cache settings
+	CacheMaxSizeMB   int64         // maximum cache size in megabytes
+	CacheMaxEntries  int64         // maximum number of cache entries
+	CacheTTL         time.Duration // default time-to-live for cache entries
 }
 
 var cached *Config
@@ -125,6 +129,10 @@ func Load() *Config {
 		SentrySampleRate:  utils.GetEnvAsFloat("SENTRY_SAMPLE_RATE", 1.0),
 		// Performance profiling: disabled by default for security
 		EnableProfiling: utils.GetEnvAsBool("ENABLE_PROFILING", false),
+		// Cache settings: sensible defaults for graph API caching
+		CacheMaxSizeMB:  int64(utils.GetEnvAsInt("CACHE_MAX_SIZE_MB", 512)),
+		CacheMaxEntries: int64(utils.GetEnvAsInt("CACHE_MAX_ENTRIES", 10000)),
+		CacheTTL:        time.Duration(utils.GetEnvAsInt("CACHE_TTL_SECONDS", 60)) * time.Second,
 	}
 	if cached.PostsSort == "" {
 		cached.PostsSort = "top"
