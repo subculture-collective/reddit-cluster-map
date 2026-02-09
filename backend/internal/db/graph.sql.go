@@ -117,6 +117,42 @@ func (q *Queries) ClearUserSubredditActivity(ctx context.Context) error {
 	return err
 }
 
+const countNodesInBoundingBox = `-- name: CountNodesInBoundingBox :one
+SELECT COUNT(*)
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+  AND pos_z BETWEEN $5 AND $6
+`
+
+type CountNodesInBoundingBoxParams struct {
+	PosX   sql.NullFloat64
+	PosX_2 sql.NullFloat64
+	PosY   sql.NullFloat64
+	PosY_2 sql.NullFloat64
+	PosZ   sql.NullFloat64
+	PosZ_2 sql.NullFloat64
+}
+
+// Count nodes within a bounding box (useful for pagination)
+// Parameters: x_min, x_max, y_min, y_max, z_min, z_max
+func (q *Queries) CountNodesInBoundingBox(ctx context.Context, arg CountNodesInBoundingBoxParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countNodesInBoundingBox,
+		arg.PosX,
+		arg.PosX_2,
+		arg.PosY,
+		arg.PosY_2,
+		arg.PosZ,
+		arg.PosZ_2,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createCommunity = `-- name: CreateCommunity :one
 INSERT INTO graph_communities (
     label,
@@ -933,6 +969,77 @@ func (q *Queries) GetHierarchyLevels(ctx context.Context) ([]int32, error) {
 	return items, nil
 }
 
+const getLinksForNodesInBoundingBox = `-- name: GetLinksForNodesInBoundingBox :many
+WITH bbox_nodes AS (
+    SELECT id
+    FROM graph_nodes
+    WHERE pos_x IS NOT NULL
+      AND pos_y IS NOT NULL
+      AND pos_z IS NOT NULL
+      AND pos_x BETWEEN $1 AND $2
+      AND pos_y BETWEEN $3 AND $4
+      AND pos_z BETWEEN $5 AND $6
+)
+SELECT 
+    gl.id,
+    gl.source,
+    gl.target
+FROM graph_links gl
+WHERE EXISTS (SELECT 1 FROM bbox_nodes WHERE id = gl.source)
+  AND EXISTS (SELECT 1 FROM bbox_nodes WHERE id = gl.target)
+LIMIT $7
+`
+
+type GetLinksForNodesInBoundingBoxParams struct {
+	PosX   sql.NullFloat64
+	PosX_2 sql.NullFloat64
+	PosY   sql.NullFloat64
+	PosY_2 sql.NullFloat64
+	PosZ   sql.NullFloat64
+	PosZ_2 sql.NullFloat64
+	Limit  int32
+}
+
+type GetLinksForNodesInBoundingBoxRow struct {
+	ID     int32
+	Source string
+	Target string
+}
+
+// Retrieves links where both source and target nodes are within the bounding box
+// Uses the same spatial filtering approach
+// Parameters: x_min, x_max, y_min, y_max, z_min, z_max, limit
+func (q *Queries) GetLinksForNodesInBoundingBox(ctx context.Context, arg GetLinksForNodesInBoundingBoxParams) ([]GetLinksForNodesInBoundingBoxRow, error) {
+	rows, err := q.db.QueryContext(ctx, getLinksForNodesInBoundingBox,
+		arg.PosX,
+		arg.PosX_2,
+		arg.PosY,
+		arg.PosY_2,
+		arg.PosZ,
+		arg.PosZ_2,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetLinksForNodesInBoundingBoxRow
+	for rows.Next() {
+		var i GetLinksForNodesInBoundingBoxRow
+		if err := rows.Scan(&i.ID, &i.Source, &i.Target); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getNodesAtLevel = `-- name: GetNodesAtLevel :many
 SELECT 
     node_id,
@@ -971,6 +1078,168 @@ func (q *Queries) GetNodesAtLevel(ctx context.Context, level int32) ([]GetNodesA
 			&i.CentroidX,
 			&i.CentroidY,
 			&i.CentroidZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getNodesInBoundingBox = `-- name: GetNodesInBoundingBox :many
+SELECT 
+    id,
+    name,
+    val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+  AND pos_z BETWEEN $5 AND $6
+ORDER BY (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, id
+LIMIT $7
+`
+
+type GetNodesInBoundingBoxParams struct {
+	PosX   sql.NullFloat64
+	PosX_2 sql.NullFloat64
+	PosY   sql.NullFloat64
+	PosY_2 sql.NullFloat64
+	PosZ   sql.NullFloat64
+	PosZ_2 sql.NullFloat64
+	Limit  int32
+}
+
+type GetNodesInBoundingBoxRow struct {
+	ID   string
+	Name string
+	Val  sql.NullString
+	Type sql.NullString
+	PosX sql.NullFloat64
+	PosY sql.NullFloat64
+	PosZ sql.NullFloat64
+}
+
+// Retrieves nodes within a 3D bounding box using the spatial index
+// Parameters: x_min, x_max, y_min, y_max, z_min, z_max, limit
+// The spatial index (idx_graph_nodes_spatial_nonnull) makes this query efficient
+func (q *Queries) GetNodesInBoundingBox(ctx context.Context, arg GetNodesInBoundingBoxParams) ([]GetNodesInBoundingBoxRow, error) {
+	rows, err := q.db.QueryContext(ctx, getNodesInBoundingBox,
+		arg.PosX,
+		arg.PosX_2,
+		arg.PosY,
+		arg.PosY_2,
+		arg.PosZ,
+		arg.PosZ_2,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetNodesInBoundingBoxRow
+	for rows.Next() {
+		var i GetNodesInBoundingBoxRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Val,
+			&i.Type,
+			&i.PosX,
+			&i.PosY,
+			&i.PosZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getNodesInBoundingBox2D = `-- name: GetNodesInBoundingBox2D :many
+SELECT 
+    id,
+    name,
+    val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+ORDER BY (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, id
+LIMIT $5
+`
+
+type GetNodesInBoundingBox2DParams struct {
+	PosX   sql.NullFloat64
+	PosX_2 sql.NullFloat64
+	PosY   sql.NullFloat64
+	PosY_2 sql.NullFloat64
+	Limit  int32
+}
+
+type GetNodesInBoundingBox2DRow struct {
+	ID   string
+	Name string
+	Val  sql.NullString
+	Type sql.NullString
+	PosX sql.NullFloat64
+	PosY sql.NullFloat64
+	PosZ sql.NullFloat64
+}
+
+// Retrieves nodes within a 2D bounding box (ignoring z coordinate)
+// Parameters: x_min, x_max, y_min, y_max, limit
+// Useful for 2D viewport queries where z is not relevant
+func (q *Queries) GetNodesInBoundingBox2D(ctx context.Context, arg GetNodesInBoundingBox2DParams) ([]GetNodesInBoundingBox2DRow, error) {
+	rows, err := q.db.QueryContext(ctx, getNodesInBoundingBox2D,
+		arg.PosX,
+		arg.PosX_2,
+		arg.PosY,
+		arg.PosY_2,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetNodesInBoundingBox2DRow
+	for rows.Next() {
+		var i GetNodesInBoundingBox2DRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Val,
+			&i.Type,
+			&i.PosX,
+			&i.PosY,
+			&i.PosZ,
 		); err != nil {
 			return nil, err
 		}
