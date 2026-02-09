@@ -81,12 +81,14 @@ Performance notes:
 
 Returns nodes and links within a 3D bounding box for spatial viewport queries.
 
-Query params (all required):
-    - `x_min`, `x_max` - X-axis bounds (float)
-    - `y_min`, `y_max` - Y-axis bounds (float)
-    - `z_min`, `z_max` - Z-axis bounds (float)
-    - Optional: `max_nodes` (default 10000) - maximum nodes to return
-    - Optional: `max_links` (default 50000) - maximum links to return
+Query params:
+    - Required:
+        - `x_min`, `x_max` - X-axis bounds (float)
+        - `y_min`, `y_max` - Y-axis bounds (float)
+        - `z_min`, `z_max` - Z-axis bounds (float)
+    - Optional:
+        - `max_nodes` (default 10000) - maximum nodes to return
+        - `max_links` (default 50000) - maximum links to return
 
 Response format: Same as `/api/graph` with positions always included
 

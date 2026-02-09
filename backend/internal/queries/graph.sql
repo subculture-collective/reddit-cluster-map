@@ -375,9 +375,9 @@ WITH community_stats AS (
         gc.label,
         gc.size,
         gc.modularity,
-        AVG(gn.pos_x) as avg_x,
-        AVG(gn.pos_y) as avg_y,
-        AVG(gn.pos_z) as avg_z
+        COALESCE(AVG(gn.pos_x), 0) as avg_x,
+        COALESCE(AVG(gn.pos_y), 0) as avg_y,
+        COALESCE(AVG(gn.pos_z), 0) as avg_z
     FROM graph_communities gc
     LEFT JOIN graph_community_members gcm ON gc.id = gcm.community_id
     LEFT JOIN graph_nodes gn ON gcm.node_id = gn.id

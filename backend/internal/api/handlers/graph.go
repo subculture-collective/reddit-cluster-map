@@ -633,6 +633,13 @@ func (h *Handler) GetGraphOverview(w http.ResponseWriter, r *http.Request) {
 	// Fetch inter-community links
 	linksRows, err := h.queries.GetCommunityLinks(ctx, int32(maxLinks))
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded || err == context.DeadlineExceeded {
+			logger.WarnContext(ctx, "community links query timed out", "timeout", timeout)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "query timeout")
+			apierr.WriteErrorWithContext(w, r, apierr.GraphTimeout("Overview query timeout"))
+			return
+		}
 		logger.ErrorContext(ctx, "failed to fetch community links", "error", err)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "query failed")
@@ -653,10 +660,19 @@ func (h *Handler) GetGraphOverview(w http.ResponseWriter, r *http.Request) {
 			Val:  v,
 			Type: "community",
 		}
-		if withPos && row.PosX != 0 && row.PosY != 0 {
-			x := row.PosX
-			y := row.PosY
-			z := row.PosZ
+		if withPos {
+			// Always include positions when requested, even if they are zero
+			// Convert interface{} to float64 (sqlc generates interface{} for COALESCE results)
+			var x, y, z float64
+			if posX, ok := row.PosX.(float64); ok {
+				x = posX
+			}
+			if posY, ok := row.PosY.(float64); ok {
+				y = posY
+			}
+			if posZ, ok := row.PosZ.(float64); ok {
+				z = posZ
+			}
 			gn.X = &x
 			gn.Y = &y
 			gn.Z = &z
@@ -743,6 +759,14 @@ func (h *Handler) GetGraphRegion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject non-finite bounding box values (NaN, +Inf, -Inf)
+	if math.IsNaN(xMin) || math.IsInf(xMin, 0) || math.IsNaN(xMax) || math.IsInf(xMax, 0) ||
+		math.IsNaN(yMin) || math.IsInf(yMin, 0) || math.IsNaN(yMax) || math.IsInf(yMax, 0) ||
+		math.IsNaN(zMin) || math.IsInf(zMin, 0) || math.IsNaN(zMax) || math.IsInf(zMax, 0) {
+		apierr.WriteErrorWithContext(w, r, apierr.GraphInvalidParams("Bounding box values must be finite"))
+		return
+	}
+
 	// Validate bounding box
 	if xMin > xMax || yMin > yMax || zMin > zMax {
 		apierr.WriteErrorWithContext(w, r, apierr.GraphInvalidParams("Invalid bounding box: min values must be <= max values"))
@@ -753,7 +777,13 @@ func (h *Handler) GetGraphRegion(w http.ResponseWriter, r *http.Request) {
 	maxNodes := parseIntDefault(query.Get("max_nodes"), 10000)
 	maxLinks := parseIntDefault(query.Get("max_links"), 50000)
 
-	// Clamp to int32 range for database
+	// Clamp to positive range and int32 range for database
+	if maxNodes <= 0 {
+		maxNodes = 1
+	}
+	if maxLinks <= 0 {
+		maxLinks = 1
+	}
 	if maxNodes > math.MaxInt32 {
 		maxNodes = math.MaxInt32
 	}
@@ -772,13 +802,13 @@ func (h *Handler) GetGraphRegion(w http.ResponseWriter, r *http.Request) {
 		attribute.Int("max_links", maxLinks),
 	)
 
-	// Build cache key
-	key := "region:" + strconv.FormatFloat(xMin, 'f', 2, 64) + ":" +
-		strconv.FormatFloat(xMax, 'f', 2, 64) + ":" +
-		strconv.FormatFloat(yMin, 'f', 2, 64) + ":" +
-		strconv.FormatFloat(yMax, 'f', 2, 64) + ":" +
-		strconv.FormatFloat(zMin, 'f', 2, 64) + ":" +
-		strconv.FormatFloat(zMax, 'f', 2, 64) + ":" +
+	// Build cache key using a high-precision, lossless representation of the bounding box
+	key := "region:" + strconv.FormatFloat(xMin, 'g', 17, 64) + ":" +
+		strconv.FormatFloat(xMax, 'g', 17, 64) + ":" +
+		strconv.FormatFloat(yMin, 'g', 17, 64) + ":" +
+		strconv.FormatFloat(yMax, 'g', 17, 64) + ":" +
+		strconv.FormatFloat(zMin, 'g', 17, 64) + ":" +
+		strconv.FormatFloat(zMax, 'g', 17, 64) + ":" +
 		strconv.Itoa(maxNodes) + ":" + strconv.Itoa(maxLinks)
 
 	// Check cache first
@@ -828,6 +858,13 @@ func (h *Handler) GetGraphRegion(w http.ResponseWriter, r *http.Request) {
 		Limit:  int32(maxLinks),
 	})
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded || err == context.DeadlineExceeded {
+			logger.WarnContext(ctx, "region links query timed out", "timeout", timeout)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "query timeout")
+			apierr.WriteErrorWithContext(w, r, apierr.GraphTimeout("Region query timeout"))
+			return
+		}
 		logger.ErrorContext(ctx, "failed to fetch links in bounding box", "error", err)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "query failed")
