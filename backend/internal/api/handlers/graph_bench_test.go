@@ -82,6 +82,22 @@ func (m *MockGraphDataReader) GetEdgeBundles(ctx context.Context, weight int32) 
 	return []db.GetEdgeBundlesRow{}, nil
 }
 
+func (m *MockGraphDataReader) GetCommunitySupernodesWithPositions(ctx context.Context) ([]db.GetCommunitySupernodesWithPositionsRow, error) {
+	return []db.GetCommunitySupernodesWithPositionsRow{}, nil
+}
+
+func (m *MockGraphDataReader) GetCommunityLinks(ctx context.Context, limit int32) ([]db.GetCommunityLinksRow, error) {
+	return []db.GetCommunityLinksRow{}, nil
+}
+
+func (m *MockGraphDataReader) GetNodesInBoundingBox(ctx context.Context, arg db.GetNodesInBoundingBoxParams) ([]db.GetNodesInBoundingBoxRow, error) {
+	return []db.GetNodesInBoundingBoxRow{}, nil
+}
+
+func (m *MockGraphDataReader) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
+	return []db.GetLinksForNodesInBoundingBoxRow{}, nil
+}
+
 // BenchmarkGetGraphData benchmarks the main graph data endpoint
 func BenchmarkGetGraphData(b *testing.B) {
 	handler := NewHandler(&MockGraphDataReader{}, cache.NewMockCache())

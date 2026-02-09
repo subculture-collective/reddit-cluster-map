@@ -32,6 +32,12 @@ type GraphDataReader interface {
 	GetPrecalculatedGraphDataNoPos(ctx context.Context) ([]db.GetPrecalculatedGraphDataNoPosRow, error)
 	// Edge bundles
 	GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error)
+	// Community aggregation
+	GetCommunitySupernodesWithPositions(ctx context.Context) ([]db.GetCommunitySupernodesWithPositionsRow, error)
+	GetCommunityLinks(ctx context.Context, limit int32) ([]db.GetCommunityLinksRow, error)
+	// Spatial queries
+	GetNodesInBoundingBox(ctx context.Context, arg db.GetNodesInBoundingBoxParams) ([]db.GetNodesInBoundingBoxRow, error)
+	GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error)
 }
 
 func cacheKey(maxNodes, maxLinks int, typeKey string, withPositions bool) string {
@@ -498,17 +504,12 @@ func (h *Handler) GetEdgeBundles(w http.ResponseWriter, r *http.Request) {
 
 	// Check cache first
 	cacheKeyStr := "bundles:" + strconv.Itoa(minWeight)
-	now := time.Now()
-	graphCacheMu.Lock()
-	entry, found := graphCache[cacheKeyStr]
-	if found && entry.expiresAt.After(now) {
-		graphCacheMu.Unlock()
+	if cachedData, found := h.cache.Get(cacheKeyStr); found {
 		metrics.APICacheHits.WithLabelValues("bundles").Inc()
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(entry.data)
+		w.Write(cachedData)
 		return
 	}
-	graphCacheMu.Unlock()
 	metrics.APICacheMisses.WithLabelValues("bundles").Inc()
 
 	// Fetch bundles from database
@@ -559,14 +560,325 @@ func (h *Handler) GetEdgeBundles(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 
 	// Store in cache
-	graphCacheMu.Lock()
-	graphCache[cacheKeyStr] = graphCacheEntry{data: b, expiresAt: time.Now().Add(graphCacheTTL)}
-	graphCacheMu.Unlock()
+	h.cache.Set(cacheKeyStr, b, 0)
 
 	span.SetAttributes(
 		attribute.Int("bundles_count", len(bundles)),
 		attribute.Int("min_weight", minWeight),
 	)
 	span.SetStatus(codes.Ok, "bundles fetched successfully")
+}
+
+// GetGraphOverview returns a lightweight community-level overview of the graph.
+// This is typically <1k nodes and provides a high-level view before drill-down.
+// GET /api/graph/overview?max_nodes=100&max_links=500&with_positions=true
+func (h *Handler) GetGraphOverview(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracing.StartSpan(r.Context(), "handlers.GetGraphOverview")
+	defer span.End()
+
+	cfg := config.Load()
+	timeout := cfg.GraphQueryTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Parse query parameters with conservative defaults for overview
+	maxNodes := parseIntDefault(r.URL.Query().Get("max_nodes"), 100)
+	maxLinks := parseIntDefault(r.URL.Query().Get("max_links"), 500)
+	withPos := func() bool {
+		v := strings.TrimSpace(r.URL.Query().Get("with_positions"))
+		return v == "1" || strings.EqualFold(v, "true")
+	}()
+
+	span.SetAttributes(
+		attribute.Int("max_nodes", maxNodes),
+		attribute.Int("max_links", maxLinks),
+		attribute.Bool("with_positions", withPos),
+	)
+
+	// Check cache first
+	key := "overview:" + strconv.Itoa(maxNodes) + ":" + strconv.Itoa(maxLinks)
+	if withPos {
+		key += ":pos"
+	}
+	if cachedData, found := h.cache.Get(key); found {
+		metrics.APICacheHits.WithLabelValues("graph_overview").Inc()
+		span.SetAttributes(attribute.Bool("cache_hit", true))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(cachedData)
+		return
+	}
+	metrics.APICacheMisses.WithLabelValues("graph_overview").Inc()
+	span.SetAttributes(attribute.Bool("cache_hit", false))
+
+	// Fetch community supernodes
+	supernodesRows, err := h.queries.GetCommunitySupernodesWithPositions(ctx)
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded || err == context.DeadlineExceeded {
+			logger.WarnContext(ctx, "overview query timed out", "timeout", timeout)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "query timeout")
+			apierr.WriteErrorWithContext(w, r, apierr.GraphTimeout("Overview query timeout"))
+			return
+		}
+		logger.ErrorContext(ctx, "failed to fetch community supernodes", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "query failed")
+		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch overview"))
+		return
+	}
+
+	// Fetch inter-community links
+	linksRows, err := h.queries.GetCommunityLinks(ctx, int32(maxLinks))
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to fetch community links", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "query failed")
+		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch community links"))
+		return
+	}
+
+	// Build response - same format as /api/graph for frontend compatibility
+	nodes := make([]GraphNode, 0, len(supernodesRows))
+	for _, row := range supernodesRows {
+		if len(nodes) >= maxNodes {
+			break
+		}
+		v := atoiSafe(row.Val)
+		gn := GraphNode{
+			ID:   row.ID,
+			Name: row.Name,
+			Val:  v,
+			Type: "community",
+		}
+		if withPos && row.PosX != 0 && row.PosY != 0 {
+			x := row.PosX
+			y := row.PosY
+			z := row.PosZ
+			gn.X = &x
+			gn.Y = &y
+			gn.Z = &z
+		}
+		nodes = append(nodes, gn)
+	}
+
+	links := make([]GraphLink, 0, len(linksRows))
+	for _, row := range linksRows {
+		src := toString(row.Source)
+		tgt := toString(row.Target)
+		if src != "" && tgt != "" {
+			links = append(links, GraphLink{Source: src, Target: tgt})
+		}
+	}
+
+	resp := GraphResponse{Nodes: nodes, Links: links}
+	b, _ := json.Marshal(resp)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(b)
+
+	// Store in cache
+	h.cache.Set(key, b, 0)
+
+	span.SetAttributes(
+		attribute.Int("nodes_count", len(nodes)),
+		attribute.Int("links_count", len(links)),
+	)
+	span.SetStatus(codes.Ok, "overview fetched successfully")
+}
+
+// GetGraphRegion returns nodes and links within a 3D bounding box.
+// This enables spatial viewport queries for efficient rendering.
+// GET /api/graph/region?x_min=&x_max=&y_min=&y_max=&z_min=&z_max=&max_nodes=10000&max_links=50000
+func (h *Handler) GetGraphRegion(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracing.StartSpan(r.Context(), "handlers.GetGraphRegion")
+	defer span.End()
+
+	cfg := config.Load()
+	timeout := cfg.GraphQueryTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Parse bounding box parameters
+	query := r.URL.Query()
+	xMin, err := strconv.ParseFloat(query.Get("x_min"), 64)
+	if err != nil {
+		apierr.WriteErrorWithContext(w, r, apierr.GraphInvalidParams("Invalid x_min parameter"))
+		return
+	}
+	xMax, err := strconv.ParseFloat(query.Get("x_max"), 64)
+	if err != nil {
+		apierr.WriteErrorWithContext(w, r, apierr.GraphInvalidParams("Invalid x_max parameter"))
+		return
+	}
+	yMin, err := strconv.ParseFloat(query.Get("y_min"), 64)
+	if err != nil {
+		apierr.WriteErrorWithContext(w, r, apierr.GraphInvalidParams("Invalid y_min parameter"))
+		return
+	}
+	yMax, err := strconv.ParseFloat(query.Get("y_max"), 64)
+	if err != nil {
+		apierr.WriteErrorWithContext(w, r, apierr.GraphInvalidParams("Invalid y_max parameter"))
+		return
+	}
+	zMin, err := strconv.ParseFloat(query.Get("z_min"), 64)
+	if err != nil {
+		apierr.WriteErrorWithContext(w, r, apierr.GraphInvalidParams("Invalid z_min parameter"))
+		return
+	}
+	zMax, err := strconv.ParseFloat(query.Get("z_max"), 64)
+	if err != nil {
+		apierr.WriteErrorWithContext(w, r, apierr.GraphInvalidParams("Invalid z_max parameter"))
+		return
+	}
+
+	// Validate bounding box
+	if xMin > xMax || yMin > yMax || zMin > zMax {
+		apierr.WriteErrorWithContext(w, r, apierr.GraphInvalidParams("Invalid bounding box: min values must be <= max values"))
+		return
+	}
+
+	// Parse additional parameters
+	maxNodes := parseIntDefault(query.Get("max_nodes"), 10000)
+	maxLinks := parseIntDefault(query.Get("max_links"), 50000)
+
+	// Clamp to int32 range for database
+	if maxNodes > math.MaxInt32 {
+		maxNodes = math.MaxInt32
+	}
+	if maxLinks > math.MaxInt32 {
+		maxLinks = math.MaxInt32
+	}
+
+	span.SetAttributes(
+		attribute.Float64("x_min", xMin),
+		attribute.Float64("x_max", xMax),
+		attribute.Float64("y_min", yMin),
+		attribute.Float64("y_max", yMax),
+		attribute.Float64("z_min", zMin),
+		attribute.Float64("z_max", zMax),
+		attribute.Int("max_nodes", maxNodes),
+		attribute.Int("max_links", maxLinks),
+	)
+
+	// Build cache key
+	key := "region:" + strconv.FormatFloat(xMin, 'f', 2, 64) + ":" +
+		strconv.FormatFloat(xMax, 'f', 2, 64) + ":" +
+		strconv.FormatFloat(yMin, 'f', 2, 64) + ":" +
+		strconv.FormatFloat(yMax, 'f', 2, 64) + ":" +
+		strconv.FormatFloat(zMin, 'f', 2, 64) + ":" +
+		strconv.FormatFloat(zMax, 'f', 2, 64) + ":" +
+		strconv.Itoa(maxNodes) + ":" + strconv.Itoa(maxLinks)
+
+	// Check cache first
+	if cachedData, found := h.cache.Get(key); found {
+		metrics.APICacheHits.WithLabelValues("graph_region").Inc()
+		span.SetAttributes(attribute.Bool("cache_hit", true))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(cachedData)
+		return
+	}
+	metrics.APICacheMisses.WithLabelValues("graph_region").Inc()
+	span.SetAttributes(attribute.Bool("cache_hit", false))
+
+	// Fetch nodes in bounding box
+	nodesRows, err := h.queries.GetNodesInBoundingBox(ctx, db.GetNodesInBoundingBoxParams{
+		PosX:   sql.NullFloat64{Float64: xMin, Valid: true},
+		PosX_2: sql.NullFloat64{Float64: xMax, Valid: true},
+		PosY:   sql.NullFloat64{Float64: yMin, Valid: true},
+		PosY_2: sql.NullFloat64{Float64: yMax, Valid: true},
+		PosZ:   sql.NullFloat64{Float64: zMin, Valid: true},
+		PosZ_2: sql.NullFloat64{Float64: zMax, Valid: true},
+		Limit:  int32(maxNodes),
+	})
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded || err == context.DeadlineExceeded {
+			logger.WarnContext(ctx, "region nodes query timed out", "timeout", timeout)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "query timeout")
+			apierr.WriteErrorWithContext(w, r, apierr.GraphTimeout("Region query timeout"))
+			return
+		}
+		logger.ErrorContext(ctx, "failed to fetch nodes in bounding box", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "query failed")
+		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch region nodes"))
+		return
+	}
+
+	// Fetch links for nodes in bounding box
+	linksRows, err := h.queries.GetLinksForNodesInBoundingBox(ctx, db.GetLinksForNodesInBoundingBoxParams{
+		PosX:   sql.NullFloat64{Float64: xMin, Valid: true},
+		PosX_2: sql.NullFloat64{Float64: xMax, Valid: true},
+		PosY:   sql.NullFloat64{Float64: yMin, Valid: true},
+		PosY_2: sql.NullFloat64{Float64: yMax, Valid: true},
+		PosZ:   sql.NullFloat64{Float64: zMin, Valid: true},
+		PosZ_2: sql.NullFloat64{Float64: zMax, Valid: true},
+		Limit:  int32(maxLinks),
+	})
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to fetch links in bounding box", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "query failed")
+		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch region links"))
+		return
+	}
+
+	// Build response
+	nodes := make([]GraphNode, 0, len(nodesRows))
+	for _, row := range nodesRows {
+		valStr := ""
+		if row.Val.Valid {
+			valStr = row.Val.String
+		}
+		v := atoiSafe(valStr)
+		t := ""
+		if row.Type.Valid {
+			t = strings.ToLower(row.Type.String)
+		}
+		gn := GraphNode{
+			ID:   row.ID,
+			Name: row.Name,
+			Val:  v,
+			Type: t,
+		}
+		// Spatial queries always include positions since they're filtered by position
+		if row.PosX.Valid && row.PosY.Valid && row.PosZ.Valid {
+			x := row.PosX.Float64
+			y := row.PosY.Float64
+			z := row.PosZ.Float64
+			gn.X = &x
+			gn.Y = &y
+			gn.Z = &z
+		}
+		nodes = append(nodes, gn)
+	}
+
+	links := make([]GraphLink, 0, len(linksRows))
+	for _, row := range linksRows {
+		src := toString(row.Source)
+		tgt := toString(row.Target)
+		if src != "" && tgt != "" {
+			links = append(links, GraphLink{Source: src, Target: tgt})
+		}
+	}
+
+	resp := GraphResponse{Nodes: nodes, Links: links}
+	b, _ := json.Marshal(resp)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(b)
+
+	// Store in cache
+	h.cache.Set(key, b, 0)
+
+	span.SetAttributes(
+		attribute.Int("nodes_count", len(nodes)),
+		attribute.Int("links_count", len(links)),
+	)
+	span.SetStatus(codes.Ok, "region fetched successfully")
 }
 
