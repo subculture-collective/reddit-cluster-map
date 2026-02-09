@@ -95,6 +95,10 @@ func (f *fakeGraphQueries) GetPrecalculatedGraphDataNoPos(ctx context.Context) (
 	return nil, nil
 }
 
+func (f *fakeGraphQueries) GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error) {
+	return []db.GetEdgeBundlesRow{}, nil
+}
+
 func TestGraphHandler_UnwrapsSingleRow(t *testing.T) {
 	h := &Handler{queries: (&fakeGraphQueries{data: [][]byte{[]byte(`{"nodes":[{"id":"x"}],"links":[]}`)}})}
 	rr := httptest.NewRecorder()
@@ -136,6 +140,10 @@ func (f *fakeTimeoutQueries) GetPrecalculatedGraphDataCappedFiltered(ctx context
 }
 
 func (f *fakeTimeoutQueries) GetPrecalculatedGraphDataNoPos(ctx context.Context) ([]db.GetPrecalculatedGraphDataNoPosRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error) {
 	return nil, context.DeadlineExceeded
 }
 
@@ -206,6 +214,10 @@ func (f *fakeGraphQueriesWithPositions) GetPrecalculatedGraphDataCappedFiltered(
 
 func (f *fakeGraphQueriesWithPositions) GetPrecalculatedGraphDataNoPos(ctx context.Context) ([]db.GetPrecalculatedGraphDataNoPosRow, error) {
 	return nil, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error) {
+	return []db.GetEdgeBundlesRow{}, nil
 }
 
 func TestGraphHandler_WithPositions(t *testing.T) {

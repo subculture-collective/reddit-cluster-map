@@ -77,6 +77,10 @@ func (m *MockGraphDataReader) GetPrecalculatedGraphDataNoPos(ctx context.Context
 	return nodes, nil
 }
 
+func (m *MockGraphDataReader) GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error) {
+	return []db.GetEdgeBundlesRow{}, nil
+}
+
 // BenchmarkGetGraphData benchmarks the main graph data endpoint
 func BenchmarkGetGraphData(b *testing.B) {
 	handler := NewHandler(&MockGraphDataReader{})
