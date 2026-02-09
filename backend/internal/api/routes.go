@@ -108,7 +108,7 @@ func NewRouter(q *db.Queries) *mux.Router {
 	graphHandler := handlers.NewHandler(q, graphCache)
 	r.Handle("/api/graph", middleware.ETag(middleware.Gzip(http.HandlerFunc(graphHandler.GetGraphData)))).Methods("GET")
 
-	// Edge bundles endpoint: GET /api/graph/bundles
+	// Edge bundles endpoint with gzip and ETag: GET /api/graph/bundles
 	r.Handle("/api/graph/bundles", middleware.ETag(middleware.Gzip(http.HandlerFunc(graphHandler.GetEdgeBundles)))).Methods("GET")
 
 	// Search endpoint with gzip and ETag: GET /api/search?node=...
@@ -119,7 +119,7 @@ func NewRouter(q *db.Queries) *mux.Router {
 	exportHandler := middleware.ETag(middleware.Gzip(http.HandlerFunc(handlers.ExportGraph(q))))
 	r.Handle("/api/export", exportHandler).Methods("GET")
 
-	// Community aggregation endpoints
+	// Community aggregation endpoints with gzip and ETag
 	communityHandler := handlers.NewCommunityHandler(q, graphCache)
 	r.Handle("/api/communities", middleware.ETag(middleware.Gzip(http.HandlerFunc(communityHandler.GetCommunities)))).Methods("GET")
 	r.Handle("/api/communities/{id}", middleware.ETag(middleware.Gzip(http.HandlerFunc(communityHandler.GetCommunityByID)))).Methods("GET")
