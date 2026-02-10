@@ -1,5 +1,5 @@
 import Admin from "./components/Admin";
-import Controls from "./components/Controls.tsx";
+import Sidebar from "./components/Sidebar.tsx";
 import Communities from "./components/Communities";
 import Dashboard from "./components/Dashboard";
 import Graph2D from "./components/Graph2D";
@@ -243,7 +243,7 @@ function App() {
         />
       ) : (
         <>
-          <Controls
+          <Sidebar
             filters={filters}
             onFiltersChange={setFilters}
             minDegree={minDegree}
