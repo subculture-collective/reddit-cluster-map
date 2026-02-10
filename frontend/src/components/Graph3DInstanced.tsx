@@ -234,6 +234,7 @@ export default function Graph3DInstanced(props: Props) {
 
         // Create scene
         const scene = new THREE.Scene();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- theme is intentionally not in deps; updates handled by separate effect
         scene.background = new THREE.Color(theme === 'dark' ? 0x000000 : 0xf8f9fa);
         sceneRef.current = scene;
 
