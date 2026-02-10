@@ -96,17 +96,6 @@ export default function Sidebar(props: Props) {
   });
 
   const [search, setSearch] = useState("");
-  const [srv, setSrv] = useState<{
-    crawler_enabled: boolean;
-    precalc_enabled: boolean;
-  } | null>(null);
-  const [srvErr, setSrvErr] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  console.log(saving);
-
-  useEffect(() => {
-    fetchServices();
-  }, []);
 
   useEffect(() => {
     try {
@@ -119,6 +108,16 @@ export default function Sidebar(props: Props) {
   // Keyboard shortcut: Ctrl+B to toggle sidebar
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input, textarea, or contentEditable element
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key === "b") {
         e.preventDefault();
         setIsCollapsed((prev) => !prev);
@@ -129,36 +128,10 @@ export default function Sidebar(props: Props) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const fetchServices = () => {
-    const base = (import.meta.env?.VITE_API_URL || "/api").replace(/\/$/, "");
-    fetch(`${base}/admin/services`)
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        setSrv(await r.json());
-      })
-      .catch((e) => setSrvErr(String(e)));
-  };
+  // Note: Admin service status fetching removed from sidebar as it requires authentication.
+  // This functionality should remain in the Admin component where proper auth is handled.
 
-  const updateSrv = async (
-    patch: Partial<{ crawler_enabled: boolean; precalc_enabled: boolean }>
-  ) => {
-    try {
-      setSaving(true);
-      const base = (import.meta.env?.VITE_API_URL || "/api").replace(/\/$/, "");
-      const r = await fetch(`${base}/admin/services`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setSrv(await r.json());
-      setSrvErr(null);
-    } catch (e) {
-      setSrvErr(String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
+
 
   const onToggle = useCallback(
     (key: keyof TypeFilters) =>
@@ -216,35 +189,40 @@ export default function Sidebar(props: Props) {
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="View"
+              title="View section"
+              aria-label="Expand View section"
             >
               👁️
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Filters"
+              title="Filters section"
+              aria-label="Expand Filters section"
             >
               🔍
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Physics"
+              title="Physics section"
+              aria-label="Expand Physics section"
             >
               ⚡
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Display"
+              title="Display section"
+              aria-label="Expand Display section"
             >
               🎨
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Data"
+              title="Data section"
+              aria-label="Expand Data section"
             >
               📊
             </button>
@@ -647,39 +625,6 @@ export default function Sidebar(props: Props) {
                   <option value="contentActivity">Posts + comments</option>
                   <option value="interSubLinks">Inter-sub links</option>
                 </select>
-              </div>
-
-              <div className="text-xs text-white/50 pt-2 border-t border-white/10">
-                Admin Controls
-              </div>
-              <div className="flex flex-col gap-2">
-                <button
-                  className={`px-3 py-1.5 rounded border text-xs font-semibold ${
-                    srv?.crawler_enabled
-                      ? "bg-green-600 border-green-400"
-                      : "bg-gray-700 border-gray-500"
-                  }`}
-                  disabled={true}
-                  onClick={() =>
-                    updateSrv({ crawler_enabled: !srv?.crawler_enabled })
-                  }
-                >
-                  {srv?.crawler_enabled ? "Crawler ON" : "Crawler OFF"}
-                </button>
-                <button
-                  className={`px-3 py-1.5 rounded border text-xs font-semibold ${
-                    srv?.precalc_enabled
-                      ? "bg-green-600 border-green-400"
-                      : "bg-gray-700 border-gray-500"
-                  }`}
-                  disabled={true}
-                  onClick={() =>
-                    updateSrv({ precalc_enabled: !srv?.precalc_enabled })
-                  }
-                >
-                  {srv?.precalc_enabled ? "Precalc ON" : "Precalc OFF"}
-                </button>
-                {srvErr && <span className="text-red-400 text-xs">{srvErr}</span>}
               </div>
             </SidebarSection>
           </div>

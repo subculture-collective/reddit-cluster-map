@@ -39,7 +39,7 @@ export default function SidebarSection({
     <div className="border-b border-white/10">
       <button
         className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-white/5 transition-colors"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => setIsExpanded((prev) => !prev)}
         aria-expanded={isExpanded}
       >
         <span className="flex items-center gap-2">
@@ -63,11 +63,13 @@ export default function SidebarSection({
         </svg>
       </button>
       <div
-        className={`overflow-hidden transition-all duration-200 ${
-          isExpanded ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
+        className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-200 ${
+          isExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
         }`}
       >
-        <div className="px-4 pb-3 space-y-3">{children}</div>
+        <div className="min-h-0">
+          <div className="px-4 pb-3 space-y-3">{children}</div>
+        </div>
       </div>
     </div>
   );

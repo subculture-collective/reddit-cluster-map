@@ -261,4 +261,43 @@ describe('Sidebar', () => {
     expect(screen.getByText('Display')).toBeInTheDocument();
     expect(screen.getByText('Data')).toBeInTheDocument();
   });
+
+  it('toggles sidebar when Ctrl+B is pressed', async () => {
+    const user = userEvent.setup();
+    
+    render(<Sidebar {...defaultProps} />);
+    
+    // Sidebar should be expanded initially
+    expect(screen.getByText('Controls')).toBeInTheDocument();
+    
+    // Press Ctrl+B to collapse
+    await user.keyboard('{Control>}b{/Control}');
+    
+    await waitFor(() => {
+      expect(screen.queryByText('Controls')).not.toBeInTheDocument();
+    });
+    
+    // Press Ctrl+B again to expand
+    await user.keyboard('{Control>}b{/Control}');
+    
+    await waitFor(() => {
+      expect(screen.getByText('Controls')).toBeInTheDocument();
+    });
+  });
+
+  it('ignores Ctrl+B when focus is in an input field', async () => {
+    const user = userEvent.setup();
+    
+    render(<Sidebar {...defaultProps} />);
+    
+    // Focus the search input
+    const searchInput = screen.getByPlaceholderText('Focus node by id/name');
+    await user.click(searchInput);
+    
+    // Press Ctrl+B while focused in input
+    await user.keyboard('{Control>}b{/Control}');
+    
+    // Sidebar should still be expanded (Ctrl+B was ignored)
+    expect(screen.getByText('Controls')).toBeInTheDocument();
+  });
 });

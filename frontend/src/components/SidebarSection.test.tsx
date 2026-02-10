@@ -50,11 +50,13 @@ describe('SidebarSection', () => {
     const header = screen.getByText('Test Section');
     await user.click(header);
     
-    // Check wrapper div has opacity-0 class
+    // Check wrapper div has grid-rows-[0fr] and opacity-0 classes
     await waitFor(() => {
       const content = screen.getByText('Test Content');
-      const wrapper = content.parentElement?.parentElement;
-      expect(wrapper).toHaveClass('opacity-0');
+      const innerWrapper = content.parentElement?.parentElement; // min-h-0 div
+      const gridWrapper = innerWrapper?.parentElement; // grid div
+      expect(gridWrapper).toHaveClass('grid-rows-[0fr]');
+      expect(gridWrapper).toHaveClass('opacity-0');
     });
   });
 
@@ -73,8 +75,10 @@ describe('SidebarSection', () => {
     // Content should become visible
     await waitFor(() => {
       const content = screen.getByText('Test Content');
-      const wrapper = content.parentElement?.parentElement;
-      expect(wrapper).toHaveClass('opacity-100');
+      const innerWrapper = content.parentElement?.parentElement; // min-h-0 div
+      const gridWrapper = innerWrapper?.parentElement; // grid div
+      expect(gridWrapper).toHaveClass('grid-rows-[1fr]');
+      expect(gridWrapper).toHaveClass('opacity-100');
     });
   });
 
@@ -106,8 +110,10 @@ describe('SidebarSection', () => {
     
     // Should be collapsed based on localStorage value
     const content = screen.getByText('Test Content');
-    const wrapper = content.parentElement?.parentElement;
-    expect(wrapper).toHaveClass('opacity-0');
+    const innerWrapper = content.parentElement?.parentElement; // min-h-0 div
+    const gridWrapper = innerWrapper?.parentElement; // grid div
+    expect(gridWrapper).toHaveClass('grid-rows-[0fr]');
+    expect(gridWrapper).toHaveClass('opacity-0');
   });
 
   it('rotates chevron icon when expanded/collapsed', async () => {
