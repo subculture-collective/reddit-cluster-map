@@ -12,6 +12,7 @@ import {
 } from '../rendering/ForceSimulation';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { detectWebGLSupport } from '../utils/webglDetect';
+import { AdaptiveLODManager, LODTier } from '../utils/levelOfDetail';
 import LoadingSkeleton from './LoadingSkeleton';
 import NodeTooltip from './NodeTooltip';
 import PerformanceHUD from './PerformanceHUD';
@@ -64,6 +65,12 @@ interface Props {
     initialCamera?: { x: number; y: number; z: number };
     onCameraChange?: (camera: { x: number; y: number; z: number }) => void;
     sizeAttenuation?: boolean;
+    enableAdaptiveLOD?: boolean;
+    lodConfig?: {
+        fpsDowngradeThreshold?: number;
+        fpsUpgradeThreshold?: number;
+        enableAdaptiveLOD?: boolean;
+    };
 }
 
 export default function Graph3DInstanced(props: Props) {
@@ -81,6 +88,8 @@ export default function Graph3DInstanced(props: Props) {
         initialCamera,
         onCameraChange,
         sizeAttenuation = true,
+        enableAdaptiveLOD = true,
+        lodConfig,
     } = props;
 
     // State
@@ -90,6 +99,7 @@ export default function Graph3DInstanced(props: Props) {
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
     const [webglSupported] = useState(() => detectWebGLSupport());
     const [onlyLinked, setOnlyLinked] = useState(true);
+    const [currentLODTier, setCurrentLODTier] = useState<LODTier>(LODTier.HIGH);
 
     // Refs for Three.js objects
     const containerRef = useRef<HTMLDivElement>(null);
@@ -104,6 +114,9 @@ export default function Graph3DInstanced(props: Props) {
     const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
     const hoveredNodeRef = useRef<string | null>(null);
     const labelsGroupRef = useRef<THREE.Group | null>(null);
+    const lodManagerRef = useRef<AdaptiveLODManager | null>(null);
+    const lastFrameTimeRef = useRef<number>(performance.now());
+    const fpsHistoryRef = useRef<number[]>([]);
 
     // State for tooltip
     const [hoveredNode] = useState<{
@@ -278,6 +291,19 @@ export default function Graph3DInstanced(props: Props) {
         scene.add(labelsGroup);
         labelsGroupRef.current = labelsGroup;
 
+        // Initialize LOD manager
+        const lodManager = new AdaptiveLODManager();
+        if (lodConfig) {
+            lodManager.setConfig({
+                enableAdaptiveLOD: enableAdaptiveLOD && (lodConfig.enableAdaptiveLOD ?? true),
+                fpsDowngradeThreshold: lodConfig.fpsDowngradeThreshold ?? 24,
+                fpsUpgradeThreshold: lodConfig.fpsUpgradeThreshold ?? 50,
+            });
+        } else {
+            lodManager.setConfig({ enableAdaptiveLOD });
+        }
+        lodManagerRef.current = lodManager;
+
         // Set initial camera if provided
         if (initialCamera) {
             camera.position.set(
@@ -301,6 +327,29 @@ export default function Graph3DInstanced(props: Props) {
         let animationId: number;
         const animate = () => {
             animationId = requestAnimationFrame(animate);
+            
+            // Track FPS
+            const now = performance.now();
+            const delta = now - lastFrameTimeRef.current;
+            if (delta > 0) {
+                const fps = 1000 / delta;
+                lodManager.recordFrame(fps);
+                fpsHistoryRef.current.push(fps);
+                if (fpsHistoryRef.current.length > 60) {
+                    fpsHistoryRef.current.shift();
+                }
+            }
+            lastFrameTimeRef.current = now;
+            
+            // Update LOD manager
+            lodManager.update(now);
+            const lodParams = lodManager.getRenderingParams(now);
+            
+            // Update LOD tier state if changed
+            if (lodParams.tier !== currentLODTier) {
+                setCurrentLODTier(lodParams.tier);
+            }
+            
             controls.update();
 
             // Update node camera position for distance-based scaling
@@ -308,24 +357,32 @@ export default function Graph3DInstanced(props: Props) {
                 nodeRenderer.updateCameraPosition();
             }
 
-            // Update link visibility when camera moves
+            // Update link visibility and opacity based on LOD
             // updateVisibility() skips work if camera hasn't moved significantly
             // refresh() skips work if visibility hasn't changed (needsUpdate flag)
-            const now = Date.now();
+            const nowMs = Date.now();
             if (
                 linkRenderer &&
-                now - lastLinkVisibilityUpdate > LINK_VISIBILITY_UPDATE_INTERVAL
+                nowMs - lastLinkVisibilityUpdate > LINK_VISIBILITY_UPDATE_INTERVAL
             ) {
-                linkRenderer.updateVisibility(camera);
-                linkRenderer.refresh();
-                lastLinkVisibilityUpdate = now;
+                if (lodParams.showLinks) {
+                    linkRenderer.updateVisibility(camera);
+                    // Apply LOD opacity multiplier
+                    linkRenderer.setOpacity(linkOpacity * lodParams.linkOpacityMultiplier);
+                    linkRenderer.refresh();
+                } else {
+                    // Hide all links in LOW/EMERGENCY tiers
+                    linkRenderer.setOpacity(0);
+                    linkRenderer.refresh();
+                }
+                lastLinkVisibilityUpdate = nowMs;
             }
 
             renderer.render(scene, camera);
 
             // Throttle camera change emissions
             if (onCameraChange) {
-                if (now - lastCameraUpdate > CAMERA_UPDATE_INTERVAL) {
+                if (nowMs - lastCameraUpdate > CAMERA_UPDATE_INTERVAL) {
                     const { x, y, z } = camera.position;
                     // Only emit if position changed significantly
                     if (
@@ -337,7 +394,7 @@ export default function Graph3DInstanced(props: Props) {
                         lastCamPos.x = x;
                         lastCamPos.y = y;
                         lastCamPos.z = z;
-                        lastCameraUpdate = now;
+                        lastCameraUpdate = nowMs;
                     }
                 }
             }
@@ -379,6 +436,11 @@ export default function Graph3DInstanced(props: Props) {
         MAX_RENDER_LINKS,
         initialCamera,
         onCameraChange,
+        linkOpacity,
+        sizeAttenuation,
+        enableAdaptiveLOD,
+        lodConfig,
+        currentLODTier,
     ]);
 
     // Process graph data with filters
@@ -758,7 +820,7 @@ export default function Graph3DInstanced(props: Props) {
                 nodeCount={filtered.nodes.length}
                 totalNodeCount={graphData?.nodes.length || 0}
                 simulationState={usePrecomputedLayout ? 'precomputed' : 'active'}
-                lodLevel={0}
+                lodLevel={currentLODTier}
             />
         </div>
     );

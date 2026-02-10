@@ -194,7 +194,6 @@ export class AdaptiveLODManager {
   private currentTier: LODTier = LODTier.HIGH;
   private targetTier: LODTier = LODTier.HIGH;
   private transitionStartTime: number = 0;
-  private lastTierChangeTime: number = 0;
   private belowThresholdStartTime: number = 0;
   private aboveThresholdStartTime: number = 0;
   private isTransitioning: boolean = false;
@@ -309,7 +308,6 @@ export class AdaptiveLODManager {
     
     this.targetTier = newTier;
     this.transitionStartTime = currentTime;
-    this.lastTierChangeTime = currentTime;
     this.isTransitioning = true;
   }
   
@@ -364,7 +362,6 @@ export class AdaptiveLODManager {
     this.currentTier = LODTier.HIGH;
     this.targetTier = LODTier.HIGH;
     this.transitionStartTime = 0;
-    this.lastTierChangeTime = 0;
     this.belowThresholdStartTime = 0;
     this.aboveThresholdStartTime = 0;
     this.isTransitioning = false;
@@ -384,11 +381,6 @@ export class AdaptiveLODManager {
   } {
     const tier = this.currentTier;
     const progress = this.getTransitionProgress(currentTime);
-    
-    // During transition, blend between tiers
-    const effectiveTier = this.isTransitioning
-      ? this.currentTier + (this.targetTier - this.currentTier) * progress
-      : tier;
     
     switch (tier) {
       case LODTier.EMERGENCY:
