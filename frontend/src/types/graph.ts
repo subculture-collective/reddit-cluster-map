@@ -18,3 +18,15 @@ export interface GraphData {
     nodes: GraphNode[];
     links: GraphLink[];
 }
+
+export interface PaginationInfo {
+    next_cursor?: string;
+    has_more: boolean;
+    page_size?: number;
+}
+
+export interface PaginatedGraphData {
+    nodes: GraphNode[];
+    links: GraphLink[];
+    pagination?: PaginationInfo;
+}
