@@ -302,8 +302,12 @@ export default function Graph3D(props: Props) {
     return <Graph3DInstanced {...props} />;
   }
   
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { enableAdaptiveLOD, onLODTierChange, ...propsWithoutLOD } = props;
+  // Extract and exclude LOD-specific props for the original renderer
+  const { 
+    enableAdaptiveLOD: _enableAdaptiveLOD, 
+    onLODTierChange: _onLODTierChange, 
+    ...propsWithoutLOD 
+  } = props;
   return <Graph3DOriginal {...propsWithoutLOD} />;
 }
 
