@@ -1,5 +1,5 @@
 import Admin from "./components/Admin";
-import Controls from "./components/Controls.tsx";
+import Sidebar from "./components/Sidebar.tsx";
 import Communities from "./components/Communities";
 import Dashboard from "./components/Dashboard";
 import Graph2D from "./components/Graph2D";
@@ -7,6 +7,7 @@ import Graph3D from "./components/Graph3D.tsx";
 import Inspector from "./components/Inspector.tsx";
 import Legend from "./components/Legend.tsx";
 import ShareButton from "./components/ShareButton.tsx";
+import SearchBar from "./components/SearchBar.tsx";
 import ErrorBoundary from "./components/ErrorBoundary.tsx";
 import GraphErrorFallback from "./components/GraphErrorFallback.tsx";
 import type { TypeFilters } from "./types/ui";
@@ -194,6 +195,22 @@ function App() {
 
   return (
     <div className="w-full h-screen bg-white dark:bg-black transition-colors duration-200">
+      {/* Search bar - visible in all views except admin */}
+      {viewMode !== "admin" && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50">
+          <SearchBar
+            onSelectNode={(id) => {
+              setFocusNodeId(id);
+              setSelectedId(id);
+              // Switch to 3D view if not already in a graph view
+              if (viewMode === "dashboard") {
+                setViewMode("3d");
+              }
+            }}
+          />
+        </div>
+      )}
+      
       {viewMode === "admin" ? (
         <Admin
           onViewMode={(mode: "3d" | "2d") => {
@@ -226,7 +243,7 @@ function App() {
         />
       ) : (
         <>
-          <Controls
+          <Sidebar
             filters={filters}
             onFiltersChange={setFilters}
             minDegree={minDegree}

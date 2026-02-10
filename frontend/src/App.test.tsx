@@ -31,10 +31,10 @@ vi.mock('./components/Communities', () => ({
   ),
 }));
 
-vi.mock('./components/Controls', () => ({
+vi.mock('./components/Sidebar', () => ({
   default: ({ graphMode, onGraphModeChange, onShowDashboard, onShowAdmin }: any) => (
     <div>
-      <div>Mocked Controls</div>
+      <div>Mocked Sidebar</div>
       <div>Mode: {graphMode}</div>
       <button onClick={() => onGraphModeChange('2d')}>Switch to 2D</button>
       <button onClick={onShowDashboard}>Show Dashboard</button>
@@ -115,7 +115,7 @@ describe('App', () => {
   it('renders default 3D view', () => {
     render(<App />);
     expect(screen.getByText('Mocked Graph3D')).toBeInTheDocument();
-    expect(screen.getByText('Mocked Controls')).toBeInTheDocument();
+    expect(screen.getByText('Mocked Sidebar')).toBeInTheDocument();
     expect(screen.getByText('Mocked Legend')).toBeInTheDocument();
   });
 
