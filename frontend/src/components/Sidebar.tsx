@@ -178,7 +178,7 @@ export default function Sidebar(props: Props) {
       {/* Sidebar */}
       <div
         className={`fixed top-0 left-0 h-full bg-black/90 backdrop-blur-sm text-white z-30 transition-all duration-200 flex flex-col shadow-2xl ${
-          isCollapsed ? "w-14" : "w-80"
+          isCollapsed ? "w-14" : "w-80 sm:w-80"
         }`}
       >
         {/* Header */}
@@ -688,7 +688,7 @@ export default function Sidebar(props: Props) {
 
       {/* Spacer to push content right when sidebar is expanded */}
       <div
-        className={`transition-all duration-200 ${
+        className={`hidden sm:block transition-all duration-200 ${
           isCollapsed ? "w-14" : "w-80"
         }`}
       />
