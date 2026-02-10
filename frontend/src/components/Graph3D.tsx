@@ -297,11 +297,19 @@ export default function Graph3D(props: Props) {
 
   // Use the new instanced renderer if enabled
   // This must be done without early return to satisfy React hooks rules
-  return useInstancedRenderer ? <Graph3DInstanced {...props} /> : <Graph3DOriginal {...props} />;
+  // Only pass LOD props to instanced renderer since original renderer doesn't support them
+  if (useInstancedRenderer) {
+    return <Graph3DInstanced {...props} />;
+  }
+  
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { enableAdaptiveLOD, onLODTierChange, ...propsWithoutLOD } = props;
+  return <Graph3DOriginal {...propsWithoutLOD} />;
 }
 
 // Original implementation extracted to separate component
-function Graph3DOriginal(props: Props) {
+// Uses a subset of Props - doesn't support enableAdaptiveLOD or onLODTierChange
+function Graph3DOriginal(props: Omit<Props, 'enableAdaptiveLOD' | 'onLODTierChange'>) {
   const {
     filters,
     minDegree,

@@ -229,7 +229,13 @@ export default function Controls(props: Props) {
           </label>
           {currentLODTier !== undefined && (
             <div className="text-xs text-white/60 ml-5">
-              Current tier: {['Emergency', 'Low', 'Medium', 'High'][currentLODTier]}
+              Current tier: {
+                currentLODTier === 0 ? 'Emergency' :
+                currentLODTier === 1 ? 'Low' :
+                currentLODTier === 2 ? 'Medium' :
+                currentLODTier === 3 ? 'High' :
+                'Unknown'
+              }
             </div>
           )}
         </div>

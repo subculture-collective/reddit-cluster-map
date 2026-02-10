@@ -206,14 +206,28 @@ export class AdaptiveLODManager {
    * Update configuration
    */
   public setConfig(config: Partial<LODConfig>): void {
-    this.config = { ...this.config, ...config };
+    // Deep merge distanceTiers to avoid breaking nested config
+    const nextConfig: LODConfig = { ...this.config, ...config };
+    
+    if (config.distanceTiers) {
+      nextConfig.distanceTiers = {
+        ...this.config.distanceTiers,
+        ...config.distanceTiers,
+      };
+    }
+    
+    this.config = nextConfig;
   }
   
   /**
    * Get current configuration
    */
   public getConfig(): LODConfig {
-    return { ...this.config };
+    // Return a deep copy to prevent external mutation
+    return {
+      ...this.config,
+      distanceTiers: { ...this.config.distanceTiers },
+    };
   }
   
   /**
@@ -369,6 +383,7 @@ export class AdaptiveLODManager {
   
   /**
    * Get rendering parameters based on current tier
+   * Blends opacity between current and target tiers during transitions
    */
   public getRenderingParams(currentTime: number): {
     tier: LODTier;
@@ -382,52 +397,69 @@ export class AdaptiveLODManager {
     const tier = this.currentTier;
     const progress = this.getTransitionProgress(currentTime);
     
-    switch (tier) {
-      case LODTier.EMERGENCY:
-        return {
-          tier,
-          showLabels: false,
-          showLinks: false,
-          maxNodes: 10000,
-          nodeQuality: 'low',
-          linkOpacityMultiplier: 0,
-          transitionProgress: progress,
-        };
+    // Get base parameters for current tier
+    const getBaseParams = (t: LODTier) => {
+      switch (t) {
+        case LODTier.EMERGENCY:
+          return {
+            showLabels: false,
+            showLinks: false,
+            maxNodes: 10000,
+            nodeQuality: 'low' as const,
+            linkOpacityMultiplier: 0,
+          };
+        case LODTier.LOW:
+          return {
+            showLabels: false,
+            showLinks: false,
+            maxNodes: null,
+            nodeQuality: 'low' as const,
+            linkOpacityMultiplier: 0,
+          };
+        case LODTier.MEDIUM:
+          return {
+            showLabels: false,
+            showLinks: true,
+            maxNodes: null,
+            nodeQuality: 'medium' as const,
+            linkOpacityMultiplier: 0.5,
+          };
+        case LODTier.HIGH:
+        default:
+          return {
+            showLabels: true,
+            showLinks: true,
+            maxNodes: null,
+            nodeQuality: 'high' as const,
+            linkOpacityMultiplier: 1.0,
+          };
+      }
+    };
+    
+    const currentParams = getBaseParams(tier);
+    
+    // Blend opacity during transitions for smooth cross-fade
+    if (this.isTransitioning && progress < 1) {
+      const targetParams = getBaseParams(this.targetTier);
       
-      case LODTier.LOW:
-        return {
-          tier,
-          showLabels: false,
-          showLinks: false,
-          maxNodes: null,
-          nodeQuality: 'low',
-          linkOpacityMultiplier: 0,
-          transitionProgress: progress,
-        };
+      // Interpolate opacity multiplier for smooth transitions
+      const blendedOpacity = 
+        currentParams.linkOpacityMultiplier * (1 - progress) +
+        targetParams.linkOpacityMultiplier * progress;
       
-      case LODTier.MEDIUM:
-        return {
-          tier,
-          showLabels: false,
-          showLinks: true,
-          maxNodes: null,
-          nodeQuality: 'medium',
-          linkOpacityMultiplier: 0.5,
-          transitionProgress: progress,
-        };
-      
-      case LODTier.HIGH:
-      default:
-        return {
-          tier,
-          showLabels: true,
-          showLinks: true,
-          maxNodes: null,
-          nodeQuality: 'high',
-          linkOpacityMultiplier: 1.0,
-          transitionProgress: progress,
-        };
+      return {
+        tier,
+        ...currentParams,
+        linkOpacityMultiplier: blendedOpacity,
+        transitionProgress: progress,
+      };
     }
+    
+    return {
+      tier,
+      ...currentParams,
+      transitionProgress: progress,
+    };
   }
 }
 

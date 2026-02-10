@@ -116,9 +116,8 @@ export default function Graph3DInstanced(props: Props) {
     const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
     const hoveredNodeRef = useRef<string | null>(null);
     const labelsGroupRef = useRef<THREE.Group | null>(null);
-    const lodManagerRef = useRef<AdaptiveLODManager | null>(null);
     const lastFrameTimeRef = useRef<number>(performance.now());
-    const fpsHistoryRef = useRef<number[]>([]);
+    const lastEmittedTierRef = useRef<LODTier>(LODTier.HIGH);
 
     // State for tooltip
     const [hoveredNode] = useState<{
@@ -304,7 +303,6 @@ export default function Graph3DInstanced(props: Props) {
         } else {
             lodManager.setConfig({ enableAdaptiveLOD });
         }
-        lodManagerRef.current = lodManager;
 
         // Set initial camera if provided
         if (initialCamera) {
@@ -336,10 +334,6 @@ export default function Graph3DInstanced(props: Props) {
             if (delta > 0) {
                 const fps = 1000 / delta;
                 lodManager.recordFrame(fps);
-                fpsHistoryRef.current.push(fps);
-                if (fpsHistoryRef.current.length > 60) {
-                    fpsHistoryRef.current.shift();
-                }
             }
             lastFrameTimeRef.current = now;
             
@@ -347,8 +341,9 @@ export default function Graph3DInstanced(props: Props) {
             lodManager.update(now);
             const lodParams = lodManager.getRenderingParams(now);
             
-            // Update LOD tier state if changed
-            if (lodParams.tier !== currentLODTier) {
+            // Update LOD tier state if changed (use ref to avoid stale closure)
+            if (lodParams.tier !== lastEmittedTierRef.current) {
+                lastEmittedTierRef.current = lodParams.tier;
                 setCurrentLODTier(lodParams.tier);
                 if (onLODTierChange) {
                     onLODTierChange(lodParams.tier);
