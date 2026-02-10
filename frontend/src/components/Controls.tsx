@@ -46,6 +46,9 @@ interface Props {
   onTogglePrecomputedLayout?: (enabled: boolean) => void;
   sizeAttenuation?: boolean;
   onToggleSizeAttenuation?: (enabled: boolean) => void;
+  enableAdaptiveLOD?: boolean;
+  onToggleAdaptiveLOD?: (enabled: boolean) => void;
+  currentLODTier?: number;
 }
 
 export default function Controls(props: Props) {
@@ -78,6 +81,9 @@ export default function Controls(props: Props) {
     onTogglePrecomputedLayout,
     sizeAttenuation,
     onToggleSizeAttenuation,
+    enableAdaptiveLOD,
+    onToggleAdaptiveLOD,
+    currentLODTier,
   } = props;
   const [search, setSearch] = useState("");
   const [srv, setSrv] = useState<{
@@ -210,6 +216,23 @@ export default function Controls(props: Props) {
           />
           Distance-based node sizing
         </label>
+      )}
+      {onToggleAdaptiveLOD && (
+        <div className="space-y-1">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={!!enableAdaptiveLOD}
+              onChange={(e) => onToggleAdaptiveLOD?.(e.target.checked)}
+            />
+            Adaptive LOD (Level-of-Detail)
+          </label>
+          {currentLODTier !== undefined && (
+            <div className="text-xs text-white/60 ml-5">
+              Current tier: {['Emergency', 'Low', 'Medium', 'High'][currentLODTier]}
+            </div>
+          )}
+        </div>
       )}
       <div className="text-xs text-white/70">Admin</div>
       <div className="flex items-center gap-3 text-sm">

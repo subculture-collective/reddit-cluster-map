@@ -71,6 +71,7 @@ interface Props {
         fpsUpgradeThreshold?: number;
         enableAdaptiveLOD?: boolean;
     };
+    onLODTierChange?: (tier: number) => void;
 }
 
 export default function Graph3DInstanced(props: Props) {
@@ -90,6 +91,7 @@ export default function Graph3DInstanced(props: Props) {
         sizeAttenuation = true,
         enableAdaptiveLOD = true,
         lodConfig,
+        onLODTierChange,
     } = props;
 
     // State
@@ -348,6 +350,9 @@ export default function Graph3DInstanced(props: Props) {
             // Update LOD tier state if changed
             if (lodParams.tier !== currentLODTier) {
                 setCurrentLODTier(lodParams.tier);
+                if (onLODTierChange) {
+                    onLODTierChange(lodParams.tier);
+                }
             }
             
             controls.update();

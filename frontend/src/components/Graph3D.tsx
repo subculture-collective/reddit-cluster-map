@@ -281,6 +281,8 @@ interface Props {
   initialCamera?: { x: number; y: number; z: number };
   onCameraChange?: (camera: { x: number; y: number; z: number }) => void;
   sizeAttenuation?: boolean;
+  enableAdaptiveLOD?: boolean;
+  onLODTierChange?: (tier: number) => void;
 }
 
 export default function Graph3D(props: Props) {
