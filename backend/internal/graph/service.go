@@ -356,23 +356,12 @@ func (s *Service) PrecalculateGraphDataWithMode(ctx context.Context, fullRebuild
 	// Capture snapshot before making changes (for diff calculation)
 	var oldSnapshot *GraphSnapshot
 	if versionStore, ok := s.store.(VersionStore); ok {
-		if !incrementalMode {
-			// For full rebuild, capture current state before clearing
-			snap, err := CaptureGraphSnapshot(ctx, versionStore)
-			if err != nil {
-				logger.Warn("Failed to capture graph snapshot for diff tracking", "error", err)
-				// Non-fatal - continue without versioning
-			} else {
-				oldSnapshot = snap
-			}
+		snap, err := CaptureGraphSnapshot(ctx, versionStore)
+		if err != nil {
+			logger.Warn("Failed to capture graph snapshot for diff tracking", "error", err)
+			// Non-fatal - continue without versioning
 		} else {
-			// For incremental, also capture state for diff
-			snap, err := CaptureGraphSnapshot(ctx, versionStore)
-			if err != nil {
-				logger.Warn("Failed to capture graph snapshot for diff tracking", "error", err)
-			} else {
-				oldSnapshot = snap
-			}
+			oldSnapshot = snap
 		}
 	}
 	

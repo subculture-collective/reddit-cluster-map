@@ -244,7 +244,8 @@ CREATE TABLE IF NOT EXISTS service_settings (
 );
 
 -- Precalculation state tracking
--- Graph version tracking
+-- Precalculation state tracking (including version history)
+-- Graph versions track each precalculation run for incremental updates
 CREATE TABLE IF NOT EXISTS graph_versions (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
@@ -256,7 +257,7 @@ CREATE TABLE IF NOT EXISTS graph_versions (
     CONSTRAINT valid_status CHECK (status IN ('pending', 'completed', 'failed'))
 );
 
--- Graph diff tracking
+-- Graph diffs track changes between versions for incremental client updates
 CREATE TABLE IF NOT EXISTS graph_diffs (
     id BIGSERIAL PRIMARY KEY,
     version_id BIGINT NOT NULL REFERENCES graph_versions(id) ON DELETE CASCADE,

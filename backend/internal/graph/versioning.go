@@ -331,7 +331,3 @@ func CountGraphEntities(ctx context.Context, store VersionStore) (nodeCount, lin
 
 	return int32(nodes), int32(links), nil
 }
-
-// AddGetEnvInt adds a helper method to config if not already present
-// This is implemented in the config package, just documenting the expected signature
-// func (c *Config) GetEnvInt(key string, defaultVal int) int
