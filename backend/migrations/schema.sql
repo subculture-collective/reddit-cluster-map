@@ -277,6 +277,13 @@ CREATE TABLE IF NOT EXISTS graph_diffs (
     CONSTRAINT valid_entity_type CHECK (entity_type IN ('node', 'link'))
 );
 
+-- Indexes for efficient version and diff queries
+CREATE INDEX IF NOT EXISTS idx_graph_versions_created_at ON graph_versions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_graph_versions_status ON graph_versions(status);
+CREATE INDEX IF NOT EXISTS idx_graph_diffs_version_id ON graph_diffs(version_id);
+CREATE INDEX IF NOT EXISTS idx_graph_diffs_entity ON graph_diffs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_graph_diffs_action ON graph_diffs(action);
+
 CREATE TABLE IF NOT EXISTS precalc_state (
     id INTEGER PRIMARY KEY DEFAULT 1,
     last_precalc_at TIMESTAMPTZ,

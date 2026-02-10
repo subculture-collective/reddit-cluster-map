@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -153,16 +154,7 @@ func (h *VersionHandler) GetDiffSince(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Try cache first
-	cacheKey := "graph:diff:since:" + sinceStr
-	if cached, found := h.cache.Get(cacheKey); found {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Cache", "HIT")
-		_, _ = w.Write(cached)
-		return
-	}
-	
-	// Fetch current version
+	// Fetch current version first
 	currentVersion, err := h.queries.GetCurrentGraphVersion(ctx)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -174,9 +166,29 @@ func (h *VersionHandler) GetDiffSince(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Check if the requested version exists
+	// Check if the requested version is valid
 	if sinceVersion >= currentVersion.ID {
 		apierr.WriteError(w, apierr.New(apierr.ErrValidationInvalidValue, "'since' version must be less than current version", http.StatusBadRequest))
+		return
+	}
+	
+	// Verify that the requested version still exists (has not been pruned by retention)
+	if _, err := h.queries.GetGraphVersion(ctx, sinceVersion); err != nil {
+		if err == sql.ErrNoRows {
+			apierr.WriteError(w, apierr.New(apierr.ErrValidationInvalidValue, "'since' version is too old and no longer available; please refetch the full graph", http.StatusBadRequest))
+			return
+		}
+		logger.Error("Failed to look up requested graph version", "error", err, "since", sinceVersion)
+		apierr.WriteError(w, apierr.SystemInternal("Failed to validate requested version"))
+		return
+	}
+	
+	// Check cache (include current version in key to avoid stale data)
+	cacheKey := fmt.Sprintf("graph:diff:since:%d:current:%d", sinceVersion, currentVersion.ID)
+	if cached, found := h.cache.Get(cacheKey); found {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Cache", "HIT")
+		_, _ = w.Write(cached)
 		return
 	}
 	

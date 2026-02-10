@@ -34,24 +34,9 @@ type GraphSnapshot struct {
 }
 
 // VersionStore defines the operations needed for version tracking
+// It embeds GraphStore which already includes all necessary version tracking methods
 type VersionStore interface {
 	GraphStore // Embed the existing GraphStore interface
-	
-	// Version management
-	CreateGraphVersion(ctx context.Context, arg db.CreateGraphVersionParams) (db.GraphVersion, error)
-	GetCurrentGraphVersion(ctx context.Context) (db.GraphVersion, error)
-	UpdateGraphVersionStatus(ctx context.Context, arg db.UpdateGraphVersionStatusParams) error
-	DeleteOldGraphVersions(ctx context.Context, retention int32) error
-	CountGraphVersions(ctx context.Context) (int64, error)
-	
-	// Diff management
-	CreateGraphDiff(ctx context.Context, arg db.CreateGraphDiffParams) error
-	
-	// Version state tracking
-	UpdatePrecalcStateVersion(ctx context.Context, versionID sql.NullInt64) error
-	
-	// Fetch current graph state for diff calculation
-	GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error)
 }
 
 // CaptureGraphSnapshot captures the current state of the graph for diff comparison
@@ -82,9 +67,30 @@ func CaptureGraphSnapshot(ctx context.Context, store VersionStore) (*GraphSnapsh
 				PosZ: row.PosZ,
 			}
 		} else if row.DataType == "link" {
-			// Source and Target are interface{}, convert to string
-			source, _ := row.Source.(string)
-			target, _ := row.Target.(string)
+			// Source and Target are interface{}, handle both string and []byte
+			var source, target string
+			switch v := row.Source.(type) {
+			case string:
+				source = v
+			case []byte:
+				source = string(v)
+			default:
+				log.Printf("⚠️ Unexpected type for row.Source: %T", row.Source)
+				continue
+			}
+			switch v := row.Target.(type) {
+			case string:
+				target = v
+			case []byte:
+				target = string(v)
+			default:
+				log.Printf("⚠️ Unexpected type for row.Target: %T", row.Target)
+				continue
+			}
+			if source == "" || target == "" {
+				log.Printf("⚠️ Empty source or target in link: source=%q, target=%q", source, target)
+				continue
+			}
 			key := fmt.Sprintf("%s->%s", source, target)
 			snapshot.Links[key] = GraphLink{
 				Source: source,
@@ -262,6 +268,12 @@ func equalNullFloat(a, b sql.NullFloat64) bool {
 func CleanupOldVersions(ctx context.Context, store VersionStore) error {
 	cfg := config.Load()
 	retention := cfg.GetEnvInt("GRAPH_VERSION_RETENTION", 10)
+	
+	// Validate retention value (minimum 1 to prevent deleting all versions)
+	if retention < 1 {
+		log.Printf("⚠️ Invalid GRAPH_VERSION_RETENTION value %d, using minimum of 1", retention)
+		retention = 1
+	}
 	
 	count, err := store.CountGraphVersions(ctx)
 	if err != nil {

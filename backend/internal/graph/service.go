@@ -355,13 +355,15 @@ func (s *Service) PrecalculateGraphDataWithMode(ctx context.Context, fullRebuild
 	
 	// Capture snapshot before making changes (for diff calculation)
 	var oldSnapshot *GraphSnapshot
+	var snapshotCaptured bool
 	if versionStore, ok := s.store.(VersionStore); ok {
 		snap, err := CaptureGraphSnapshot(ctx, versionStore)
 		if err != nil {
-			logger.Warn("Failed to capture graph snapshot for diff tracking", "error", err)
-			// Non-fatal - continue without versioning
+			logger.Warn("Failed to capture graph snapshot for diff tracking; will skip diff generation for this run", "error", err)
+			// Non-fatal - continue without diff calculation for this cycle
 		} else {
 			oldSnapshot = snap
+			snapshotCaptured = true
 		}
 	}
 	
@@ -964,17 +966,22 @@ func (s *Service) PrecalculateGraphDataWithMode(ctx context.Context, fullRebuild
 		if err != nil {
 			logger.Warn("Failed to create graph version", "error", err)
 		} else {
-			// Capture new snapshot and calculate diffs
-			newSnapshot, err := CaptureGraphSnapshot(ctx, versionStore)
-			if err != nil {
-				logger.Warn("Failed to capture new graph snapshot", "error", err)
-			} else {
-				// Calculate and store diffs
-				if err := CalculateAndStoreDiffs(ctx, versionStore, versionID, oldSnapshot, newSnapshot); err != nil {
-					logger.Warn("Failed to calculate and store diffs", "error", err)
+			// Only calculate diffs if we successfully captured the old snapshot
+			if snapshotCaptured {
+				// Capture new snapshot and calculate diffs
+				newSnapshot, err := CaptureGraphSnapshot(ctx, versionStore)
+				if err != nil {
+					logger.Warn("Failed to capture new graph snapshot", "error", err)
 				} else {
-					logger.InfoContext(ctx, "Graph version and diffs stored successfully", "version_id", versionID)
+					// Calculate and store diffs
+					if err := CalculateAndStoreDiffs(ctx, versionStore, versionID, oldSnapshot, newSnapshot); err != nil {
+						logger.Warn("Failed to calculate and store diffs", "error", err)
+					} else {
+						logger.InfoContext(ctx, "Graph version and diffs stored successfully", "version_id", versionID)
+					}
 				}
+			} else {
+				logger.InfoContext(ctx, "Skipping diff calculation (snapshot not captured)", "version_id", versionID)
 			}
 			
 			// Clean up old versions
