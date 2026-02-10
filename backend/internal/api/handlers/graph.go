@@ -146,6 +146,7 @@ func decodeCursor(cursor string) (cursorData, error) {
 // GetGraphData returns the graph data.
 // It prefers the precalculated graph tables (graph_nodes/graph_links) when available,
 // and falls back to the legacy aggregated JSON if none are present.
+// Supports NDJSON streaming via Accept: application/x-ndjson header.
 func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tracing.StartSpan(r.Context(), "handlers.GetGraphData")
 	defer span.End()
@@ -170,6 +171,9 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 		return v == "1" || strings.EqualFold(v, "true")
 	}()
 
+	// Check if NDJSON streaming is requested
+	acceptHeader := r.Header.Get("Accept")
+	useNDJSON := strings.Contains(acceptHeader, "application/x-ndjson")
 	// Check if pagination is requested
 	cursorParam := r.URL.Query().Get("cursor")
 	pageSizeParam := r.URL.Query().Get("page_size")
@@ -185,6 +189,7 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 		attribute.Int("max_links", maxLinks),
 		attribute.Bool("with_positions", withPos),
 		attribute.String("type_filter", typeKey),
+		attribute.Bool("ndjson", useNDJSON),
 	)
 
 	if !allowAll && len(allowedTypes) == 0 {
@@ -276,6 +281,14 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		resp := capGraph(nodes, links, maxNodes, maxLinks)
+		
+		// Handle NDJSON streaming vs regular JSON
+		if useNDJSON {
+			writeNDJSONResponse(w, resp)
+			// Note: NDJSON responses are not cached as they are streamed
+			return
+		}
+		
 		// Marshal once so we can both write and cache it
 		b, _ := json.Marshal(resp)
 		w.Header().Set("Content-Type", "application/json")
@@ -287,15 +300,19 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 
 	// Fallback to legacy aggregated JSON (users+subreddits only)
 	if !allowFallback {
-		w.Header().Set("Content-Type", "application/json")
 		empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
-		b, _ := json.Marshal(empty)
-		_, _ = w.Write(b)
-		// cache empty response too
-		h.cache.Set(key, b, 0)
+		if useNDJSON {
+			writeNDJSONResponse(w, empty)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			b, _ := json.Marshal(empty)
+			_, _ = w.Write(b)
+			// cache empty response too
+			h.cache.Set(key, b, 0)
+		}
 		return
 	}
-	handleLegacyGraph(ctx, w, r, h, maxNodes, maxLinks, allowAll, allowedTypes, typeKey, withPos)
+	handleLegacyGraph(ctx, w, r, h, maxNodes, maxLinks, allowAll, allowedTypes, typeKey, withPos, useNDJSON)
 }
 
 func toString(v interface{}) string {
@@ -399,19 +416,19 @@ func parseIntDefault(s string, def int) int {
 	return def
 }
 
-func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, r *http.Request, h *Handler, maxNodes, maxLinks int, allowAll bool, allowedTypes map[string]struct{}, typeKey string, withPos bool) {
+func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, r *http.Request, h *Handler, maxNodes, maxLinks int, allowAll bool, allowedTypes map[string]struct{}, typeKey string, withPos bool, useNDJSON bool) {
 	cacheKeyStr := cacheKey(maxNodes, maxLinks, typeKey, withPos)
 	data, err := h.queries.GetGraphData(ctx)
 	if err != nil {
 		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch graph data"))
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+	
+	var response GraphResponse
 	if len(data) == 1 {
-		var resp GraphResponse
-		if err := json.Unmarshal(data[0], &resp); err == nil {
-			nodes := make(map[string]GraphNode, len(resp.Nodes))
-			for _, n := range resp.Nodes {
+		if err := json.Unmarshal(data[0], &response); err == nil {
+			nodes := make(map[string]GraphNode, len(response.Nodes))
+			for _, n := range response.Nodes {
 				t := strings.ToLower(n.Type)
 				if !allowAll {
 					if len(allowedTypes) == 0 {
@@ -427,20 +444,33 @@ func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, r *http.Reque
 				n.Type = t
 				nodes[n.ID] = n
 			}
-			capped := capGraph(nodes, resp.Links, maxNodes, maxLinks)
-			// Marshal once so we can write and cache
-			b, _ := json.Marshal(capped)
-			_, _ = w.Write(b)
-			// store in cache keyed by caps
-			h.cache.Set(cacheKeyStr, b, 0)
-			return
+			response = capGraph(nodes, response.Links, maxNodes, maxLinks)
+		} else {
+			// Unknown legacy format; return empty
+			response = GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 		}
+	} else {
+		// No data or unexpected format; return empty
+		response = GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 	}
-	// Unknown legacy format; return empty and cache it
-	empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
-	b, _ := json.Marshal(empty)
+	
+	// Write response based on format
+	writeGraphResponse(w, response, useNDJSON, cacheKeyStr, h)
+}
+
+// writeGraphResponse writes a GraphResponse in either NDJSON or JSON format
+func writeGraphResponse(w http.ResponseWriter, resp GraphResponse, useNDJSON bool, cacheKey string, h *Handler) {
+	if useNDJSON {
+		writeNDJSONResponse(w, resp)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	b, _ := json.Marshal(resp)
 	_, _ = w.Write(b)
-	h.cache.Set(cacheKeyStr, b, 0)
+	if h != nil && cacheKey != "" {
+		h.cache.Set(cacheKey, b, 0)
+	}
 }
 
 // preRow is an internal union row type for capped precalc results including optional positions
@@ -526,6 +556,76 @@ func writeCachedEmpty(w http.ResponseWriter, h *Handler, maxNodes, maxLinks int,
 	b, _ := json.Marshal(empty)
 	_, _ = w.Write(b)
 	h.cache.Set(cacheKey(maxNodes, maxLinks, typeKey, withPos), b, 0)
+}
+
+// NDJSONEnvelope wraps individual items in NDJSON stream
+type NDJSONEnvelope struct {
+	Type string      `json:"type"` // "node", "link", or "meta"
+	Data interface{} `json:"data,omitempty"`
+	// Meta fields (only when Type == "meta")
+	TotalNodes *int `json:"totalNodes,omitempty"`
+	TotalLinks *int `json:"totalLinks,omitempty"`
+}
+
+// writeNDJSONResponse streams graph data as NDJSON
+func writeNDJSONResponse(w http.ResponseWriter, resp GraphResponse) {
+	// Set headers for NDJSON streaming
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	
+	// Get flusher for streaming
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// Fallback to regular JSON if streaming not supported
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	
+	encoder := json.NewEncoder(w)
+	
+	// Stream nodes first
+	for _, node := range resp.Nodes {
+		envelope := NDJSONEnvelope{
+			Type: "node",
+			Data: node,
+		}
+		if err := encoder.Encode(envelope); err != nil {
+			// Log error but continue - response already started
+			logger.Warn("NDJSON encode error for node", "error", err)
+			return
+		}
+	}
+	// Flush after all nodes to ensure client can start rendering
+	flusher.Flush()
+	
+	// Stream links
+	for _, link := range resp.Links {
+		envelope := NDJSONEnvelope{
+			Type: "link",
+			Data: link,
+		}
+		if err := encoder.Encode(envelope); err != nil {
+			logger.Warn("NDJSON encode error for link", "error", err)
+			return
+		}
+	}
+	flusher.Flush()
+	
+	// Send metadata at the end
+	totalNodes := len(resp.Nodes)
+	totalLinks := len(resp.Links)
+	metaEnvelope := NDJSONEnvelope{
+		Type:       "meta",
+		TotalNodes: &totalNodes,
+		TotalLinks: &totalLinks,
+	}
+	if err := encoder.Encode(metaEnvelope); err != nil {
+		logger.Warn("NDJSON encode error for meta", "error", err)
+		return
+	}
+	flusher.Flush()
 }
 
 // EdgeBundle represents a bundled edge between two communities
