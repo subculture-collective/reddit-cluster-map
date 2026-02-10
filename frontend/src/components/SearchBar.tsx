@@ -12,6 +12,20 @@ interface SearchResult {
   type?: string;
 }
 
+// Backend API response structure from sqlc-generated code
+interface ApiSearchResultRow {
+  ID: string;
+  Name: string;
+  Val: string;
+  Type: {
+    String: string;
+    Valid: boolean;
+  } | null;
+  PosX?: { Float64: number; Valid: boolean } | null;
+  PosY?: { Float64: number; Valid: boolean } | null;
+  PosZ?: { Float64: number; Valid: boolean } | null;
+}
+
 export default function SearchBar({ onSelectNode, className = '' }: SearchBarProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -20,7 +34,7 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const debounceTimer = useRef<NodeJS.Timeout | undefined>(undefined);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Debounced search function using API
@@ -39,10 +53,12 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
 
       abortControllerRef.current = new AbortController();
       setIsLoading(true);
+      // Clear previous results to avoid showing stale data
+      setResults([]);
 
       try {
         const startTime = performance.now();
-        const apiUrl = import.meta.env.VITE_API_URL || '/api';
+        const apiUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
         const response = await fetch(
           `${apiUrl}/search?node=${encodeURIComponent(searchQuery)}&limit=10`,
           { signal: abortControllerRef.current.signal }
@@ -51,16 +67,35 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
         if (response.ok) {
           const data = await response.json();
           const endTime = performance.now();
-          console.log(`Search completed in ${(endTime - startTime).toFixed(2)}ms`);
+          
+          if (import.meta.env.DEV) {
+            console.log(`Search completed in ${(endTime - startTime).toFixed(2)}ms`);
+          }
 
-          const apiResults: SearchResult[] = data.results || [];
+          // Map backend response to frontend format
+          const rawResults = (data.results || []) as ApiSearchResultRow[];
+          const apiResults: SearchResult[] = rawResults.map((row) => ({
+            id: row.ID,
+            name: row.Name,
+            val: row.Val,
+            type: row.Type && row.Type.Valid ? row.Type.String : undefined,
+          }));
+
           setResults(apiResults);
           setIsOpen(true); // Always open to show results or "no results" message
           setSelectedIndex(0);
+        } else {
+          // Handle non-OK responses by clearing results and closing dropdown
+          setResults([]);
+          setIsOpen(false);
+          console.error(`Search API returned status ${response.status}`);
         }
       } catch (error) {
         if (error instanceof Error && error.name !== 'AbortError') {
           console.error('API search failed:', error);
+          // Clear results on error
+          setResults([]);
+          setIsOpen(false);
         }
       } finally {
         setIsLoading(false);
@@ -72,6 +107,16 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
   // Select a node and focus on it
   const selectNode = useCallback(
     (result: SearchResult) => {
+      // Clear pending timers and requests before selecting
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+        debounceTimer.current = undefined;
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+
       onSelectNode(result.id);
       setQuery('');
       setIsOpen(false);
@@ -122,8 +167,18 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
           break;
         case 'Escape':
           e.preventDefault();
+          // Clear pending timers and requests on Escape
+          if (debounceTimer.current) {
+            clearTimeout(debounceTimer.current);
+            debounceTimer.current = undefined;
+          }
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+          }
           setIsOpen(false);
           setQuery('');
+          setResults([]);
           inputRef.current?.blur();
           break;
       }
@@ -171,6 +226,20 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Clear pending timer
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+      // Abort pending requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   // Get node color based on type
   const getNodeColor = (type?: string) => {
     switch (type) {
@@ -214,6 +283,15 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
           onKeyDown={handleKeyDown}
           placeholder="Search nodes... (Ctrl+K or /)"
           className="w-full px-4 py-2 bg-black/60 text-white border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={isOpen && results.length > 0}
+          aria-controls="search-results-listbox"
+          aria-activedescendant={
+            isOpen && selectedIndex >= 0 && selectedIndex < results.length
+              ? `search-result-${results[selectedIndex].id}`
+              : undefined
+          }
         />
         {isLoading && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -223,11 +301,21 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
         {!isLoading && query && (
           <button
             onClick={() => {
+              // Clear pending timers and requests on clear
+              if (debounceTimer.current) {
+                clearTimeout(debounceTimer.current);
+                debounceTimer.current = undefined;
+              }
+              if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+                abortControllerRef.current = null;
+              }
               setQuery('');
               setResults([]);
               setIsOpen(false);
             }}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+            aria-label="Clear search"
           >
             ✕
           </button>
@@ -237,6 +325,8 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
       {isOpen && results.length > 0 && (
         <div
           ref={dropdownRef}
+          id="search-results-listbox"
+          role="listbox"
           className="absolute top-full mt-2 w-full bg-black/90 border border-gray-700 rounded-lg shadow-xl max-h-96 overflow-y-auto z-50"
         >
           {results.map((result, index) => {
@@ -245,6 +335,9 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
             return (
               <button
                 key={result.id}
+                id={`search-result-${result.id}`}
+                role="option"
+                aria-selected={isSelected}
                 onClick={() => selectNode(result)}
                 onMouseEnter={() => setSelectedIndex(index)}
                 className={`w-full px-4 py-3 text-left flex items-center gap-3 border-b border-gray-800 last:border-b-0 transition-colors ${
