@@ -17,6 +17,7 @@ import { AdaptiveLODManager, LODTier } from '../utils/levelOfDetail';
 import LoadingSkeleton from './LoadingSkeleton';
 import NodeTooltip from './NodeTooltip';
 import PerformanceHUD from './PerformanceHUD';
+import Minimap from './Minimap';
 import { DEFAULT_LOD_CONFIG } from '../utils/levelOfDetail';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -931,6 +932,22 @@ export default function Graph3DInstanced(props: Props) {
                 totalNodeCount={graphData?.nodes.length || 0}
                 simulationState={usePrecomputedLayout ? 'precomputed' : 'active'}
                 lodLevel={currentLODTier}
+            />
+            <Minimap
+                cameraPosition={cameraRef.current ? {
+                    x: cameraRef.current.position.x,
+                    y: cameraRef.current.position.y,
+                    z: cameraRef.current.position.z,
+                } : undefined}
+                communityResult={communityResult as import('../utils/communityDetection').CommunityResult | null}
+                nodes={filtered.nodes}
+                onCameraMove={(position) => {
+                    if (cameraRef.current && controlsRef.current) {
+                        cameraRef.current.position.set(position.x, position.y, position.z);
+                        controlsRef.current.target.set(0, 0, 0);
+                        controlsRef.current.update();
+                    }
+                }}
             />
         </div>
     );
