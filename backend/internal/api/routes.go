@@ -124,6 +124,10 @@ func NewRouter(q *db.Queries) *mux.Router {
 	searchHandler := middleware.Gzip(middleware.ETag(http.HandlerFunc(handlers.SearchNode(q))))
 	r.Handle("/api/search", searchHandler).Methods("GET")
 
+	// Node details endpoint: GET /api/nodes/{id}
+	nodeDetailsHandler := middleware.Gzip(middleware.ETag(http.HandlerFunc(handlers.GetNodeDetails(q))))
+	r.Handle("/api/nodes/{id}", nodeDetailsHandler).Methods("GET")
+
 	// Export endpoint with gzip and ETag: GET /api/export?format=json|csv
 	exportHandler := middleware.Gzip(middleware.ETag(http.HandlerFunc(handlers.ExportGraph(q))))
 	r.Handle("/api/export", exportHandler).Methods("GET")
