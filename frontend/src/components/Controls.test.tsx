@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
+import { renderWithTheme } from '../test/utils';
 import userEvent from '@testing-library/user-event';
 import Controls from './Controls';
 
@@ -44,26 +45,26 @@ describe('Controls', () => {
   });
 
   it('renders view mode buttons', () => {
-    render(<Controls {...defaultProps} graphMode="3d" onGraphModeChange={vi.fn()} />);
+    renderWithTheme(<Controls {...defaultProps} graphMode="3d" onGraphModeChange={vi.fn()} />);
     
     expect(screen.getByText('3D')).toBeInTheDocument();
     expect(screen.getByText('2D')).toBeInTheDocument();
   });
 
   it('renders dashboard button', () => {
-    render(<Controls {...defaultProps} onShowDashboard={vi.fn()} />);
+    renderWithTheme(<Controls {...defaultProps} onShowDashboard={vi.fn()} />);
     
     expect(screen.getByText('Dashboard')).toBeInTheDocument();
   });
 
   it('renders communities button', () => {
-    render(<Controls {...defaultProps} onShowCommunities={vi.fn()} />);
+    renderWithTheme(<Controls {...defaultProps} onShowCommunities={vi.fn()} />);
     
     expect(screen.getByText('Communities')).toBeInTheDocument();
   });
 
   it('renders admin button', () => {
-    render(<Controls {...defaultProps} onShowAdmin={vi.fn()} />);
+    renderWithTheme(<Controls {...defaultProps} onShowAdmin={vi.fn()} />);
     
     expect(screen.getByRole('button', { name: 'Admin' })).toBeInTheDocument();
   });
@@ -72,7 +73,7 @@ describe('Controls', () => {
     const user = userEvent.setup();
     const onGraphModeChange = vi.fn();
     
-    render(<Controls {...defaultProps} graphMode="2d" onGraphModeChange={onGraphModeChange} />);
+    renderWithTheme(<Controls {...defaultProps} graphMode="2d" onGraphModeChange={onGraphModeChange} />);
     
     const button3D = screen.getByText('3D');
     await user.click(button3D);
@@ -84,7 +85,7 @@ describe('Controls', () => {
     const user = userEvent.setup();
     const onGraphModeChange = vi.fn();
     
-    render(<Controls {...defaultProps} graphMode="3d" onGraphModeChange={onGraphModeChange} />);
+    renderWithTheme(<Controls {...defaultProps} graphMode="3d" onGraphModeChange={onGraphModeChange} />);
     
     const button2D = screen.getByText('2D');
     await user.click(button2D);
@@ -96,7 +97,7 @@ describe('Controls', () => {
     const user = userEvent.setup();
     const onShowDashboard = vi.fn();
     
-    render(<Controls {...defaultProps} onShowDashboard={onShowDashboard} />);
+    renderWithTheme(<Controls {...defaultProps} onShowDashboard={onShowDashboard} />);
     
     const button = screen.getByText('Dashboard');
     await user.click(button);
@@ -108,7 +109,7 @@ describe('Controls', () => {
     const user = userEvent.setup();
     const onShowCommunities = vi.fn();
     
-    render(<Controls {...defaultProps} onShowCommunities={onShowCommunities} />);
+    renderWithTheme(<Controls {...defaultProps} onShowCommunities={onShowCommunities} />);
     
     const button = screen.getByText('Communities');
     await user.click(button);
@@ -120,7 +121,7 @@ describe('Controls', () => {
     const user = userEvent.setup();
     const onShowAdmin = vi.fn();
     
-    render(<Controls {...defaultProps} onShowAdmin={onShowAdmin} />);
+    renderWithTheme(<Controls {...defaultProps} onShowAdmin={onShowAdmin} />);
     
     const button = screen.getByRole('button', { name: 'Admin' });
     await user.click(button);
@@ -129,14 +130,14 @@ describe('Controls', () => {
   });
 
   it('highlights active view mode', () => {
-    render(<Controls {...defaultProps} graphMode="3d" onGraphModeChange={vi.fn()} />);
+    renderWithTheme(<Controls {...defaultProps} graphMode="3d" onGraphModeChange={vi.fn()} />);
     
     const button3D = screen.getByText('3D');
     expect(button3D).toHaveClass('bg-blue-600');
   });
 
   it('shows community colors toggle when callback provided', () => {
-    render(
+    renderWithTheme(
       <Controls
         {...defaultProps}
         useCommunityColors={false}
@@ -148,7 +149,7 @@ describe('Controls', () => {
   });
 
   it('shows precomputed layout toggle when callback provided', () => {
-    render(
+    renderWithTheme(
       <Controls
         {...defaultProps}
         usePrecomputedLayout={true}
@@ -163,7 +164,7 @@ describe('Controls', () => {
     const user = userEvent.setup();
     const onToggleCommunityColors = vi.fn();
     
-    render(
+    renderWithTheme(
       <Controls
         {...defaultProps}
         useCommunityColors={false}
@@ -181,7 +182,7 @@ describe('Controls', () => {
     const user = userEvent.setup();
     const onTogglePrecomputedLayout = vi.fn();
     
-    render(
+    renderWithTheme(
       <Controls
         {...defaultProps}
         usePrecomputedLayout={true}
@@ -196,7 +197,7 @@ describe('Controls', () => {
   });
 
   it('renders without optional props', () => {
-    const { container } = render(<Controls {...defaultProps} />);
+    const { container } = renderWithTheme(<Controls {...defaultProps} />);
     expect(container).toBeTruthy();
   });
 });

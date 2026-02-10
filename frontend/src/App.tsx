@@ -194,7 +194,7 @@ function App() {
   }), [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout, sizeAttenuation, enableAdaptiveLOD]);
 
   return (
-    <div className="w-full h-screen">
+    <div className="w-full h-screen bg-white dark:bg-black transition-colors duration-200">
       {/* Search bar - visible in all views except admin */}
       {viewMode !== "admin" && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50">

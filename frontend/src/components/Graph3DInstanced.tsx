@@ -18,6 +18,7 @@ import LoadingSkeleton from './LoadingSkeleton';
 import NodeTooltip from './NodeTooltip';
 import PerformanceHUD from './PerformanceHUD';
 import { DEFAULT_LOD_CONFIG } from '../utils/levelOfDetail';
+import { useTheme } from '../contexts/ThemeContext';
 
 /**
  * Graph3DInstanced - High-performance 3D graph visualization using InstancedMesh
@@ -96,6 +97,8 @@ export default function Graph3DInstanced(props: Props) {
         lodConfig,
         onLODTierChange,
     } = props;
+
+    const { theme } = useTheme();
 
     // State
     const [graphData, setGraphData] = useState<GraphData | null>(null);
@@ -231,7 +234,8 @@ export default function Graph3DInstanced(props: Props) {
 
         // Create scene
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x000000);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- theme is intentionally not in deps; updates handled by separate effect
+        scene.background = new THREE.Color(theme === 'dark' ? 0x000000 : 0xf8f9fa);
         sceneRef.current = scene;
 
         // Create camera
@@ -841,6 +845,12 @@ export default function Graph3DInstanced(props: Props) {
             controlsRef.current.update();
         }
     }, [focusNodeId, filtered]);
+
+    // Update scene background color when theme changes
+    useEffect(() => {
+        if (!sceneRef.current) return;
+        sceneRef.current.background = new THREE.Color(theme === 'dark' ? 0x000000 : 0xf8f9fa);
+    }, [theme]);
 
     // Show loading skeleton during initial load
     if (loading && !initialLoadComplete) {

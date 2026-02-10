@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { renderWithTheme } from '../test/utils';
 import Graph3D from './Graph3D';
 
 // Disable instanced renderer for tests (WebGL not available in test environment)
@@ -39,7 +39,7 @@ describe('Graph3D', () => {
   };
 
   it('renders without crashing', () => {
-    const { container } = render(
+    const { container } = renderWithTheme(
       <Graph3D
         filters={mockFilters}
         linkOpacity={0.5}
@@ -60,7 +60,7 @@ describe('Graph3D', () => {
       } as Response)
     );
 
-    const { findByTestId, queryByText } = render(
+    const { findByTestId, queryByText } = renderWithTheme(
       <Graph3D
         filters={mockFilters}
         linkOpacity={0.5}
@@ -80,7 +80,7 @@ describe('Graph3D', () => {
 
   it('accepts optional props', () => {
     const onNodeSelect = vi.fn();
-    const { container } = render(
+    const { container } = renderWithTheme(
       <Graph3D
         filters={mockFilters}
         linkOpacity={0.5}
