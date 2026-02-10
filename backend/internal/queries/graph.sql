@@ -828,3 +828,117 @@ FROM graph_links
 WHERE source = ANY($1::text[]) 
   AND target = ANY($1::text[])
 LIMIT $2;
+
+-- ============================================================
+-- Graph Versioning Queries
+-- ============================================================
+
+-- name: CreateGraphVersion :one
+-- Create a new graph version record
+INSERT INTO graph_versions (
+    node_count,
+    link_count,
+    status,
+    precalc_duration_ms,
+    is_full_rebuild
+) VALUES (
+    $1, $2, $3, $4, $5
+) RETURNING *;
+
+-- name: GetGraphVersion :one
+-- Get a specific graph version by ID
+SELECT * FROM graph_versions WHERE id = $1;
+
+-- name: GetCurrentGraphVersion :one
+-- Get the most recent completed graph version
+SELECT * FROM graph_versions 
+WHERE status = 'completed'
+ORDER BY id DESC 
+LIMIT 1;
+
+-- name: ListGraphVersions :many
+-- List recent graph versions with pagination
+SELECT * FROM graph_versions
+ORDER BY id DESC
+LIMIT $1 OFFSET $2;
+
+-- name: UpdateGraphVersionStatus :exec
+-- Update the status of a graph version
+UPDATE graph_versions
+SET status = $1, precalc_duration_ms = $2
+WHERE id = $3;
+
+-- name: DeleteOldGraphVersions :exec
+-- Delete graph versions older than the retention count
+-- Keeps the most recent N versions
+WITH versions_to_keep AS (
+    SELECT id FROM graph_versions
+    ORDER BY id DESC
+    LIMIT $1
+)
+DELETE FROM graph_versions
+WHERE id NOT IN (SELECT id FROM versions_to_keep);
+
+-- name: CountGraphVersions :one
+-- Count total number of graph versions
+SELECT COUNT(*) FROM graph_versions;
+
+-- name: CreateGraphDiff :exec
+-- Record a diff entry for a graph version
+INSERT INTO graph_diffs (
+    version_id,
+    action,
+    entity_type,
+    entity_id,
+    old_val,
+    new_val,
+    old_pos_x,
+    old_pos_y,
+    old_pos_z,
+    new_pos_x,
+    new_pos_y,
+    new_pos_z
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+);
+
+-- name: GetGraphDiffsSinceVersion :many
+-- Get all diffs since a specific version (exclusive)
+-- Returns changes from versions > $1 up to current
+SELECT 
+    gd.id,
+    gd.version_id,
+    gd.action,
+    gd.entity_type,
+    gd.entity_id,
+    gd.old_val,
+    gd.new_val,
+    gd.old_pos_x,
+    gd.old_pos_y,
+    gd.old_pos_z,
+    gd.new_pos_x,
+    gd.new_pos_y,
+    gd.new_pos_z,
+    gd.created_at,
+    gv.id as version_number
+FROM graph_diffs gd
+JOIN graph_versions gv ON gd.version_id = gv.id
+WHERE gd.version_id > $1
+  AND gv.status = 'completed'
+ORDER BY gd.version_id, gd.id;
+
+-- name: GetGraphDiffsForVersion :many
+-- Get all diffs for a specific version
+SELECT * FROM graph_diffs
+WHERE version_id = $1
+ORDER BY id;
+
+-- name: CountGraphDiffsForVersion :one
+-- Count diffs for a specific version
+SELECT COUNT(*) FROM graph_diffs WHERE version_id = $1;
+
+-- name: UpdatePrecalcStateVersion :exec
+-- Update the current version ID in precalc_state
+UPDATE precalc_state
+SET current_version_id = $1
+WHERE id = 1;

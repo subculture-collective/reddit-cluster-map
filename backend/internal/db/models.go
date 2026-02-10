@@ -114,6 +114,29 @@ type GraphDatum struct {
 	UpdatedAt sql.NullTime
 }
 
+// Stores differences between graph versions for incremental updates
+type GraphDiff struct {
+	ID        int64
+	VersionID int64
+	// Type of change: add (new entity), remove (deleted entity), update (modified entity)
+	Action string
+	// Type of entity: node or link
+	EntityType string
+	// ID of the entity that changed
+	EntityID string
+	// Previous value for nodes (null for add/remove)
+	OldVal sql.NullString
+	// New value for nodes (null for remove)
+	NewVal    sql.NullString
+	OldPosX   sql.NullFloat64
+	OldPosY   sql.NullFloat64
+	OldPosZ   sql.NullFloat64
+	NewPosX   sql.NullFloat64
+	NewPosY   sql.NullFloat64
+	NewPosZ   sql.NullFloat64
+	CreatedAt time.Time
+}
+
 type GraphLink struct {
 	ID        int32
 	Source    string
@@ -132,6 +155,20 @@ type GraphNode struct {
 	PosZ      sql.NullFloat64
 	CreatedAt sql.NullTime
 	UpdatedAt sql.NullTime
+}
+
+// Tracks graph precalculation versions with timestamps and statistics
+type GraphVersion struct {
+	// Monotonically increasing version ID
+	ID        int64
+	CreatedAt time.Time
+	NodeCount int32
+	LinkCount int32
+	// Version status: pending, completed, or failed
+	Status            string
+	PrecalcDurationMs sql.NullInt32
+	// True if this was a full rebuild vs incremental update
+	IsFullRebuild bool
 }
 
 type OauthAccount struct {
@@ -175,6 +212,7 @@ type PrecalcState struct {
 	TotalLinks sql.NullInt32
 	// Duration of the last precalculation in milliseconds
 	PrecalcDurationMs sql.NullInt32
+	CurrentVersionID  sql.NullInt64
 	CreatedAt         sql.NullTime
 	UpdatedAt         sql.NullTime
 }
