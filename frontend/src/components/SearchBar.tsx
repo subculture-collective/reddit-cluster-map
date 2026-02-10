@@ -1,8 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 
 interface SearchBarProps {
   onSelectNode: (nodeId: string) => void;
   className?: string;
+}
+
+export interface SearchBarHandle {
+  focus: () => void;
 }
 
 interface SearchResult {
@@ -26,7 +30,7 @@ interface ApiSearchResultRow {
   PosZ?: { Float64: number; Valid: boolean } | null;
 }
 
-export default function SearchBar({ onSelectNode, className = '' }: SearchBarProps) {
+const SearchBar = forwardRef<SearchBarHandle, SearchBarProps>(({ onSelectNode, className = '' }, ref) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -36,6 +40,13 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
   const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Expose focus method via ref
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      inputRef.current?.focus();
+    }
+  }), []);
 
   // Debounced search function using API
   const performSearch = useCallback(
@@ -385,4 +396,8 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
       )}
     </div>
   );
-}
+});
+
+SearchBar.displayName = 'SearchBar';
+
+export default SearchBar;
