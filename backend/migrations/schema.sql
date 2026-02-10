@@ -244,6 +244,38 @@ CREATE TABLE IF NOT EXISTS service_settings (
 );
 
 -- Precalculation state tracking
+-- Graph version tracking
+CREATE TABLE IF NOT EXISTS graph_versions (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    node_count INTEGER DEFAULT 0 NOT NULL,
+    link_count INTEGER DEFAULT 0 NOT NULL,
+    status VARCHAR(20) DEFAULT 'completed' NOT NULL,
+    precalc_duration_ms INTEGER DEFAULT 0,
+    is_full_rebuild BOOLEAN DEFAULT false NOT NULL,
+    CONSTRAINT valid_status CHECK (status IN ('pending', 'completed', 'failed'))
+);
+
+-- Graph diff tracking
+CREATE TABLE IF NOT EXISTS graph_diffs (
+    id BIGSERIAL PRIMARY KEY,
+    version_id BIGINT NOT NULL REFERENCES graph_versions(id) ON DELETE CASCADE,
+    action VARCHAR(10) NOT NULL,
+    entity_type VARCHAR(10) NOT NULL,
+    entity_id TEXT NOT NULL,
+    old_val TEXT,
+    new_val TEXT,
+    old_pos_x DOUBLE PRECISION,
+    old_pos_y DOUBLE PRECISION,
+    old_pos_z DOUBLE PRECISION,
+    new_pos_x DOUBLE PRECISION,
+    new_pos_y DOUBLE PRECISION,
+    new_pos_z DOUBLE PRECISION,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    CONSTRAINT valid_action CHECK (action IN ('add', 'remove', 'update')),
+    CONSTRAINT valid_entity_type CHECK (entity_type IN ('node', 'link'))
+);
+
 CREATE TABLE IF NOT EXISTS precalc_state (
     id INTEGER PRIMARY KEY DEFAULT 1,
     last_precalc_at TIMESTAMPTZ,
@@ -251,6 +283,7 @@ CREATE TABLE IF NOT EXISTS precalc_state (
     total_nodes INTEGER DEFAULT 0,
     total_links INTEGER DEFAULT 0,
     precalc_duration_ms INTEGER DEFAULT 0,
+    current_version_id BIGINT REFERENCES graph_versions(id),
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
     CONSTRAINT single_row_constraint CHECK (id = 1)
