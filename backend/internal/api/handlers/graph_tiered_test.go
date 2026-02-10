@@ -40,6 +40,14 @@ func (m *mockTieredGraphDataReader) GetLinksForNodesInBoundingBox(ctx context.Co
 	return m.bboxLinks, nil
 }
 
+func (m *mockTieredGraphDataReader) GetPaginatedGraphNodes(ctx context.Context, arg db.GetPaginatedGraphNodesParams) ([]db.GetPaginatedGraphNodesRow, error) {
+	return []db.GetPaginatedGraphNodesRow{}, nil
+}
+
+func (m *mockTieredGraphDataReader) GetLinksForPaginatedNodes(ctx context.Context, arg db.GetLinksForPaginatedNodesParams) ([]db.GetLinksForPaginatedNodesRow, error) {
+	return []db.GetLinksForPaginatedNodesRow{}, nil
+}
+
 func TestGetGraphOverview(t *testing.T) {
 	// Setup mock data
 	mock := &mockTieredGraphDataReader{

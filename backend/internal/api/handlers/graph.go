@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"sort"
@@ -38,6 +40,9 @@ type GraphDataReader interface {
 	// Spatial queries
 	GetNodesInBoundingBox(ctx context.Context, arg db.GetNodesInBoundingBoxParams) ([]db.GetNodesInBoundingBoxRow, error)
 	GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error)
+	// Pagination
+	GetPaginatedGraphNodes(ctx context.Context, arg db.GetPaginatedGraphNodesParams) ([]db.GetPaginatedGraphNodesRow, error)
+	GetLinksForPaginatedNodes(ctx context.Context, arg db.GetLinksForPaginatedNodesParams) ([]db.GetLinksForPaginatedNodesRow, error)
 }
 
 func cacheKey(maxNodes, maxLinks int, typeKey string, withPositions bool) string {
@@ -84,9 +89,64 @@ type GraphResponse struct {
 	Links []GraphLink `json:"links"`
 }
 
+// PaginationInfo contains pagination metadata
+type PaginationInfo struct {
+	NextCursor string `json:"next_cursor,omitempty"`
+	HasMore    bool   `json:"has_more"`
+	PageSize   int    `json:"page_size,omitempty"`
+}
+
+// PaginatedGraphResponse extends GraphResponse with pagination metadata
+type PaginatedGraphResponse struct {
+	Nodes      []GraphNode     `json:"nodes"`
+	Links      []GraphLink     `json:"links"`
+	Pagination *PaginationInfo `json:"pagination,omitempty"`
+}
+
+// cursorData represents the decoded cursor information
+type cursorData struct {
+	Weight int64
+	ID     string
+}
+
+// encodeCursor creates a base64-encoded cursor from weight and ID
+func encodeCursor(weight int64, id string) string {
+	// Format: weight:id
+	raw := fmt.Sprintf("%d:%s", weight, id)
+	return base64.URLEncoding.EncodeToString([]byte(raw))
+}
+
+// decodeCursor decodes a base64-encoded cursor into weight and ID
+func decodeCursor(cursor string) (cursorData, error) {
+	if cursor == "" {
+		return cursorData{}, nil
+	}
+	
+	decoded, err := base64.URLEncoding.DecodeString(cursor)
+	if err != nil {
+		return cursorData{}, fmt.Errorf("invalid cursor encoding: %w", err)
+	}
+	
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return cursorData{}, fmt.Errorf("invalid cursor format")
+	}
+	
+	weight, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return cursorData{}, fmt.Errorf("invalid cursor weight: %w", err)
+	}
+	
+	return cursorData{
+		Weight: weight,
+		ID:     parts[1],
+	}, nil
+}
+
 // GetGraphData returns the graph data.
 // It prefers the precalculated graph tables (graph_nodes/graph_links) when available,
 // and falls back to the legacy aggregated JSON if none are present.
+// Supports NDJSON streaming via Accept: application/x-ndjson header.
 func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tracing.StartSpan(r.Context(), "handlers.GetGraphData")
 	defer span.End()
@@ -111,12 +171,25 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 		return v == "1" || strings.EqualFold(v, "true")
 	}()
 
+	// Check if NDJSON streaming is requested
+	acceptHeader := r.Header.Get("Accept")
+	useNDJSON := strings.Contains(acceptHeader, "application/x-ndjson")
+	// Check if pagination is requested
+	cursorParam := r.URL.Query().Get("cursor")
+	pageSizeParam := r.URL.Query().Get("page_size")
+	if cursorParam != "" || pageSizeParam != "" {
+		// Use pagination path
+		h.getGraphDataPaginated(w, r, ctx, cursorParam, pageSizeParam, withPos, allowAll, allowedTypes)
+		return
+	}
+
 	// Add attributes to span
 	span.SetAttributes(
 		attribute.Int("max_nodes", maxNodes),
 		attribute.Int("max_links", maxLinks),
 		attribute.Bool("with_positions", withPos),
 		attribute.String("type_filter", typeKey),
+		attribute.Bool("ndjson", useNDJSON),
 	)
 
 	if !allowAll && len(allowedTypes) == 0 {
@@ -208,6 +281,14 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		resp := capGraph(nodes, links, maxNodes, maxLinks)
+		
+		// Handle NDJSON streaming vs regular JSON
+		if useNDJSON {
+			writeNDJSONResponse(w, resp)
+			// Note: NDJSON responses are not cached as they are streamed
+			return
+		}
+		
 		// Marshal once so we can both write and cache it
 		b, _ := json.Marshal(resp)
 		w.Header().Set("Content-Type", "application/json")
@@ -219,15 +300,19 @@ func (h *Handler) GetGraphData(w http.ResponseWriter, r *http.Request) {
 
 	// Fallback to legacy aggregated JSON (users+subreddits only)
 	if !allowFallback {
-		w.Header().Set("Content-Type", "application/json")
 		empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
-		b, _ := json.Marshal(empty)
-		_, _ = w.Write(b)
-		// cache empty response too
-		h.cache.Set(key, b, 0)
+		if useNDJSON {
+			writeNDJSONResponse(w, empty)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			b, _ := json.Marshal(empty)
+			_, _ = w.Write(b)
+			// cache empty response too
+			h.cache.Set(key, b, 0)
+		}
 		return
 	}
-	handleLegacyGraph(ctx, w, r, h, maxNodes, maxLinks, allowAll, allowedTypes, typeKey, withPos)
+	handleLegacyGraph(ctx, w, r, h, maxNodes, maxLinks, allowAll, allowedTypes, typeKey, withPos, useNDJSON)
 }
 
 func toString(v interface{}) string {
@@ -331,19 +416,19 @@ func parseIntDefault(s string, def int) int {
 	return def
 }
 
-func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, r *http.Request, h *Handler, maxNodes, maxLinks int, allowAll bool, allowedTypes map[string]struct{}, typeKey string, withPos bool) {
+func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, r *http.Request, h *Handler, maxNodes, maxLinks int, allowAll bool, allowedTypes map[string]struct{}, typeKey string, withPos bool, useNDJSON bool) {
 	cacheKeyStr := cacheKey(maxNodes, maxLinks, typeKey, withPos)
 	data, err := h.queries.GetGraphData(ctx)
 	if err != nil {
 		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch graph data"))
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+	
+	var response GraphResponse
 	if len(data) == 1 {
-		var resp GraphResponse
-		if err := json.Unmarshal(data[0], &resp); err == nil {
-			nodes := make(map[string]GraphNode, len(resp.Nodes))
-			for _, n := range resp.Nodes {
+		if err := json.Unmarshal(data[0], &response); err == nil {
+			nodes := make(map[string]GraphNode, len(response.Nodes))
+			for _, n := range response.Nodes {
 				t := strings.ToLower(n.Type)
 				if !allowAll {
 					if len(allowedTypes) == 0 {
@@ -359,20 +444,33 @@ func handleLegacyGraph(ctx context.Context, w http.ResponseWriter, r *http.Reque
 				n.Type = t
 				nodes[n.ID] = n
 			}
-			capped := capGraph(nodes, resp.Links, maxNodes, maxLinks)
-			// Marshal once so we can write and cache
-			b, _ := json.Marshal(capped)
-			_, _ = w.Write(b)
-			// store in cache keyed by caps
-			h.cache.Set(cacheKeyStr, b, 0)
-			return
+			response = capGraph(nodes, response.Links, maxNodes, maxLinks)
+		} else {
+			// Unknown legacy format; return empty
+			response = GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 		}
+	} else {
+		// No data or unexpected format; return empty
+		response = GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
 	}
-	// Unknown legacy format; return empty and cache it
-	empty := GraphResponse{Nodes: []GraphNode{}, Links: []GraphLink{}}
-	b, _ := json.Marshal(empty)
+	
+	// Write response based on format
+	writeGraphResponse(w, response, useNDJSON, cacheKeyStr, h)
+}
+
+// writeGraphResponse writes a GraphResponse in either NDJSON or JSON format
+func writeGraphResponse(w http.ResponseWriter, resp GraphResponse, useNDJSON bool, cacheKey string, h *Handler) {
+	if useNDJSON {
+		writeNDJSONResponse(w, resp)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	b, _ := json.Marshal(resp)
 	_, _ = w.Write(b)
-	h.cache.Set(cacheKeyStr, b, 0)
+	if h != nil && cacheKey != "" {
+		h.cache.Set(cacheKey, b, 0)
+	}
 }
 
 // preRow is an internal union row type for capped precalc results including optional positions
@@ -458,6 +556,76 @@ func writeCachedEmpty(w http.ResponseWriter, h *Handler, maxNodes, maxLinks int,
 	b, _ := json.Marshal(empty)
 	_, _ = w.Write(b)
 	h.cache.Set(cacheKey(maxNodes, maxLinks, typeKey, withPos), b, 0)
+}
+
+// NDJSONEnvelope wraps individual items in NDJSON stream
+type NDJSONEnvelope struct {
+	Type string      `json:"type"` // "node", "link", or "meta"
+	Data interface{} `json:"data,omitempty"`
+	// Meta fields (only when Type == "meta")
+	TotalNodes *int `json:"totalNodes,omitempty"`
+	TotalLinks *int `json:"totalLinks,omitempty"`
+}
+
+// writeNDJSONResponse streams graph data as NDJSON
+func writeNDJSONResponse(w http.ResponseWriter, resp GraphResponse) {
+	// Set headers for NDJSON streaming
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	
+	// Get flusher for streaming
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// Fallback to regular JSON if streaming not supported
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+	
+	encoder := json.NewEncoder(w)
+	
+	// Stream nodes first
+	for _, node := range resp.Nodes {
+		envelope := NDJSONEnvelope{
+			Type: "node",
+			Data: node,
+		}
+		if err := encoder.Encode(envelope); err != nil {
+			// Log error but continue - response already started
+			logger.Warn("NDJSON encode error for node", "error", err)
+			return
+		}
+	}
+	// Flush after all nodes to ensure client can start rendering
+	flusher.Flush()
+	
+	// Stream links
+	for _, link := range resp.Links {
+		envelope := NDJSONEnvelope{
+			Type: "link",
+			Data: link,
+		}
+		if err := encoder.Encode(envelope); err != nil {
+			logger.Warn("NDJSON encode error for link", "error", err)
+			return
+		}
+	}
+	flusher.Flush()
+	
+	// Send metadata at the end
+	totalNodes := len(resp.Nodes)
+	totalLinks := len(resp.Links)
+	metaEnvelope := NDJSONEnvelope{
+		Type:       "meta",
+		TotalNodes: &totalNodes,
+		TotalLinks: &totalLinks,
+	}
+	if err := encoder.Encode(metaEnvelope); err != nil {
+		logger.Warn("NDJSON encode error for meta", "error", err)
+		return
+	}
+	flusher.Flush()
 }
 
 // EdgeBundle represents a bundled edge between two communities
@@ -931,4 +1099,193 @@ func (h *Handler) GetGraphRegion(w http.ResponseWriter, r *http.Request) {
 		attribute.Int("links_count", len(links)),
 	)
 	span.SetStatus(codes.Ok, "region fetched successfully")
+}
+
+// getGraphDataPaginated handles paginated graph data requests
+func (h *Handler) getGraphDataPaginated(w http.ResponseWriter, r *http.Request, ctx context.Context, cursorParam, pageSizeParam string, withPos, allowAll bool, allowedTypes map[string]struct{}) {
+	ctx, span := tracing.StartSpan(ctx, "handlers.getGraphDataPaginated")
+	defer span.End()
+	
+	// Parse page size (default 5000)
+	pageSize := parseIntDefault(pageSizeParam, 5000)
+	if pageSize <= 0 {
+		pageSize = 5000
+	}
+	// Cap at reasonable maximum to prevent abuse
+	if pageSize > 50000 {
+		pageSize = 50000
+	}
+	
+	// Decode cursor
+	cursor, err := decodeCursor(cursorParam)
+	if err != nil {
+		logger.WarnContext(ctx, "Invalid cursor", "cursor", cursorParam, "error", err)
+		apierr.WriteErrorWithContext(w, r, apierr.GraphInvalidParams("Invalid cursor format"))
+		return
+	}
+	
+	span.SetAttributes(
+		attribute.Int("page_size", pageSize),
+		attribute.Bool("has_cursor", cursorParam != ""),
+		attribute.Bool("with_positions", withPos),
+	)
+	
+	// Fetch page_size + 1 nodes to check if there are more
+	var cursorWeight sql.NullInt64
+	var cursorID sql.NullString
+	
+	if cursorParam != "" {
+		cursorWeight = sql.NullInt64{Int64: cursor.Weight, Valid: true}
+		cursorID = sql.NullString{String: cursor.ID, Valid: true}
+	}
+	
+	rows, err := h.queries.GetPaginatedGraphNodes(ctx, db.GetPaginatedGraphNodesParams{
+		Column1: cursorWeight.Int64,
+		Column2: cursorID.String,
+		Limit:   int32(pageSize + 1),
+	})
+	
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded || err == context.DeadlineExceeded {
+			logger.WarnContext(ctx, "Paginated query timed out")
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "query timeout")
+			apierr.WriteErrorWithContext(w, r, apierr.GraphTimeout("Query timeout"))
+			return
+		}
+		logger.ErrorContext(ctx, "Failed to fetch paginated nodes", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "query failed")
+		apierr.WriteErrorWithContext(w, r, apierr.GraphQueryFailed("Failed to fetch paginated graph data"))
+		return
+	}
+	
+	// Check if there are more results
+	hasMore := len(rows) > pageSize
+	if hasMore {
+		rows = rows[:pageSize]
+	}
+	
+	// Build nodes response
+	nodes := make([]GraphNode, 0, len(rows))
+	nodeIDs := make([]string, 0, len(rows))
+	
+	for _, row := range rows {
+		v := 0
+		if row.Val.Valid {
+			v = atoiSafe(row.Val.String)
+		}
+		
+		t := ""
+		if row.Type.Valid {
+			t = strings.ToLower(row.Type.String)
+		}
+		
+		// Apply type filter if needed
+		if !allowAll {
+			if len(allowedTypes) == 0 {
+				continue
+			}
+			if t == "" {
+				continue
+			}
+			if _, ok := allowedTypes[t]; !ok {
+				continue
+			}
+		}
+		
+		gn := GraphNode{
+			ID:   row.ID,
+			Name: row.Name,
+			Val:  v,
+			Type: t,
+		}
+		
+		if withPos {
+			if row.PosX.Valid {
+				x := row.PosX.Float64
+				gn.X = &x
+			}
+			if row.PosY.Valid {
+				y := row.PosY.Float64
+				gn.Y = &y
+			}
+			if row.PosZ.Valid {
+				z := row.PosZ.Float64
+				gn.Z = &z
+			}
+		}
+		
+		nodes = append(nodes, gn)
+		nodeIDs = append(nodeIDs, row.ID)
+	}
+	
+	// Fetch links for these nodes
+	// Note: For pagination, we only include links where both endpoints are in the current page
+	// This is a simplified approach; a more complete implementation would track seen nodes across pages
+	links := make([]GraphLink, 0)
+	if len(nodeIDs) > 0 {
+		// Default max links for a page
+		maxLinksForPage := pageSize * 5
+		
+		linkRows, err := h.queries.GetLinksForPaginatedNodes(ctx, db.GetLinksForPaginatedNodesParams{
+			Column1: nodeIDs,
+			Limit:   int32(maxLinksForPage),
+		})
+		
+		if err != nil {
+			logger.WarnContext(ctx, "Failed to fetch links for paginated nodes", "error", err)
+			// Continue without links rather than failing the whole request
+		} else {
+			for _, lr := range linkRows {
+				src := toString(lr.Source)
+				tgt := toString(lr.Target)
+				if src != "" && tgt != "" {
+					links = append(links, GraphLink{Source: src, Target: tgt})
+				}
+			}
+		}
+	}
+	
+	// Generate next cursor if there are more results
+	var nextCursor string
+	if hasMore && len(nodes) > 0 {
+		lastNode := nodes[len(nodes)-1]
+		// Get the weight for the last node
+		lastWeight := int64(lastNode.Val)
+		nextCursor = encodeCursor(lastWeight, lastNode.ID)
+	}
+	
+	// Build paginated response
+	resp := PaginatedGraphResponse{
+		Nodes: nodes,
+		Links: links,
+		Pagination: &PaginationInfo{
+			NextCursor: nextCursor,
+			HasMore:    hasMore,
+			PageSize:   pageSize,
+		},
+	}
+	
+	b, err := json.Marshal(resp)
+	if err != nil {
+		logger.ErrorContext(ctx, "Failed to marshal paginated response", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "marshal failed")
+		apierr.WriteErrorWithContext(w, r, apierr.SystemInternal("Failed to marshal response"))
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(b)
+	
+	// Note: Pagination responses are typically not cached as they are cursor-specific
+	// and would require complex cache invalidation logic
+	
+	span.SetAttributes(
+		attribute.Int("nodes_count", len(nodes)),
+		attribute.Int("links_count", len(links)),
+		attribute.Bool("has_more", hasMore),
+	)
+	span.SetStatus(codes.Ok, "paginated data fetched successfully")
 }
