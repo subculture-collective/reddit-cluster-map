@@ -21,6 +21,7 @@ export interface AppState {
   useCommunityColors?: boolean;
   usePrecomputedLayout?: boolean;
   sizeAttenuation?: boolean;
+  enableAdaptiveLOD?: boolean;
 }
 
 /**
@@ -114,6 +115,12 @@ export function readStateFromURL(): AppState {
     state.sizeAttenuation = sizeAttenuation === "1";
   }
 
+  // Adaptive LOD
+  const enableAdaptiveLOD = params.get("adaptiveLOD");
+  if (enableAdaptiveLOD !== null) {
+    state.enableAdaptiveLOD = enableAdaptiveLOD === "1";
+  }
+
   return state;
 }
 
@@ -188,6 +195,11 @@ export function writeStateToURL(state: AppState): void {
     params.set("sizeAttenuation", state.sizeAttenuation ? "1" : "0");
   }
 
+  // Adaptive LOD
+  if (state.enableAdaptiveLOD !== undefined) {
+    params.set("adaptiveLOD", state.enableAdaptiveLOD ? "1" : "0");
+  }
+
   // Update URL without page reload
   const newUrl = `${window.location.pathname}?${params.toString()}`;
   window.history.replaceState({}, "", newUrl);
@@ -242,6 +254,10 @@ export function generateShareURL(state: AppState): string {
 
   if (state.sizeAttenuation !== undefined) {
     params.set("sizeAttenuation", state.sizeAttenuation ? "1" : "0");
+  }
+
+  if (state.enableAdaptiveLOD !== undefined) {
+    params.set("adaptiveLOD", state.enableAdaptiveLOD ? "1" : "0");
   }
 
   return `${window.location.origin}${window.location.pathname}?${params.toString()}`;

@@ -99,6 +99,19 @@ function App() {
     return true; // default: enabled for better depth perception
   });
   
+  const [enableAdaptiveLOD, setEnableAdaptiveLOD] = useState<boolean>(() => {
+    if (urlState.enableAdaptiveLOD !== undefined) return urlState.enableAdaptiveLOD;
+    try {
+      const saved = localStorage.getItem("enableAdaptiveLOD");
+      if (saved === "true" || saved === "false") return saved === "true";
+    } catch {
+      /* ignore */
+    }
+    return true; // default: enabled for better performance
+  });
+  
+  const [currentLODTier, setCurrentLODTier] = useState<number>(3); // Start at HIGH tier
+  
   const [camera3dRef, setCamera3dRef] = useState<{ x: number; y: number; z: number } | undefined>(urlState.camera3d);
   const [camera2dRef, setCamera2dRef] = useState<{ x: number; y: number; zoom: number } | undefined>(urlState.camera2d);
 
@@ -121,6 +134,17 @@ function App() {
       /* ignore */
     }
   }, [usePrecomputedLayout]);
+  
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "enableAdaptiveLOD",
+        enableAdaptiveLOD ? "true" : "false"
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [enableAdaptiveLOD]);
 
   // Sync state to URL with debouncing to avoid excessive history API calls
   const urlWriteTimeoutRef = useRef<number | null>(null);
@@ -143,6 +167,7 @@ function App() {
         useCommunityColors,
         usePrecomputedLayout,
         sizeAttenuation,
+        enableAdaptiveLOD,
       });
     }, 500);
 
@@ -151,7 +176,7 @@ function App() {
         clearTimeout(urlWriteTimeoutRef.current);
       }
     };
-  }, [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout, sizeAttenuation]);
+  }, [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout, sizeAttenuation, enableAdaptiveLOD]);
 
   // Callback to get current state for sharing
   const getShareState = useCallback((): AppState => ({
@@ -164,7 +189,8 @@ function App() {
     useCommunityColors,
     usePrecomputedLayout,
     sizeAttenuation,
-  }), [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout, sizeAttenuation]);
+    enableAdaptiveLOD,
+  }), [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout, sizeAttenuation, enableAdaptiveLOD]);
 
   return (
     <div className="w-full h-screen">
@@ -235,6 +261,11 @@ function App() {
             onToggleSizeAttenuation={(enabled) =>
               setSizeAttenuation(enabled)
             }
+            enableAdaptiveLOD={enableAdaptiveLOD}
+            onToggleAdaptiveLOD={(enabled) =>
+              setEnableAdaptiveLOD(enabled)
+            }
+            currentLODTier={currentLODTier}
           />
           <ShareButton getState={getShareState} />
           {viewMode === "3d" ? (
@@ -269,6 +300,8 @@ function App() {
                 initialCamera={camera3dRef}
                 onCameraChange={setCamera3dRef}
                 sizeAttenuation={sizeAttenuation}
+                enableAdaptiveLOD={enableAdaptiveLOD}
+                onLODTierChange={setCurrentLODTier}
               />
             </ErrorBoundary>
           ) : (
