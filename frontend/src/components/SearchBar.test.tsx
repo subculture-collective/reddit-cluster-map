@@ -205,8 +205,8 @@ describe('SearchBar', () => {
     const user = userEvent.setup();
     
     // Create a promise that we can control
-    let resolveSearch: (value: any) => void;
-    const searchPromise = new Promise((resolve) => {
+    let resolveSearch: ((value: Response) => void) | undefined;
+    const searchPromise = new Promise<Response>((resolve) => {
       resolveSearch = resolve;
     });
 

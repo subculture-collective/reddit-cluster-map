@@ -69,6 +69,18 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
     []
   );
 
+  // Select a node and focus on it
+  const selectNode = useCallback(
+    (result: SearchResult) => {
+      onSelectNode(result.id);
+      setQuery('');
+      setIsOpen(false);
+      setResults([]);
+      inputRef.current?.blur();
+    },
+    [onSelectNode]
+  );
+
   // Handle input change with debouncing
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -116,19 +128,7 @@ export default function SearchBar({ onSelectNode, className = '' }: SearchBarPro
           break;
       }
     },
-    [isOpen, results, selectedIndex]
-  );
-
-  // Select a node and focus on it
-  const selectNode = useCallback(
-    (result: SearchResult) => {
-      onSelectNode(result.id);
-      setQuery('');
-      setIsOpen(false);
-      setResults([]);
-      inputRef.current?.blur();
-    },
-    [onSelectNode]
+    [isOpen, results, selectedIndex, selectNode]
   );
 
   // Handle keyboard shortcut (Ctrl+K or /)
