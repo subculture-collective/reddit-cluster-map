@@ -1036,38 +1036,41 @@ function Graph3DOriginal(props: Props) {
       });
     }
 
-    // Update labels on each frame when node positions are available
-    const updateLabels = () => {
+    // Build label data once when dependencies change
+    const graphData = (fgRef.current as any)?.graphData?.();
+    if (!graphData?.nodes) {
+      return;
+    }
+
+    // Create label data from nodes with positions
+    const labelData: LabelData[] = [];
+    for (const node of graphData.nodes as GraphNode[]) {
+      if (
+        labelSet.has(node.id) &&
+        typeof node.x === 'number' &&
+        typeof node.y === 'number' &&
+        typeof node.z === 'number'
+      ) {
+        const deg = degreeMap.get(node.id) || 1;
+        const base = Math.max(2, Math.pow(deg, 0.35));
+        const size = (6 + Math.min(10, base)) / 8;
+
+        labelData.push({
+          id: node.id,
+          text: node.name || node.id,
+          position: { x: node.x, y: node.y, z: node.z },
+          size,
+        });
+      }
+    }
+
+    labelRendererRef.current.setLabels(labelData);
+
+    // Set up animation loop for visibility and billboard updates only
+    let animationId: number;
+    const animate = () => {
       if (!labelRendererRef.current || !fgRef.current) return;
 
-      const graphData = (fgRef.current as any)?.graphData?.();
-      if (!graphData?.nodes) return;
-
-      // Create label data from nodes with positions
-      const labelData: LabelData[] = [];
-      for (const node of graphData.nodes as GraphNode[]) {
-        if (
-          labelSet.has(node.id) &&
-          typeof node.x === 'number' &&
-          typeof node.y === 'number' &&
-          typeof node.z === 'number'
-        ) {
-          const deg = degreeMap.get(node.id) || 1;
-          const base = Math.max(2, Math.pow(deg, 0.35));
-          const size = (6 + Math.min(10, base)) / 8;
-
-          labelData.push({
-            id: node.id,
-            text: node.name || node.id,
-            position: { x: node.x, y: node.y, z: node.z },
-            size,
-          });
-        }
-      }
-
-      labelRendererRef.current.setLabels(labelData);
-
-      // Update visibility based on camera
       const camera = (fgRef.current as any)?.camera?.();
       if (camera) {
         const cameraDistance = Math.sqrt(
@@ -1083,12 +1086,7 @@ function Graph3DOriginal(props: Props) {
         );
         labelRendererRef.current.updateBillboard(camera);
       }
-    };
 
-    // Set up animation loop for label updates
-    let animationId: number;
-    const animate = () => {
-      updateLabels();
       animationId = requestAnimationFrame(animate);
     };
     animate();

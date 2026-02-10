@@ -107,7 +107,6 @@ export default function Graph3DInstanced(props: Props) {
     const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
     const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
     const hoveredNodeRef = useRef<string | null>(null);
-    const labelsGroupRef = useRef<THREE.Group | null>(null);
     const showLabelsRef = useRef<boolean>(false);
     const labelSetRef = useRef<Set<string>>(new Set());
 
@@ -285,11 +284,6 @@ export default function Graph3DInstanced(props: Props) {
             fontSize: 8,
         });
         labelRendererRef.current = labelRenderer;
-
-        // Create group for labels (kept for compatibility but now using SDFTextRenderer)
-        const labelsGroup = new THREE.Group();
-        scene.add(labelsGroup);
-        labelsGroupRef.current = labelsGroup;
 
         // Set initial camera if provided
         if (initialCamera) {

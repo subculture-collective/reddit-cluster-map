@@ -86,10 +86,14 @@ export class SDFTextRenderer {
 
   /**
    * Set label data and create text objects
+   * Enforces maxLabels limit by taking the first N labels
    */
   setLabels(labels: LabelData[]): void {
+    // Enforce maxLabels limit
+    const limitedLabels = labels.slice(0, this.maxLabels);
+    
     // Remove old text objects that are no longer needed
-    const newIds = new Set(labels.map((l) => l.id));
+    const newIds = new Set(limitedLabels.map((l) => l.id));
     for (const [id, textObj] of this.textObjects) {
       if (!newIds.has(id)) {
         this.group.remove(textObj.text);
@@ -99,7 +103,7 @@ export class SDFTextRenderer {
     }
 
     // Create or update text objects
-    for (const label of labels) {
+    for (const label of limitedLabels) {
       let textObj = this.textObjects.get(label.id);
 
       if (!textObj) {
