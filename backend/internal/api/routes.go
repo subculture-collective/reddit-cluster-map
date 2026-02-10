@@ -115,6 +115,11 @@ func NewRouter(q *db.Queries) *mux.Router {
 	// Edge bundles endpoint with gzip and ETag: GET /api/graph/bundles
 	r.Handle("/api/graph/bundles", middleware.Gzip(middleware.ETag(http.HandlerFunc(graphHandler.GetEdgeBundles)))).Methods("GET")
 
+	// Graph versioning endpoints
+	versionHandler := handlers.NewVersionHandler(q, graphCache)
+	r.Handle("/api/graph/version", middleware.Gzip(http.HandlerFunc(versionHandler.GetCurrentVersion))).Methods("GET")
+	r.Handle("/api/graph/diff", middleware.Gzip(http.HandlerFunc(versionHandler.GetDiffSince))).Methods("GET")
+
 	// Search endpoint with gzip and ETag: GET /api/search?node=...
 	searchHandler := middleware.Gzip(middleware.ETag(http.HandlerFunc(handlers.SearchNode(q))))
 	r.Handle("/api/search", searchHandler).Methods("GET")
