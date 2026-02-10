@@ -779,3 +779,52 @@ WHERE (type = 'user' AND id NOT IN (SELECT 'user_' || id::text FROM users))
 DELETE FROM graph_links
 WHERE source NOT IN (SELECT id FROM graph_nodes)
    OR target NOT IN (SELECT id FROM graph_nodes);
+
+-- ============================================================
+-- Pagination Queries
+-- ============================================================
+
+-- name: GetPaginatedGraphNodes :many
+-- Cursor-based pagination for graph nodes ordered by weight (val) descending
+-- Cursor format: "weight:id" for tie-breaking
+-- Parameters: $1=cursor_weight (BIGINT), $2=cursor_id (TEXT), $3=page_size (INT)
+-- If cursor_weight is NULL, starts from beginning
+SELECT 
+    id,
+    name,
+    val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE 
+    -- If no cursor, get from start; otherwise use cursor for pagination
+    CASE 
+        WHEN $1::BIGINT IS NULL THEN TRUE
+        ELSE (
+            -- Primary sort: weight descending
+            (CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END) < $1::BIGINT
+            OR (
+                -- Tie-breaker: same weight, but ID is greater (for consistent ordering)
+                (CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END) = $1::BIGINT
+                AND id > $2::TEXT
+            )
+        )
+    END
+ORDER BY (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, id
+LIMIT $3;
+
+-- name: GetLinksForPaginatedNodes :many
+-- Get links where both source and target are in the provided node ID list
+-- Parameters: $1=node_ids (text array)
+SELECT 
+    id,
+    source,
+    target
+FROM graph_links
+WHERE source = ANY($1::text[]) 
+  AND target = ANY($1::text[])
+LIMIT $2;
