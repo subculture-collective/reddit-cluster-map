@@ -132,6 +132,39 @@ func (f *fakeStore) GetAffectedSubredditIDs(ctx context.Context, updatedAt sql.N
 	return nil, nil
 }
 
+// Version tracking methods
+func (f *fakeStore) CreateGraphVersion(ctx context.Context, arg db.CreateGraphVersionParams) (db.GraphVersion, error) {
+	return db.GraphVersion{ID: 1, NodeCount: arg.NodeCount, LinkCount: arg.LinkCount, Status: arg.Status}, nil
+}
+
+func (f *fakeStore) GetCurrentGraphVersion(ctx context.Context) (db.GraphVersion, error) {
+	return db.GraphVersion{ID: 1, NodeCount: 100, LinkCount: 200, Status: "completed"}, nil
+}
+
+func (f *fakeStore) UpdateGraphVersionStatus(ctx context.Context, arg db.UpdateGraphVersionStatusParams) error {
+	return nil
+}
+
+func (f *fakeStore) DeleteOldGraphVersions(ctx context.Context, retention int32) error {
+	return nil
+}
+
+func (f *fakeStore) CountGraphVersions(ctx context.Context) (int64, error) {
+	return 5, nil
+}
+
+func (f *fakeStore) CreateGraphDiff(ctx context.Context, arg db.CreateGraphDiffParams) error {
+	return nil
+}
+
+func (f *fakeStore) UpdatePrecalcStateVersion(ctx context.Context, versionID sql.NullInt64) error {
+	return nil
+}
+
+func (f *fakeStore) GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error) {
+	return nil, nil
+}
+
 func TestPrecalculateGraphData_MinimalWithoutDetailed(t *testing.T) {
 	os.Setenv("DETAILED_GRAPH", "false")
 	t.Cleanup(func() { os.Unsetenv("DETAILED_GRAPH") })

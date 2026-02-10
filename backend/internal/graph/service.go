@@ -92,6 +92,15 @@ type GraphStore interface {
 	GetUserActivitySince(ctx context.Context, updatedAt sql.NullTime) ([]db.GetUserActivitySinceRow, error)
 	GetAffectedUserIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error)
 	GetAffectedSubredditIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error)
+	// Version tracking
+	CreateGraphVersion(ctx context.Context, arg db.CreateGraphVersionParams) (db.GraphVersion, error)
+	GetCurrentGraphVersion(ctx context.Context) (db.GraphVersion, error)
+	UpdateGraphVersionStatus(ctx context.Context, arg db.UpdateGraphVersionStatusParams) error
+	DeleteOldGraphVersions(ctx context.Context, retention int32) error
+	CountGraphVersions(ctx context.Context) (int64, error)
+	CreateGraphDiff(ctx context.Context, arg db.CreateGraphDiffParams) error
+	UpdatePrecalcStateVersion(ctx context.Context, versionID sql.NullInt64) error
+	GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error)
 }
 
 func NewService(store GraphStore) *Service { return &Service{store: store} }
@@ -342,6 +351,20 @@ func (s *Service) PrecalculateGraphDataWithMode(ctx context.Context, fullRebuild
 		logger.InfoContext(ctx, "Running incremental precalculation", "last_precalc_at", lastPrecalcAt.Time, "change_percent", changePercent)
 	} else {
 		logger.InfoContext(ctx, "Running full precalculation rebuild")
+	}
+	
+	// Capture snapshot before making changes (for diff calculation)
+	var oldSnapshot *GraphSnapshot
+	var snapshotCaptured bool
+	if versionStore, ok := s.store.(VersionStore); ok {
+		snap, err := CaptureGraphSnapshot(ctx, versionStore)
+		if err != nil {
+			logger.Warn("Failed to capture graph snapshot for diff tracking; will skip diff generation for this run", "error", err)
+			// Non-fatal - continue without diff calculation for this cycle
+		} else {
+			oldSnapshot = snap
+			snapshotCaptured = true
+		}
 	}
 	
 	defer func() {
@@ -934,6 +957,38 @@ func (s *Service) PrecalculateGraphDataWithMode(ctx context.Context, fullRebuild
 		PrecalcDurationMs: sql.NullInt32{Int32: durationMs, Valid: true},
 	}); err != nil {
 		logger.Warn("Failed to update precalc state", "error", err)
+	}
+	
+	// Track version and calculate diffs
+	if versionStore, ok := s.store.(VersionStore); ok {
+		// Create a new version record
+		versionID, err := CreateVersionAndTrackChanges(ctx, versionStore, totalNodes, totalLinks, !incrementalMode, durationMs)
+		if err != nil {
+			logger.Warn("Failed to create graph version", "error", err)
+		} else {
+			// Only calculate diffs if we successfully captured the old snapshot
+			if snapshotCaptured {
+				// Capture new snapshot and calculate diffs
+				newSnapshot, err := CaptureGraphSnapshot(ctx, versionStore)
+				if err != nil {
+					logger.Warn("Failed to capture new graph snapshot", "error", err)
+				} else {
+					// Calculate and store diffs
+					if err := CalculateAndStoreDiffs(ctx, versionStore, versionID, oldSnapshot, newSnapshot); err != nil {
+						logger.Warn("Failed to calculate and store diffs", "error", err)
+					} else {
+						logger.InfoContext(ctx, "Graph version and diffs stored successfully", "version_id", versionID)
+					}
+				}
+			} else {
+				logger.InfoContext(ctx, "Skipping diff calculation (snapshot not captured)", "version_id", versionID)
+			}
+			
+			// Clean up old versions
+			if err := CleanupOldVersions(ctx, versionStore); err != nil {
+				logger.Warn("Failed to cleanup old versions", "error", err)
+			}
+		}
 	}
 	
 	return nil

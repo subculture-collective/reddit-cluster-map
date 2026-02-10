@@ -10,12 +10,14 @@ import {
     ForceSimulation,
     type PhysicsConfig,
 } from '../rendering/ForceSimulation';
+import { SDFTextRenderer, type LabelData } from '../rendering/SDFTextRenderer';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { detectWebGLSupport } from '../utils/webglDetect';
 import { AdaptiveLODManager, LODTier } from '../utils/levelOfDetail';
 import LoadingSkeleton from './LoadingSkeleton';
 import NodeTooltip from './NodeTooltip';
 import PerformanceHUD from './PerformanceHUD';
+import { DEFAULT_LOD_CONFIG } from '../utils/levelOfDetail';
 
 /**
  * Graph3DInstanced - High-performance 3D graph visualization using InstancedMesh
@@ -84,6 +86,7 @@ export default function Graph3DInstanced(props: Props) {
         physics,
         focusNodeId,
         onNodeSelect,
+        showLabels,
         communityResult,
         usePrecomputedLayout,
         initialCamera,
@@ -112,12 +115,12 @@ export default function Graph3DInstanced(props: Props) {
     const nodeRendererRef = useRef<InstancedNodeRenderer | null>(null);
     const linkRendererRef = useRef<LinkRenderer | null>(null);
     const simulationRef = useRef<ForceSimulation | null>(null);
+    const labelRendererRef = useRef<SDFTextRenderer | null>(null);
     const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
     const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
     const hoveredNodeRef = useRef<string | null>(null);
-    const labelsGroupRef = useRef<THREE.Group | null>(null);
-    const lastFrameTimeRef = useRef<number>(performance.now());
-    const lastEmittedTierRef = useRef<LODTier>(LODTier.HIGH);
+    const showLabelsRef = useRef<boolean>(false);
+    const labelSetRef = useRef<Set<string>>(new Set());
 
     // State for tooltip
     const [hoveredNode] = useState<{
@@ -287,10 +290,12 @@ export default function Graph3DInstanced(props: Props) {
         });
         linkRendererRef.current = linkRenderer;
 
-        // Create group for labels
-        const labelsGroup = new THREE.Group();
-        scene.add(labelsGroup);
-        labelsGroupRef.current = labelsGroup;
+        // Create SDF text label renderer
+        const labelRenderer = new SDFTextRenderer(scene, {
+            maxLabels: DEFAULT_LOD_CONFIG.maxLabels,
+            fontSize: 8,
+        });
+        labelRendererRef.current = labelRenderer;
 
         // Initialize LOD manager
         const lodManager = new AdaptiveLODManager();
@@ -378,6 +383,18 @@ export default function Graph3DInstanced(props: Props) {
                 lastLinkVisibilityUpdate = linkUpdateTime;
             }
 
+            // Update label visibility and billboard orientation
+            if (labelRendererRef.current && showLabelsRef.current && labelSetRef.current.size > 0) {
+                const cameraDistance = camera.position.length();
+                labelRendererRef.current.updateVisibility(
+                    camera,
+                    labelSetRef.current,
+                    cameraDistance,
+                    DEFAULT_LOD_CONFIG.labelVisibilityThreshold
+                );
+                labelRendererRef.current.updateBillboard(camera);
+            }
+
             renderer.render(scene, camera);
 
             // Throttle camera change emissions
@@ -423,6 +440,13 @@ export default function Graph3DInstanced(props: Props) {
             renderer.dispose();
             nodeRenderer.dispose();
             linkRenderer.dispose();
+            
+            // Dispose label renderer
+            if (labelRendererRef.current) {
+                labelRendererRef.current.dispose();
+                labelRendererRef.current = null;
+            }
+            
             // Copy ref to variable for cleanup to avoid stale closure issue
             const container = containerRef.current;
             if (container && renderer.domElement.parentNode === container) {
@@ -517,6 +541,47 @@ export default function Graph3DInstanced(props: Props) {
         MAX_RENDER_LINKS,
     ]);
 
+    // Build degree map for label selection
+    const degreeMap = useMemo(() => {
+        const map = new Map<string, number>();
+        for (const link of filtered.links) {
+            map.set(link.source, (map.get(link.source) || 0) + 1);
+            map.set(link.target, (map.get(link.target) || 0) + 1);
+        }
+        return map;
+    }, [filtered.links]);
+
+    // Choose nodes to label (top-N by weight, prefer subreddits/users)
+    const labelSet = useMemo(() => {
+        if (!showLabels) return new Set<string>();
+        
+        const weights = filtered.nodes.map((n) => {
+            const deg = degreeMap.get(n.id) || 0;
+            const val = typeof n.val === 'number' ? n.val : 0;
+            const w = Math.max(val, deg);
+            return { id: n.id, type: n.type, name: n.name || n.id, w };
+        });
+        
+        // Prefer subreddits/users; limit to top N by weight
+        const preferred = weights.filter(
+            (x) => x.type === 'subreddit' || x.type === 'user'
+        );
+        preferred.sort(
+            (a, b) => b.w - a.w || String(a.id).localeCompare(String(b.id))
+        );
+        
+        const TOP = Math.min(DEFAULT_LOD_CONFIG.maxLabels, preferred.length);
+        const set = new Set<string>();
+        for (let i = 0; i < TOP; i++) set.add(String(preferred[i].id));
+        return set;
+    }, [showLabels, filtered.nodes, degreeMap]);
+
+    // Keep refs in sync with labelSet and showLabels
+    useEffect(() => {
+        showLabelsRef.current = showLabels || false;
+        labelSetRef.current = labelSet;
+    }, [showLabels, labelSet]);
+
     // Update node renderer when filtered data changes
     useEffect(() => {
         if (!nodeRendererRef.current) return;
@@ -574,6 +639,38 @@ export default function Graph3DInstanced(props: Props) {
         nodeRendererRef.current.setNodeData(nodeData);
     }, [filtered, communityResult]);
 
+    // Update labels when label set or filtered data changes
+    useEffect(() => {
+        if (!labelRendererRef.current || !showLabels || labelSet.size === 0) {
+            // Clear labels if not showing
+            if (labelRendererRef.current) {
+                labelRendererRef.current.setLabels([]);
+            }
+            return;
+        }
+
+        const labelData: LabelData[] = filtered.nodes
+            .filter(n => labelSet.has(n.id))
+            .map(n => {
+                const deg = degreeMap.get(n.id) || 1;
+                const base = Math.max(2, Math.pow(deg, 0.35));
+                const size = (6 + Math.min(10, base)) / 8; // Normalize to fontSize multiplier
+                
+                return {
+                    id: n.id,
+                    text: n.name || n.id,
+                    position: {
+                        x: n.x || 0,
+                        y: n.y || 0,
+                        z: n.z || 0,
+                    },
+                    size,
+                };
+            });
+
+        labelRendererRef.current.setLabels(labelData);
+    }, [filtered.nodes, labelSet, degreeMap, showLabels]);
+
     // Initialize/update force simulation
     useEffect(() => {
         if (!nodeRendererRef.current) return;
@@ -588,6 +685,9 @@ export default function Graph3DInstanced(props: Props) {
                     if (linkRendererRef.current) {
                         linkRendererRef.current.updatePositions(positions);
                         linkRendererRef.current.refresh();
+                    }
+                    if (labelRendererRef.current && showLabels) {
+                        labelRendererRef.current.updatePositions(positions);
                     }
                 },
                 physics,
@@ -604,7 +704,7 @@ export default function Graph3DInstanced(props: Props) {
                 simulationRef.current.stop();
             }
         };
-    }, [filtered, physics, usePrecomputedLayout]);
+    }, [filtered, physics, usePrecomputedLayout, showLabels]);
 
     // Update physics when it changes
     useEffect(() => {

@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -156,6 +157,30 @@ func (q *Queries) CountChangedEntities(ctx context.Context, updatedAt sql.NullTi
 		&i.ChangedComments,
 	)
 	return i, err
+}
+
+const countGraphDiffsForVersion = `-- name: CountGraphDiffsForVersion :one
+SELECT COUNT(*) FROM graph_diffs WHERE version_id = $1
+`
+
+// Count diffs for a specific version
+func (q *Queries) CountGraphDiffsForVersion(ctx context.Context, versionID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countGraphDiffsForVersion, versionID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countGraphVersions = `-- name: CountGraphVersions :one
+SELECT COUNT(*) FROM graph_versions
+`
+
+// Count total number of graph versions
+func (q *Queries) CountGraphVersions(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countGraphVersions)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const countNodesInBoundingBox = `-- name: CountNodesInBoundingBox :one
@@ -309,6 +334,59 @@ func (q *Queries) CreateEdgeBundle(ctx context.Context, arg CreateEdgeBundlePara
 	return err
 }
 
+const createGraphDiff = `-- name: CreateGraphDiff :exec
+INSERT INTO graph_diffs (
+    version_id,
+    action,
+    entity_type,
+    entity_id,
+    old_val,
+    new_val,
+    old_pos_x,
+    old_pos_y,
+    old_pos_z,
+    new_pos_x,
+    new_pos_y,
+    new_pos_z
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+)
+`
+
+type CreateGraphDiffParams struct {
+	VersionID  int64
+	Action     string
+	EntityType string
+	EntityID   string
+	OldVal     sql.NullString
+	NewVal     sql.NullString
+	OldPosX    sql.NullFloat64
+	OldPosY    sql.NullFloat64
+	OldPosZ    sql.NullFloat64
+	NewPosX    sql.NullFloat64
+	NewPosY    sql.NullFloat64
+	NewPosZ    sql.NullFloat64
+}
+
+// Record a diff entry for a graph version
+func (q *Queries) CreateGraphDiff(ctx context.Context, arg CreateGraphDiffParams) error {
+	_, err := q.db.ExecContext(ctx, createGraphDiff,
+		arg.VersionID,
+		arg.Action,
+		arg.EntityType,
+		arg.EntityID,
+		arg.OldVal,
+		arg.NewVal,
+		arg.OldPosX,
+		arg.OldPosY,
+		arg.OldPosZ,
+		arg.NewPosX,
+		arg.NewPosY,
+		arg.NewPosZ,
+	)
+	return err
+}
+
 const createGraphLink = `-- name: CreateGraphLink :one
 INSERT INTO graph_links (
     source,
@@ -332,6 +410,52 @@ func (q *Queries) CreateGraphLink(ctx context.Context, arg CreateGraphLinkParams
 		&i.Target,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createGraphVersion = `-- name: CreateGraphVersion :one
+
+INSERT INTO graph_versions (
+    node_count,
+    link_count,
+    status,
+    precalc_duration_ms,
+    is_full_rebuild
+) VALUES (
+    $1, $2, $3, $4, $5
+) RETURNING id, created_at, node_count, link_count, status, precalc_duration_ms, is_full_rebuild
+`
+
+type CreateGraphVersionParams struct {
+	NodeCount         int32
+	LinkCount         int32
+	Status            string
+	PrecalcDurationMs sql.NullInt32
+	IsFullRebuild     bool
+}
+
+// ============================================================
+// Graph Versioning Queries
+// ============================================================
+// Create a new graph version record
+func (q *Queries) CreateGraphVersion(ctx context.Context, arg CreateGraphVersionParams) (GraphVersion, error) {
+	row := q.db.QueryRowContext(ctx, createGraphVersion,
+		arg.NodeCount,
+		arg.LinkCount,
+		arg.Status,
+		arg.PrecalcDurationMs,
+		arg.IsFullRebuild,
+	)
+	var i GraphVersion
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.NodeCount,
+		&i.LinkCount,
+		&i.Status,
+		&i.PrecalcDurationMs,
+		&i.IsFullRebuild,
 	)
 	return i, err
 }
@@ -398,6 +522,23 @@ func (q *Queries) CreateUserSubredditActivity(ctx context.Context, arg CreateUse
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteOldGraphVersions = `-- name: DeleteOldGraphVersions :exec
+WITH versions_to_keep AS (
+    SELECT id FROM graph_versions
+    ORDER BY id DESC
+    LIMIT $1
+)
+DELETE FROM graph_versions
+WHERE id NOT IN (SELECT id FROM versions_to_keep)
+`
+
+// Delete graph versions older than the retention count
+// Keeps the most recent N versions
+func (q *Queries) DeleteOldGraphVersions(ctx context.Context, limit int32) error {
+	_, err := q.db.ExecContext(ctx, deleteOldGraphVersions, limit)
+	return err
 }
 
 const deleteOrphanedGraphLinks = `-- name: DeleteOrphanedGraphLinks :exec
@@ -1273,6 +1414,29 @@ func (q *Queries) GetCommunitySupernodesWithPositions(ctx context.Context) ([]Ge
 	return items, nil
 }
 
+const getCurrentGraphVersion = `-- name: GetCurrentGraphVersion :one
+SELECT id, created_at, node_count, link_count, status, precalc_duration_ms, is_full_rebuild FROM graph_versions 
+WHERE status = 'completed'
+ORDER BY id DESC 
+LIMIT 1
+`
+
+// Get the most recent completed graph version
+func (q *Queries) GetCurrentGraphVersion(ctx context.Context) (GraphVersion, error) {
+	row := q.db.QueryRowContext(ctx, getCurrentGraphVersion)
+	var i GraphVersion
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.NodeCount,
+		&i.LinkCount,
+		&i.Status,
+		&i.PrecalcDurationMs,
+		&i.IsFullRebuild,
+	)
+	return i, err
+}
+
 const getEdgeBundles = `-- name: GetEdgeBundles :many
 SELECT
     source_community_id,
@@ -1326,6 +1490,154 @@ func (q *Queries) GetEdgeBundles(ctx context.Context, weight int32) ([]GetEdgeBu
 		return nil, err
 	}
 	return items, nil
+}
+
+const getGraphDiffsForVersion = `-- name: GetGraphDiffsForVersion :many
+SELECT id, version_id, action, entity_type, entity_id, old_val, new_val, old_pos_x, old_pos_y, old_pos_z, new_pos_x, new_pos_y, new_pos_z, created_at FROM graph_diffs
+WHERE version_id = $1
+ORDER BY id
+`
+
+// Get all diffs for a specific version
+func (q *Queries) GetGraphDiffsForVersion(ctx context.Context, versionID int64) ([]GraphDiff, error) {
+	rows, err := q.db.QueryContext(ctx, getGraphDiffsForVersion, versionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GraphDiff
+	for rows.Next() {
+		var i GraphDiff
+		if err := rows.Scan(
+			&i.ID,
+			&i.VersionID,
+			&i.Action,
+			&i.EntityType,
+			&i.EntityID,
+			&i.OldVal,
+			&i.NewVal,
+			&i.OldPosX,
+			&i.OldPosY,
+			&i.OldPosZ,
+			&i.NewPosX,
+			&i.NewPosY,
+			&i.NewPosZ,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getGraphDiffsSinceVersion = `-- name: GetGraphDiffsSinceVersion :many
+SELECT 
+    gd.id,
+    gd.version_id,
+    gd.action,
+    gd.entity_type,
+    gd.entity_id,
+    gd.old_val,
+    gd.new_val,
+    gd.old_pos_x,
+    gd.old_pos_y,
+    gd.old_pos_z,
+    gd.new_pos_x,
+    gd.new_pos_y,
+    gd.new_pos_z,
+    gd.created_at,
+    gv.id as version_number
+FROM graph_diffs gd
+JOIN graph_versions gv ON gd.version_id = gv.id
+WHERE gd.version_id > $1
+  AND gv.status = 'completed'
+ORDER BY gd.version_id, gd.id
+`
+
+type GetGraphDiffsSinceVersionRow struct {
+	ID            int64
+	VersionID     int64
+	Action        string
+	EntityType    string
+	EntityID      string
+	OldVal        sql.NullString
+	NewVal        sql.NullString
+	OldPosX       sql.NullFloat64
+	OldPosY       sql.NullFloat64
+	OldPosZ       sql.NullFloat64
+	NewPosX       sql.NullFloat64
+	NewPosY       sql.NullFloat64
+	NewPosZ       sql.NullFloat64
+	CreatedAt     time.Time
+	VersionNumber int64
+}
+
+// Get all diffs since a specific version (exclusive)
+// Returns changes from versions > $1 up to current
+func (q *Queries) GetGraphDiffsSinceVersion(ctx context.Context, versionID int64) ([]GetGraphDiffsSinceVersionRow, error) {
+	rows, err := q.db.QueryContext(ctx, getGraphDiffsSinceVersion, versionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetGraphDiffsSinceVersionRow
+	for rows.Next() {
+		var i GetGraphDiffsSinceVersionRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.VersionID,
+			&i.Action,
+			&i.EntityType,
+			&i.EntityID,
+			&i.OldVal,
+			&i.NewVal,
+			&i.OldPosX,
+			&i.OldPosY,
+			&i.OldPosZ,
+			&i.NewPosX,
+			&i.NewPosY,
+			&i.NewPosZ,
+			&i.CreatedAt,
+			&i.VersionNumber,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getGraphVersion = `-- name: GetGraphVersion :one
+SELECT id, created_at, node_count, link_count, status, precalc_duration_ms, is_full_rebuild FROM graph_versions WHERE id = $1
+`
+
+// Get a specific graph version by ID
+func (q *Queries) GetGraphVersion(ctx context.Context, id int64) (GraphVersion, error) {
+	row := q.db.QueryRowContext(ctx, getGraphVersion, id)
+	var i GraphVersion
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.NodeCount,
+		&i.LinkCount,
+		&i.Status,
+		&i.PrecalcDurationMs,
+		&i.IsFullRebuild,
+	)
+	return i, err
 }
 
 const getHierarchyLevels = `-- name: GetHierarchyLevels :many
@@ -1778,7 +2090,7 @@ func (q *Queries) GetPaginatedGraphNodes(ctx context.Context, arg GetPaginatedGr
 
 const getPrecalcState = `-- name: GetPrecalcState :one
 
-SELECT id, last_precalc_at, last_full_precalc_at, total_nodes, total_links, precalc_duration_ms, created_at, updated_at FROM precalc_state WHERE id = 1
+SELECT id, last_precalc_at, last_full_precalc_at, total_nodes, total_links, precalc_duration_ms, current_version_id, created_at, updated_at FROM precalc_state WHERE id = 1
 `
 
 // ============================================================
@@ -1795,6 +2107,7 @@ func (q *Queries) GetPrecalcState(ctx context.Context) (PrecalcState, error) {
 		&i.TotalNodes,
 		&i.TotalLinks,
 		&i.PrecalcDurationMs,
+		&i.CurrentVersionID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -2358,6 +2671,49 @@ func (q *Queries) ListGraphNodesByWeight(ctx context.Context, limit int32) ([]Li
 	return items, nil
 }
 
+const listGraphVersions = `-- name: ListGraphVersions :many
+SELECT id, created_at, node_count, link_count, status, precalc_duration_ms, is_full_rebuild FROM graph_versions
+ORDER BY id DESC
+LIMIT $1 OFFSET $2
+`
+
+type ListGraphVersionsParams struct {
+	Limit  int32
+	Offset int32
+}
+
+// List recent graph versions with pagination
+func (q *Queries) ListGraphVersions(ctx context.Context, arg ListGraphVersionsParams) ([]GraphVersion, error) {
+	rows, err := q.db.QueryContext(ctx, listGraphVersions, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GraphVersion
+	for rows.Next() {
+		var i GraphVersion
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.NodeCount,
+			&i.LinkCount,
+			&i.Status,
+			&i.PrecalcDurationMs,
+			&i.IsFullRebuild,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsersWithActivity = `-- name: ListUsersWithActivity :many
 SELECT
     u.id,
@@ -2509,6 +2865,24 @@ func (q *Queries) UpdateGraphNodePositions(ctx context.Context, arg UpdateGraphN
 	return err
 }
 
+const updateGraphVersionStatus = `-- name: UpdateGraphVersionStatus :exec
+UPDATE graph_versions
+SET status = $1, precalc_duration_ms = $2
+WHERE id = $3
+`
+
+type UpdateGraphVersionStatusParams struct {
+	Status            string
+	PrecalcDurationMs sql.NullInt32
+	ID                int64
+}
+
+// Update the status of a graph version
+func (q *Queries) UpdateGraphVersionStatus(ctx context.Context, arg UpdateGraphVersionStatusParams) error {
+	_, err := q.db.ExecContext(ctx, updateGraphVersionStatus, arg.Status, arg.PrecalcDurationMs, arg.ID)
+	return err
+}
+
 const updatePrecalcState = `-- name: UpdatePrecalcState :exec
 UPDATE precalc_state
 SET 
@@ -2538,5 +2912,17 @@ func (q *Queries) UpdatePrecalcState(ctx context.Context, arg UpdatePrecalcState
 		arg.TotalLinks,
 		arg.PrecalcDurationMs,
 	)
+	return err
+}
+
+const updatePrecalcStateVersion = `-- name: UpdatePrecalcStateVersion :exec
+UPDATE precalc_state
+SET current_version_id = $1
+WHERE id = 1
+`
+
+// Update the current version ID in precalc_state
+func (q *Queries) UpdatePrecalcStateVersion(ctx context.Context, currentVersionID sql.NullInt64) error {
+	_, err := q.db.ExecContext(ctx, updatePrecalcStateVersion, currentVersionID)
 	return err
 }

@@ -174,3 +174,9 @@ func ResetForTest() { cached = nil }
 func (c *Config) GetEnvBool(key string, def bool) bool {
 	return utils.GetEnvAsBool(key, def)
 }
+
+// GetEnvInt reads an integer environment variable with a default.
+// Use this when you need to check a value not present in the cached config.
+func (c *Config) GetEnvInt(key string, def int) int {
+	return utils.GetEnvAsInt(key, def)
+}
