@@ -857,7 +857,7 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
   return (
     <div
       ref={containerRef}
-      className={`w-full h-screen relative bg-black transition-opacity duration-500 ${
+      className={`w-full h-screen relative bg-white dark:bg-black transition-opacity duration-500 ${
         initialLoadComplete || error ? 'opacity-100' : 'opacity-0'
       }`}
       onMouseMove={() => frameThrottlerRef.current?.markActive()}
@@ -886,16 +886,16 @@ const Graph2D = function Graph2D(props: Graph2DProps) {
         </div>
       )}
       {isLoading && initialLoadComplete && (
-        <div className="absolute top-2 left-2 z-20 bg-black/50 text-white rounded px-3 py-2 text-sm">
+        <div className="absolute top-2 left-2 z-20 bg-black/50 dark:bg-black/50 text-white rounded px-3 py-2 text-sm">
           Updating graph…
         </div>
       )}
       {!isLoading && activeTypes.length === 0 && (
-        <div className="absolute top-2 left-2 z-20 bg-black/50 text-white rounded px-3 py-2 text-sm">
+        <div className="absolute top-2 left-2 z-20 bg-black/50 dark:bg-black/50 text-white rounded px-3 py-2 text-sm">
           Enable at least one node type in the controls to view the graph.
         </div>
       )}
-      <div className="absolute top-2 left-2 z-10 bg-black/50 text-white rounded px-3 py-2 text-sm flex items-center gap-3">
+      <div className="absolute top-2 left-2 z-10 bg-black/50 dark:bg-black/50 text-white rounded px-3 py-2 text-sm flex items-center gap-3">
         <button
           className="border border-white/30 rounded px-2 py-1 hover:bg-white/10"
           onClick={() => load()}

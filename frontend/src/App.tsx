@@ -193,7 +193,7 @@ function App() {
   }), [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout, sizeAttenuation, enableAdaptiveLOD]);
 
   return (
-    <div className="w-full h-screen">
+    <div className="w-full h-screen bg-white dark:bg-black transition-colors duration-200">
       {viewMode === "admin" ? (
         <Admin
           onViewMode={(mode: "3d" | "2d") => {

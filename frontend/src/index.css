@@ -1,3 +1,27 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light theme colors */
+    --graph-bg: #f8f9fa;
+    --graph-bg-rgb: 248, 249, 250;
+    --node-subreddit: #059669;
+    --node-user: #2563eb;
+    --node-post: #d97706;
+    --node-comment: #dc2626;
+    --node-default: #7c3aed;
+  }
+
+  .dark {
+    /* Dark theme colors */
+    --graph-bg: #000000;
+    --graph-bg-rgb: 0, 0, 0;
+    --node-subreddit: #4ade80;
+    --node-user: #60a5fa;
+    --node-post: #f59e0b;
+    --node-comment: #f43f5e;
+    --node-default: #a78bfa;
+  }
+}

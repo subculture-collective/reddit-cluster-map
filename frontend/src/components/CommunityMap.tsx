@@ -453,8 +453,8 @@ export default function CommunityMap({
   }, [aggregated, onFocusNode]);
 
   return (
-    <div ref={containerRef} className="w-full h-screen relative bg-black">
-      <div className="absolute top-2 left-2 z-10 bg-black/50 text-white rounded px-3 py-2 text-sm flex items-center gap-3">
+    <div ref={containerRef} className="w-full h-screen relative bg-white dark:bg-black">
+      <div className="absolute top-2 left-2 z-10 bg-black/50 dark:bg-black/50 text-white rounded px-3 py-2 text-sm flex items-center gap-3">
         <button
           className="border border-white/30 rounded px-2 py-1 hover:bg-white/10"
           onClick={load}
@@ -473,7 +473,7 @@ export default function CommunityMap({
             : `Expanded: Community ${expanded}`}
         </span>
       </div>
-      <div className="absolute top-2 right-2 z-10 bg-black/50 text-white rounded px-3 py-2 text-sm flex items-center gap-3">
+      <div className="absolute top-2 right-2 z-10 bg-black/50 dark:bg-black/50 text-white rounded px-3 py-2 text-sm flex items-center gap-3">
         <button
           className="px-2 py-1 rounded border bg-blue-600 border-blue-400 hover:bg-blue-700"
           onClick={onBack}
@@ -482,7 +482,7 @@ export default function CommunityMap({
         </button>
       </div>
       {loading && (
-        <div className="absolute top-2 left-2 z-20 bg-black/50 text-white rounded px-3 py-2 text-sm">
+        <div className="absolute top-2 left-2 z-20 bg-black/50 dark:bg-black/50 text-white rounded px-3 py-2 text-sm">
           Loading…
         </div>
       )}

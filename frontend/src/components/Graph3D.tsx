@@ -23,6 +23,7 @@ import Graph3DInstanced from "./Graph3DInstanced";
 import { StreamingGraphLoader, type LoadProgress } from "../data/StreamingGraphLoader";
 import LoadingProgress from "./LoadingProgress";
 import PerformanceHUD from "./PerformanceHUD";
+import { useTheme } from "../contexts/ThemeContext";
 
 type Filters = {
   subreddit: boolean;
@@ -332,6 +333,7 @@ function Graph3DOriginal(props: Omit<Props, 'enableAdaptiveLOD' | 'onLODTierChan
     onCameraChange,
   } = props;
 
+  const { theme } = useTheme();
   const [onlyLinked, setOnlyLinked] = useState(true);
   const [useBundling, setUseBundling] = useState(false);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
@@ -1238,7 +1240,7 @@ function Graph3DOriginal(props: Omit<Props, 'enableAdaptiveLOD' | 'onLODTierChan
         onNodeClick={(node: unknown) =>
           onNodeSelect?.((node as { name?: string })?.name)
         }
-        backgroundColor="#000000"
+        backgroundColor={theme === 'dark' ? '#000000' : '#f8f9fa'}
         enableNodeDrag={false}
         linkDirectionalParticles={0}
         linkDirectionalArrowLength={0}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { TypeFilters } from "../types/ui";
+import { useTheme } from "../contexts/ThemeContext";
 
 type Physics = {
   chargeStrength: number;
@@ -85,6 +86,7 @@ export default function Controls(props: Props) {
     onToggleAdaptiveLOD,
     currentLODTier,
   } = props;
+  const { theme, themeMode, setThemeMode } = useTheme();
   const [search, setSearch] = useState("");
   const [srv, setSrv] = useState<{
     crawler_enabled: boolean;
@@ -145,7 +147,7 @@ export default function Controls(props: Props) {
   );
 
   return (
-    <div className="absolute z-20 top-2 right-2 bg-black/60 text-white p-3 rounded shadow flex flex-col gap-3">
+    <div className="absolute z-20 top-2 right-2 bg-gray-100/90 dark:bg-black/60 text-gray-900 dark:text-white p-3 rounded shadow flex flex-col gap-3 transition-colors duration-200">
       <div className="flex gap-2 items-center">
         <label className="text-xs">View:</label>
         <button
@@ -228,7 +230,7 @@ export default function Controls(props: Props) {
             Adaptive LOD (Level-of-Detail)
           </label>
           {currentLODTier !== undefined && (
-            <div className="text-xs text-white/60 ml-5">
+            <div className="text-xs text-gray-600 dark:text-white/60 ml-5">
               Current tier: {
                 currentLODTier === 0 ? 'Emergency' :
                 currentLODTier === 1 ? 'Low' :
@@ -240,7 +242,45 @@ export default function Controls(props: Props) {
           )}
         </div>
       )}
-      <div className="text-xs text-white/70">Admin</div>
+      <div className="text-xs text-gray-700 dark:text-white/70">Theme</div>
+      <div className="flex items-center gap-2">
+        <button
+          className={`px-2 py-1 rounded border text-sm ${
+            themeMode === 'system'
+              ? 'bg-blue-600 border-blue-400'
+              : 'bg-gray-700 border-gray-500'
+          }`}
+          onClick={() => setThemeMode('system')}
+        >
+          System
+        </button>
+        <button
+          className={`px-2 py-1 rounded border text-sm ${
+            themeMode === 'light'
+              ? 'bg-blue-600 border-blue-400'
+              : 'bg-gray-700 border-gray-500'
+          }`}
+          onClick={() => setThemeMode('light')}
+        >
+          Light
+        </button>
+        <button
+          className={`px-2 py-1 rounded border text-sm ${
+            themeMode === 'dark'
+              ? 'bg-blue-600 border-blue-400'
+              : 'bg-gray-700 border-gray-500'
+          }`}
+          onClick={() => setThemeMode('dark')}
+        >
+          Dark
+        </button>
+      </div>
+      {themeMode === 'system' && (
+        <div className="text-xs text-gray-600 dark:text-white/60">
+          Active: {theme === 'dark' ? 'Dark' : 'Light'}
+        </div>
+      )}
+      <div className="text-xs text-gray-700 dark:text-white/70">Admin</div>
       <div className="flex items-center gap-3 text-sm">
         <button
           className={`px-3 py-1 rounded border ${
