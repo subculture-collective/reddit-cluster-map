@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/onnwee/reddit-cluster-map/backend/internal/cache"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 )
 
@@ -95,8 +96,36 @@ func (f *fakeGraphQueries) GetPrecalculatedGraphDataNoPos(ctx context.Context) (
 	return nil, nil
 }
 
+func (f *fakeGraphQueries) GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error) {
+	return []db.GetEdgeBundlesRow{}, nil
+}
+
+func (f *fakeGraphQueries) GetCommunitySupernodesWithPositions(ctx context.Context) ([]db.GetCommunitySupernodesWithPositionsRow, error) {
+	return []db.GetCommunitySupernodesWithPositionsRow{}, nil
+}
+
+func (f *fakeGraphQueries) GetCommunityLinks(ctx context.Context, limit int32) ([]db.GetCommunityLinksRow, error) {
+	return []db.GetCommunityLinksRow{}, nil
+}
+
+func (f *fakeGraphQueries) GetNodesInBoundingBox(ctx context.Context, arg db.GetNodesInBoundingBoxParams) ([]db.GetNodesInBoundingBoxRow, error) {
+	return []db.GetNodesInBoundingBoxRow{}, nil
+}
+
+func (f *fakeGraphQueries) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
+	return []db.GetLinksForNodesInBoundingBoxRow{}, nil
+}
+
+func (f *fakeGraphQueries) GetPaginatedGraphNodes(ctx context.Context, arg db.GetPaginatedGraphNodesParams) ([]db.GetPaginatedGraphNodesRow, error) {
+	return []db.GetPaginatedGraphNodesRow{}, nil
+}
+
+func (f *fakeGraphQueries) GetLinksForPaginatedNodes(ctx context.Context, arg db.GetLinksForPaginatedNodesParams) ([]db.GetLinksForPaginatedNodesRow, error) {
+	return []db.GetLinksForPaginatedNodesRow{}, nil
+}
+
 func TestGraphHandler_UnwrapsSingleRow(t *testing.T) {
-	h := &Handler{queries: (&fakeGraphQueries{data: [][]byte{[]byte(`{"nodes":[{"id":"x"}],"links":[]}`)}})}
+	h := &Handler{queries: (&fakeGraphQueries{data: [][]byte{[]byte(`{"nodes":[{"id":"x"}],"links":[]}`)}}), cache: cache.NewMockCache()}
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/graph", nil)
 	h.GetGraphData(rr, req)
@@ -139,13 +168,42 @@ func (f *fakeTimeoutQueries) GetPrecalculatedGraphDataNoPos(ctx context.Context)
 	return nil, context.DeadlineExceeded
 }
 
-func TestGraphHandler_TimeoutHandling(t *testing.T) {
-	// Clear the cache to avoid interference from other tests
-	graphCacheMu.Lock()
-	graphCache = make(map[string]graphCacheEntry)
-	graphCacheMu.Unlock()
+func (f *fakeTimeoutQueries) GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error) {
+	return nil, context.DeadlineExceeded
+}
 
-	h := &Handler{queries: &fakeTimeoutQueries{}}
+func (f *fakeTimeoutQueries) GetCommunitySupernodesWithPositions(ctx context.Context) ([]db.GetCommunitySupernodesWithPositionsRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetCommunityLinks(ctx context.Context, limit int32) ([]db.GetCommunityLinksRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetNodesInBoundingBox(ctx context.Context, arg db.GetNodesInBoundingBoxParams) ([]db.GetNodesInBoundingBoxRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetPaginatedGraphNodes(ctx context.Context, arg db.GetPaginatedGraphNodesParams) ([]db.GetPaginatedGraphNodesRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (f *fakeTimeoutQueries) GetLinksForPaginatedNodes(ctx context.Context, arg db.GetLinksForPaginatedNodesParams) ([]db.GetLinksForPaginatedNodesRow, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func TestGraphHandler_TimeoutHandling(t *testing.T) {
+	// Create a fresh cache for this test
+	testCache := cache.NewMockCache()
+
+	h := &Handler{
+		queries: &fakeTimeoutQueries{},
+		cache:   testCache,
+	}
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/graph", nil)
 	h.GetGraphData(rr, req)
@@ -208,13 +266,38 @@ func (f *fakeGraphQueriesWithPositions) GetPrecalculatedGraphDataNoPos(ctx conte
 	return nil, nil
 }
 
+func (f *fakeGraphQueriesWithPositions) GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error) {
+	return []db.GetEdgeBundlesRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetCommunitySupernodesWithPositions(ctx context.Context) ([]db.GetCommunitySupernodesWithPositionsRow, error) {
+	return []db.GetCommunitySupernodesWithPositionsRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetCommunityLinks(ctx context.Context, limit int32) ([]db.GetCommunityLinksRow, error) {
+	return []db.GetCommunityLinksRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetNodesInBoundingBox(ctx context.Context, arg db.GetNodesInBoundingBoxParams) ([]db.GetNodesInBoundingBoxRow, error) {
+	return []db.GetNodesInBoundingBoxRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
+	return []db.GetLinksForNodesInBoundingBoxRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetPaginatedGraphNodes(ctx context.Context, arg db.GetPaginatedGraphNodesParams) ([]db.GetPaginatedGraphNodesRow, error) {
+	return []db.GetPaginatedGraphNodesRow{}, nil
+}
+
+func (f *fakeGraphQueriesWithPositions) GetLinksForPaginatedNodes(ctx context.Context, arg db.GetLinksForPaginatedNodesParams) ([]db.GetLinksForPaginatedNodesRow, error) {
+	return []db.GetLinksForPaginatedNodesRow{}, nil
+}
+
 func TestGraphHandler_WithPositions(t *testing.T) {
 	// Clear cache before test
-	graphCacheMu.Lock()
-	graphCache = make(map[string]graphCacheEntry)
-	graphCacheMu.Unlock()
 
-	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}, cache: cache.NewMockCache()}
 
 	// Test with with_positions=true
 	t.Run("with_positions=true", func(t *testing.T) {
@@ -261,9 +344,6 @@ func TestGraphHandler_WithPositions(t *testing.T) {
 	// Test without with_positions parameter (should not include positions)
 	t.Run("without_positions", func(t *testing.T) {
 		// Clear cache
-		graphCacheMu.Lock()
-		graphCache = make(map[string]graphCacheEntry)
-		graphCacheMu.Unlock()
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/graph", nil)
@@ -372,11 +452,8 @@ func TestCacheKey(t *testing.T) {
 // use separate cache entries and don't interfere with each other
 func TestGraphHandler_CacheKeyIsolation(t *testing.T) {
 	// Clear cache before test
-	graphCacheMu.Lock()
-	graphCache = make(map[string]graphCacheEntry)
-	graphCacheMu.Unlock()
 
-	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}, cache: cache.NewMockCache()}
 
 	// Request 1: with_positions=true
 	rr1 := httptest.NewRecorder()
@@ -436,9 +513,7 @@ func TestGraphHandler_CacheKeyIsolation(t *testing.T) {
 	}
 
 	// Verify we have two separate cache entries
-	graphCacheMu.Lock()
-	cacheSize := len(graphCache)
-	graphCacheMu.Unlock()
+	cacheSize := h.cache.Stats().Items
 
 	if cacheSize != 2 {
 		t.Errorf("expected 2 cache entries (one with positions, one without), got %d", cacheSize)
@@ -448,11 +523,8 @@ func TestGraphHandler_CacheKeyIsolation(t *testing.T) {
 // TestGraphHandler_CacheBehavior verifies cache hit/miss scenarios
 func TestGraphHandler_CacheBehavior(t *testing.T) {
 	// Clear cache before test
-	graphCacheMu.Lock()
-	graphCache = make(map[string]graphCacheEntry)
-	graphCacheMu.Unlock()
 
-	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}, cache: cache.NewMockCache()}
 
 	// First request - cache miss
 	rr1 := httptest.NewRecorder()
@@ -489,9 +561,7 @@ func TestGraphHandler_CacheBehavior(t *testing.T) {
 	}
 
 	// Verify we now have 2 cache entries
-	graphCacheMu.Lock()
-	cacheSize := len(graphCache)
-	graphCacheMu.Unlock()
+	cacheSize := h.cache.Stats().Items
 
 	if cacheSize != 2 {
 		t.Errorf("expected 2 cache entries for different parameters, got %d", cacheSize)
@@ -501,11 +571,8 @@ func TestGraphHandler_CacheBehavior(t *testing.T) {
 // TestGraphHandler_CacheKeyWithTypes verifies type filtering in cache keys
 func TestGraphHandler_CacheKeyWithTypes(t *testing.T) {
 	// Clear cache before test
-	graphCacheMu.Lock()
-	graphCache = make(map[string]graphCacheEntry)
-	graphCacheMu.Unlock()
 
-	h := &Handler{queries: &fakeGraphQueriesWithPositions{}}
+	h := &Handler{queries: &fakeGraphQueriesWithPositions{}, cache: cache.NewMockCache()}
 
 	// Request 1: no type filter
 	rr1 := httptest.NewRecorder()
@@ -535,11 +602,143 @@ func TestGraphHandler_CacheKeyWithTypes(t *testing.T) {
 	}
 
 	// Verify we have 3 separate cache entries
-	graphCacheMu.Lock()
-	cacheSize := len(graphCache)
-	graphCacheMu.Unlock()
+	cacheSize := h.cache.Stats().Items
 
 	if cacheSize != 3 {
 		t.Errorf("expected 3 cache entries for different type filters, got %d", cacheSize)
 	}
+}
+
+// Test for GetEdgeBundles endpoint
+func TestGetEdgeBundles(t *testing.T) {
+	h := &Handler{
+		queries: &edgeBundleTestQueries{},
+		cache:   cache.NewMockCache(),
+	}
+
+	t.Run("returns_bundles", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/graph/bundles?min_weight=1", nil)
+		h.GetEdgeBundles(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+
+		var out EdgeBundlesResponse
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+
+		if len(out.Bundles) != 2 {
+			t.Fatalf("expected 2 bundles, got %d", len(out.Bundles))
+		}
+
+		// Check first bundle
+		if out.Bundles[0].SourceCommunity != 1 || out.Bundles[0].TargetCommunity != 2 {
+			t.Fatalf("unexpected bundle: %+v", out.Bundles[0])
+		}
+		if out.Bundles[0].Weight != 10 {
+			t.Fatalf("expected weight 10, got %d", out.Bundles[0].Weight)
+		}
+		if out.Bundles[0].ControlPoint == nil {
+			t.Fatalf("expected control point to be present")
+		}
+	})
+
+	t.Run("respects_min_weight", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/graph/bundles?min_weight=6", nil)
+		h.GetEdgeBundles(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+
+		var out EdgeBundlesResponse
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+
+		// Should only return bundles with weight >= 6 (i.e., the first one with weight 10)
+		if len(out.Bundles) != 1 {
+			t.Fatalf("expected 1 bundle, got %d", len(out.Bundles))
+		}
+	})
+}
+
+// edgeBundleTestQueries is a mock that implements GraphDataReader for edge bundle tests
+type edgeBundleTestQueries struct{}
+
+func (e *edgeBundleTestQueries) GetGraphData(ctx context.Context) ([]json.RawMessage, error) {
+	return nil, nil
+}
+
+func (e *edgeBundleTestQueries) GetPrecalculatedGraphDataCappedAll(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedAllParams) ([]db.GetPrecalculatedGraphDataCappedAllRow, error) {
+	return nil, nil
+}
+
+func (e *edgeBundleTestQueries) GetPrecalculatedGraphDataCappedFiltered(ctx context.Context, arg db.GetPrecalculatedGraphDataCappedFilteredParams) ([]db.GetPrecalculatedGraphDataCappedFilteredRow, error) {
+	return nil, nil
+}
+
+func (e *edgeBundleTestQueries) GetPrecalculatedGraphDataNoPos(ctx context.Context) ([]db.GetPrecalculatedGraphDataNoPosRow, error) {
+	return nil, nil
+}
+
+func (e *edgeBundleTestQueries) GetEdgeBundles(ctx context.Context, weight int32) ([]db.GetEdgeBundlesRow, error) {
+	// Return mock bundles based on weight filter
+	allBundles := []db.GetEdgeBundlesRow{
+		{
+			SourceCommunityID: 1,
+			TargetCommunityID: 2,
+			Weight:            10,
+			AvgStrength:       sql.NullFloat64{Float64: 1.0, Valid: true},
+			ControlX:          sql.NullFloat64{Float64: 5.0, Valid: true},
+			ControlY:          sql.NullFloat64{Float64: 10.0, Valid: true},
+			ControlZ:          sql.NullFloat64{Float64: 15.0, Valid: true},
+		},
+		{
+			SourceCommunityID: 2,
+			TargetCommunityID: 3,
+			Weight:            5,
+			AvgStrength:       sql.NullFloat64{Float64: 0.8, Valid: true},
+			ControlX:          sql.NullFloat64{Float64: 7.5, Valid: true},
+			ControlY:          sql.NullFloat64{Float64: 12.5, Valid: true},
+			ControlZ:          sql.NullFloat64{Float64: 17.5, Valid: true},
+		},
+	}
+
+	// Filter by weight
+	var result []db.GetEdgeBundlesRow
+	for _, b := range allBundles {
+		if b.Weight >= weight {
+			result = append(result, b)
+		}
+	}
+	return result, nil
+}
+
+func (e *edgeBundleTestQueries) GetCommunitySupernodesWithPositions(ctx context.Context) ([]db.GetCommunitySupernodesWithPositionsRow, error) {
+	return []db.GetCommunitySupernodesWithPositionsRow{}, nil
+}
+
+func (e *edgeBundleTestQueries) GetCommunityLinks(ctx context.Context, limit int32) ([]db.GetCommunityLinksRow, error) {
+	return []db.GetCommunityLinksRow{}, nil
+}
+
+func (e *edgeBundleTestQueries) GetNodesInBoundingBox(ctx context.Context, arg db.GetNodesInBoundingBoxParams) ([]db.GetNodesInBoundingBoxRow, error) {
+	return []db.GetNodesInBoundingBoxRow{}, nil
+}
+
+func (e *edgeBundleTestQueries) GetLinksForNodesInBoundingBox(ctx context.Context, arg db.GetLinksForNodesInBoundingBoxParams) ([]db.GetLinksForNodesInBoundingBoxRow, error) {
+	return []db.GetLinksForNodesInBoundingBoxRow{}, nil
+}
+
+func (e *edgeBundleTestQueries) GetPaginatedGraphNodes(ctx context.Context, arg db.GetPaginatedGraphNodesParams) ([]db.GetPaginatedGraphNodesRow, error) {
+	return []db.GetPaginatedGraphNodesRow{}, nil
+}
+
+func (e *edgeBundleTestQueries) GetLinksForPaginatedNodes(ctx context.Context, arg db.GetLinksForPaginatedNodesParams) ([]db.GetLinksForPaginatedNodesRow, error) {
+	return []db.GetLinksForPaginatedNodesRow{}, nil
 }

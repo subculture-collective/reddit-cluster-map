@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/apierr"
+	"github.com/onnwee/reddit-cluster-map/backend/internal/cache"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/config"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/db"
 	"github.com/onnwee/reddit-cluster-map/backend/internal/metrics"
@@ -29,18 +29,6 @@ type CommunityDataReader interface {
 	GetCommunitySubgraph(ctx context.Context, arg db.GetCommunitySubgraphParams) ([]db.GetCommunitySubgraphRow, error)
 }
 
-// communityCacheEntry holds a cached community response and its expiry.
-type communityCacheEntry struct {
-	data      []byte
-	expiresAt time.Time
-}
-
-var (
-	communityCache    = make(map[string]communityCacheEntry)
-	communityCacheMu  sync.Mutex
-	communityCacheTTL = 60 * time.Second
-)
-
 func communityCacheKey(maxNodes, maxLinks int, withPositions bool) string {
 	key := "communities:" + strconv.Itoa(maxNodes) + ":" + strconv.Itoa(maxLinks)
 	if withPositions {
@@ -49,11 +37,17 @@ func communityCacheKey(maxNodes, maxLinks int, withPositions bool) string {
 	return key
 }
 
-type CommunityHandler struct{ queries CommunityDataReader }
+type CommunityHandler struct {
+	queries CommunityDataReader
+	cache   cache.Cache
+}
 
 // NewCommunityHandler creates a new community handler.
-func NewCommunityHandler(q CommunityDataReader) *CommunityHandler {
-	return &CommunityHandler{queries: q}
+func NewCommunityHandler(q CommunityDataReader, c cache.Cache) *CommunityHandler {
+	return &CommunityHandler{
+		queries: q,
+		cache:   c,
+	}
 }
 
 // GetCommunities returns supernodes (communities) and inter-community weighted links.
@@ -79,17 +73,12 @@ func (h *CommunityHandler) GetCommunities(w http.ResponseWriter, r *http.Request
 
 	// Check cache first
 	key := communityCacheKey(maxNodes, maxLinks, withPos)
-	now := time.Now()
-	communityCacheMu.Lock()
-	entry, found := communityCache[key]
-	if found && entry.expiresAt.After(now) {
-		communityCacheMu.Unlock()
+	if cachedData, found := h.cache.Get(key); found {
 		metrics.APICacheHits.WithLabelValues("communities").Inc()
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(entry.data)
+		w.Write(cachedData)
 		return
 	}
-	communityCacheMu.Unlock()
 	metrics.APICacheMisses.WithLabelValues("communities").Inc()
 
 	// Fetch community supernodes
@@ -126,10 +115,18 @@ func (h *CommunityHandler) GetCommunities(w http.ResponseWriter, r *http.Request
 			Val:  v,
 			Type: "community",
 		}
-		if withPos && row.PosX != 0 && row.PosY != 0 {
-			x := row.PosX
-			y := row.PosY
-			z := row.PosZ
+		if withPos {
+			// Convert interface{} to float64 (sqlc generates interface{} for COALESCE results)
+			var x, y, z float64
+			if posX, ok := row.PosX.(float64); ok {
+				x = posX
+			}
+			if posY, ok := row.PosY.(float64); ok {
+				y = posY
+			}
+			if posZ, ok := row.PosZ.(float64); ok {
+				z = posZ
+			}
 			gn.X = &x
 			gn.Y = &y
 			gn.Z = &z
@@ -152,9 +149,7 @@ func (h *CommunityHandler) GetCommunities(w http.ResponseWriter, r *http.Request
 	w.Write(b)
 
 	// Store in cache
-	communityCacheMu.Lock()
-	communityCache[key] = communityCacheEntry{data: b, expiresAt: time.Now().Add(communityCacheTTL)}
-	communityCacheMu.Unlock()
+	h.cache.Set(key, b, 0)
 }
 
 // GetCommunityByID returns the subgraph of a specific community.
@@ -191,17 +186,12 @@ func (h *CommunityHandler) GetCommunityByID(w http.ResponseWriter, r *http.Reque
 	if withPos {
 		key += ":pos"
 	}
-	now := time.Now()
-	communityCacheMu.Lock()
-	entry, found := communityCache[key]
-	if found && entry.expiresAt.After(now) {
-		communityCacheMu.Unlock()
+	if cachedData, found := h.cache.Get(key); found {
 		metrics.APICacheHits.WithLabelValues("community_subgraph").Inc()
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(entry.data)
+		w.Write(cachedData)
 		return
 	}
-	communityCacheMu.Unlock()
 	metrics.APICacheMisses.WithLabelValues("community_subgraph").Inc()
 
 	// Verify community exists
@@ -288,7 +278,5 @@ func (h *CommunityHandler) GetCommunityByID(w http.ResponseWriter, r *http.Reque
 	w.Write(b)
 
 	// Store in cache
-	communityCacheMu.Lock()
-	communityCache[key] = communityCacheEntry{data: b, expiresAt: time.Now().Add(communityCacheTTL)}
-	communityCacheMu.Unlock()
+	h.cache.Set(key, b, 0)
 }

@@ -84,6 +84,20 @@ describe('urlState', () => {
       const state = readStateFromURL();
       expect(state.usePrecomputedLayout).toBe(false);
     });
+
+    it('reads size attenuation setting from URL', () => {
+      window.location = { search: '?sizeAttenuation=1' } as Location;
+      
+      const state = readStateFromURL();
+      expect(state.sizeAttenuation).toBe(true);
+    });
+
+    it('reads size attenuation disabled from URL', () => {
+      window.location = { search: '?sizeAttenuation=0' } as Location;
+      
+      const state = readStateFromURL();
+      expect(state.sizeAttenuation).toBe(false);
+    });
   });
 
   describe('writeStateToURL', () => {
@@ -149,6 +163,32 @@ describe('urlState', () => {
       const url = mockReplaceState.mock.calls[0][2];
       expect(url).toContain('cam3d_x=100.00');
       expect(url).toContain('cam2d_zoom=1.50');
+    });
+
+    it('writes size attenuation to URL', () => {
+      const mockReplaceState = vi.fn();
+      delete (window as any).history;
+      window.history = { replaceState: mockReplaceState } as any;
+      window.location = { search: '', pathname: '/test' } as Location;
+
+      const state: AppState = { sizeAttenuation: true };
+      writeStateToURL(state);
+
+      const url = mockReplaceState.mock.calls[0][2];
+      expect(url).toContain('sizeAttenuation=1');
+    });
+
+    it('writes size attenuation disabled to URL', () => {
+      const mockReplaceState = vi.fn();
+      delete (window as any).history;
+      window.history = { replaceState: mockReplaceState } as any;
+      window.location = { search: '', pathname: '/test' } as Location;
+
+      const state: AppState = { sizeAttenuation: false };
+      writeStateToURL(state);
+
+      const url = mockReplaceState.mock.calls[0][2];
+      expect(url).toContain('sizeAttenuation=0');
     });
   });
 

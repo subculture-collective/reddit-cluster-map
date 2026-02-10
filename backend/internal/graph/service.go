@@ -83,6 +83,15 @@ type GraphStore interface {
 	ListPostsBySubreddit(ctx context.Context, arg db.ListPostsBySubredditParams) ([]db.Post, error)
 	ListCommentsByPost(ctx context.Context, postID string) ([]db.Comment, error)
 	GetUserTotalActivity(ctx context.Context, authorID int32) (int32, error)
+	// Incremental precalculation
+	GetPrecalcState(ctx context.Context) (db.PrecalcState, error)
+	UpdatePrecalcState(ctx context.Context, arg db.UpdatePrecalcStateParams) error
+	GetChangedSubredditsSince(ctx context.Context, updatedAt sql.NullTime) ([]db.GetChangedSubredditsSinceRow, error)
+	GetChangedUsersSince(ctx context.Context, updatedAt sql.NullTime) ([]db.GetChangedUsersSinceRow, error)
+	CountChangedEntities(ctx context.Context, updatedAt sql.NullTime) (db.CountChangedEntitiesRow, error)
+	GetUserActivitySince(ctx context.Context, updatedAt sql.NullTime) ([]db.GetUserActivitySinceRow, error)
+	GetAffectedUserIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error)
+	GetAffectedSubredditIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error)
 }
 
 func NewService(store GraphStore) *Service { return &Service{store: store} }
@@ -249,24 +258,122 @@ func (s *Service) CalculateUserActivity(ctx context.Context) error {
 
 // PrecalculateGraphData builds nodes and links. It preserves existing graph rows unless PRECALC_CLEAR_ON_START is set.
 func (s *Service) PrecalculateGraphData(ctx context.Context) error {
+	return s.PrecalculateGraphDataWithMode(ctx, false)
+}
+
+// PrecalculateGraphDataWithMode builds nodes and links with support for full or incremental mode
+// fullRebuild: if true, forces a full rebuild regardless of env vars
+func (s *Service) PrecalculateGraphDataWithMode(ctx context.Context, fullRebuild bool) error {
 	ctx, span := tracing.StartSpan(ctx, "graph.PrecalculateGraphData")
 	defer span.End()
 
 	logger.InfoContext(ctx, "Starting graph data precalculation")
 	startTime := time.Now()
+	
+	// Track success/failure for proper state updates (must be function-level for defer)
+	var precalcErr error
+	var incrementalMode bool
+	
 	defer func() {
 		duration := time.Since(startTime)
-		logger.InfoContext(ctx, "Graph precalculation completed", "duration", duration)
+		
+		if precalcErr != nil {
+			logger.InfoContext(ctx, "Graph precalculation failed", "duration", duration, "error", precalcErr)
+			span.SetStatus(codes.Error, precalcErr.Error())
+		} else {
+			logger.InfoContext(ctx, "Graph precalculation completed", "duration", duration, "incremental", incrementalMode)
+		}
 		span.SetAttributes(attribute.String("total_duration", duration.String()))
 	}()
+	
+	// Get precalc state to determine if incremental update is possible
+	precalcState, err := s.store.GetPrecalcState(ctx)
+	var lastPrecalcAt sql.NullTime
+	if err != nil {
+		logger.Warn("Failed to get precalc state, assuming first run", "error", err)
+		fullRebuild = true
+	} else {
+		lastPrecalcAt = precalcState.LastPrecalcAt
+		if !lastPrecalcAt.Valid {
+			logger.InfoContext(ctx, "No previous precalculation found, running full build")
+			fullRebuild = true
+		}
+	}
+	
+	// Determine mode: incremental or full rebuild
+	incrementalMode = !fullRebuild && !config.Load().GetEnvBool("PRECALC_CLEAR_ON_START", false)
+	
+	// Count changes if in incremental mode
+	var changePercent float64
+	if incrementalMode {
+		counts, err := s.store.CountChangedEntities(ctx, lastPrecalcAt)
+		if err != nil {
+			logger.Warn("Failed to count changed entities, falling back to full rebuild", "error", err)
+			incrementalMode = false
+		} else {
+			totalChanges := counts.ChangedSubreddits + counts.ChangedUsers + counts.ChangedPosts + counts.ChangedComments
+			totalEntities := int64(precalcState.TotalNodes.Int32) + int64(precalcState.TotalLinks.Int32)
+			if totalEntities > 0 {
+				changePercent = float64(totalChanges) / float64(totalEntities) * 100
+			}
+			logger.InfoContext(ctx, "Change detection",
+				"changed_subreddits", counts.ChangedSubreddits,
+				"changed_users", counts.ChangedUsers,
+				"changed_posts", counts.ChangedPosts,
+				"changed_comments", counts.ChangedComments,
+				"total_changes", totalChanges,
+				"change_percent", changePercent,
+			)
+			
+			// If changes exceed 20%, do a full rebuild instead
+			if changePercent > 20 {
+				logger.InfoContext(ctx, "Change percentage exceeds threshold, running full rebuild", "change_percent", changePercent)
+				incrementalMode = false
+			}
+		}
+	}
+	
+	span.SetAttributes(
+		attribute.Bool("incremental_mode", incrementalMode),
+		attribute.Float64("change_percent", changePercent),
+	)
+	
+	if incrementalMode {
+		logger.InfoContext(ctx, "Running incremental precalculation", "last_precalc_at", lastPrecalcAt.Time, "change_percent", changePercent)
+	} else {
+		logger.InfoContext(ctx, "Running full precalculation rebuild")
+	}
+	
+	defer func() {
+		duration := time.Since(startTime)
+		logger.InfoContext(ctx, "Graph precalculation completed", "duration", duration, "incremental", incrementalMode)
+		span.SetAttributes(attribute.String("total_duration", duration.String()))
+		
+		// Update precalc state
+		durationMs := int32(duration.Milliseconds())
+		var fullPrecalcTime sql.NullTime
+		if !incrementalMode {
+			fullPrecalcTime = sql.NullTime{Time: time.Now(), Valid: true}
+		}
+		if err := s.store.UpdatePrecalcState(ctx, db.UpdatePrecalcStateParams{
+			LastPrecalcAt:     sql.NullTime{Time: time.Now(), Valid: true},
+			LastFullPrecalcAt: fullPrecalcTime,
+			TotalNodes:        sql.NullInt32{Int32: 0, Valid: false}, // Will be updated later
+			TotalLinks:        sql.NullInt32{Int32: 0, Valid: false}, // Will be updated later
+			PrecalcDurationMs: sql.NullInt32{Int32: durationMs, Valid: true},
+		}); err != nil {
+			logger.Warn("Failed to update precalc state", "error", err)
+		}
+	}()
 
-	// Optional clear on start (must happen before node/link inserts)
-	if config.Load().GetEnvBool("PRECALC_CLEAR_ON_START", false) {
+	// Optional clear on start (for full rebuild)
+	if !incrementalMode {
 		span.AddEvent("clearing_graph_tables")
 		if err := s.store.ClearGraphTables(ctx); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "failed to clear graph tables")
-			return fmt.Errorf("failed to clear graph tables: %w", err)
+			precalcErr = fmt.Errorf("failed to clear graph tables: %w", err)
+			return precalcErr
 		}
 		logger.InfoContext(ctx, "Cleared existing graph data")
 	} else {
@@ -285,17 +392,95 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	)
 
 	// Users & Subreddits -> nodes (batched upsert inside single transaction for speed)
-	usersWithActivity, err := s.store.ListUsersWithActivity(ctx)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to fetch user activity")
-		return fmt.Errorf("failed to fetch user activity totals: %w", err)
-	}
-	subreddits, err := s.store.GetAllSubreddits(ctx)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to fetch subreddits")
-		return fmt.Errorf("failed to fetch subreddits: %w", err)
+	// In incremental mode, only fetch changed entities
+	var usersWithActivity []db.ListUsersWithActivityRow
+	var subreddits []db.GetAllSubredditsRow
+	
+	if incrementalMode {
+		// Fetch changed users: both users with changed content AND users with profile updates
+		// First get users with changed posts/comments
+		usersFromActivity, err := s.store.GetUserActivitySince(ctx, lastPrecalcAt)
+		if err != nil {
+			span.RecordError(err)
+			precalcErr = fmt.Errorf("failed to fetch users with changed activity: %w", err)
+			return precalcErr
+		}
+		
+		// Also get users whose profiles were updated (username changes, etc.)
+		usersFromProfile, err := s.store.GetChangedUsersSince(ctx, lastPrecalcAt)
+		if err != nil {
+			span.RecordError(err)
+			precalcErr = fmt.Errorf("failed to fetch users with profile changes: %w", err)
+			return precalcErr
+		}
+		
+		// Merge both lists, deduplicating by user ID
+		userMap := make(map[int32]db.ListUsersWithActivityRow)
+		for _, u := range usersFromActivity {
+			userMap[u.ID] = db.ListUsersWithActivityRow{
+				ID:            u.ID,
+				Username:      u.Username,
+				TotalActivity: u.TotalActivity,
+			}
+		}
+		// Add profile-changed users (if not already in map, fetch their activity)
+		for _, u := range usersFromProfile {
+			if _, exists := userMap[u.ID]; !exists {
+				// Get their total activity
+				totalActivity, err := s.store.GetUserTotalActivity(ctx, u.ID)
+				if err != nil {
+					logger.Warn("Failed to get total activity for user", "user_id", u.ID, "error", err)
+					totalActivity = 0
+				}
+				userMap[u.ID] = db.ListUsersWithActivityRow{
+					ID:            u.ID,
+					Username:      u.Username,
+					TotalActivity: int32(totalActivity),
+				}
+			}
+		}
+		
+		// Convert map to slice
+		for _, u := range userMap {
+			usersWithActivity = append(usersWithActivity, u)
+		}
+		
+		changedSubs, err := s.store.GetChangedSubredditsSince(ctx, lastPrecalcAt)
+		if err != nil {
+			span.RecordError(err)
+			precalcErr = fmt.Errorf("failed to fetch changed subreddits: %w", err)
+			return precalcErr
+		}
+		// Convert to compatible type
+		for _, sr := range changedSubs {
+			subreddits = append(subreddits, db.GetAllSubredditsRow{
+				ID:          sr.ID,
+				Name:        sr.Name,
+				Subscribers: sr.Subscribers,
+			})
+		}
+		
+		logger.InfoContext(ctx, "Incremental mode: processing only changed entities",
+			"changed_users", len(usersWithActivity),
+			"changed_subreddits", len(subreddits),
+		)
+	} else {
+		// Full rebuild: fetch all
+		var err error
+		usersWithActivity, err = s.store.ListUsersWithActivity(ctx)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to fetch user activity")
+			precalcErr = fmt.Errorf("failed to fetch user activity totals: %w", err)
+			return precalcErr
+		}
+		subreddits, err = s.store.GetAllSubreddits(ctx)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to fetch subreddits")
+			precalcErr = fmt.Errorf("failed to fetch subreddits: %w", err)
+			return precalcErr
+		}
 	}
 
 	span.SetAttributes(
@@ -373,19 +558,23 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 		if sqldb, ok2 := rawDBTX.(*sql.DB); ok2 {
 			tx, err := sqldb.BeginTx(ctx, &sql.TxOptions{})
 			if err != nil {
-				return fmt.Errorf("begin tx: %w", err)
+				precalcErr = fmt.Errorf("begin tx: %w", err)
+				return precalcErr
 			}
 			txQueries := q.WithTx(tx)
 			if err := txQueries.BatchUpsertGraphNodes(ctx, nodeParams, nodeBatchSize); err != nil {
 				_ = tx.Rollback()
-				return fmt.Errorf("batch upsert nodes: %w", err)
+				precalcErr = fmt.Errorf("batch upsert nodes: %w", err)
+				return precalcErr
 			}
 			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("commit node tx: %w", err)
+				precalcErr = fmt.Errorf("commit node tx: %w", err)
+				return precalcErr
 			}
 		} else {
 			if err := q.BatchUpsertGraphNodes(ctx, nodeParams, nodeBatchSize); err != nil {
-				return fmt.Errorf("batch upsert nodes: %w", err)
+				precalcErr = fmt.Errorf("batch upsert nodes: %w", err)
+				return precalcErr
 			}
 		}
 		dur := time.Since(start)
@@ -395,10 +584,12 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	}
 
 	if err := s.CalculateUserActivity(ctx); err != nil {
-		return fmt.Errorf("failed to calculate user activity: %w", err)
+		precalcErr = fmt.Errorf("failed to calculate user activity: %w", err)
+		return precalcErr
 	}
 	if err := s.CalculateSubredditRelationships(ctx); err != nil {
-		return fmt.Errorf("failed to calculate subreddit relationships: %w", err)
+		precalcErr = fmt.Errorf("failed to calculate subreddit relationships: %w", err)
+		return precalcErr
 	}
 
 	// Detailed content graph (optional)
@@ -611,7 +802,8 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	// Subreddit relationships -> links
 	relationships, err := s.store.GetAllSubredditRelationships(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to fetch relationships: %w", err)
+		precalcErr = fmt.Errorf("failed to fetch relationships: %w", err)
+		return precalcErr
 	}
 	relLinks := 0
 	for _, rel := range relationships {
@@ -627,7 +819,8 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	// User activity -> links (idempotent)
 	acts, err := s.store.GetAllUserSubredditActivity(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to fetch activities: %w", err)
+		precalcErr = fmt.Errorf("failed to fetch activities: %w", err)
+		return precalcErr
 	}
 	actLinks := 0
 	for _, a := range acts {
@@ -664,12 +857,43 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 
 	log.Printf("🎉 Graph data precalculation completed successfully")
 
-	// Run community detection and store results
+	// Run hierarchical community detection and store results
 	if queries, ok := s.store.(*db.Queries); ok {
-		if result, nodes, links, err := s.detectCommunities(ctx, queries); err != nil {
-			log.Printf("⚠️ community detection failed: %v", err)
-		} else if err := s.storeCommunities(ctx, queries, result, nodes, links); err != nil {
-			log.Printf("⚠️ failed to store communities: %v", err)
+		// Fetch nodes and links for community detection
+		nodes, err := queries.ListGraphNodesByWeight(ctx, 50000)
+		if err != nil {
+			log.Printf("⚠️ failed to fetch nodes for community detection: %v", err)
+		} else if len(nodes) == 0 {
+			log.Printf("ℹ️ No nodes found for community detection")
+		} else {
+			nodeIDs := make([]string, len(nodes))
+			for i, n := range nodes {
+				nodeIDs[i] = n.ID
+			}
+			links, err := queries.ListGraphLinksAmong(ctx, nodeIDs)
+			if err != nil {
+				log.Printf("⚠️ failed to fetch links for community detection: %v", err)
+			} else {
+				// Run hierarchical community detection
+				hierarchy, err := s.detectHierarchicalCommunities(ctx, queries, nodes, links)
+				if err != nil {
+					log.Printf("⚠️ hierarchical community detection failed: %v", err)
+				} else if err := s.storeHierarchy(ctx, queries, hierarchy); err != nil {
+					log.Printf("⚠️ failed to store hierarchy: %v", err)
+				}
+
+				// Also run flat community detection for backward compatibility (reuse same nodes/links)
+				if result, err := s.detectCommunitiesFromData(nodes, links); err != nil {
+					log.Printf("⚠️ community detection failed: %v", err)
+				} else if nodeToCommunity, err := s.storeCommunities(ctx, queries, result, nodes, links); err != nil {
+					log.Printf("⚠️ failed to store communities: %v", err)
+				} else {
+					// Compute and store edge bundles after communities are stored
+					if err := s.computeAndStoreEdgeBundles(ctx, queries, nodeToCommunity, nodes, links); err != nil {
+						log.Printf("⚠️ failed to compute edge bundles: %v", err)
+					}
+				}
+			}
 		}
 	} else {
 		log.Printf("ℹ️ community detection skipped: store is not *db.Queries")
@@ -679,6 +903,39 @@ func (s *Service) PrecalculateGraphData(ctx context.Context) error {
 	if err := s.computeAndStoreLayout(ctx); err != nil {
 		log.Printf("⚠️ layout computation failed: %v", err)
 	}
+	
+	// Count final nodes and links for state tracking
+	var totalNodes, totalLinks int32
+	if queries, ok := s.store.(*db.Queries); ok {
+		rawDB := queries.DB()
+		if sqlDB, ok := rawDB.(*sql.DB); ok {
+			if err := sqlDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_nodes").Scan(&totalNodes); err != nil {
+				logger.Warn("Failed to count nodes", "error", err)
+			}
+			if err := sqlDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_links").Scan(&totalLinks); err != nil {
+				logger.Warn("Failed to count links", "error", err)
+			}
+		}
+	}
+	
+	// Update precalc state on success. Use startTime as the cutoff to avoid missing
+	// updates that occur during the run.
+	duration := time.Since(startTime)
+	durationMs := int32(duration.Milliseconds())
+	var fullPrecalcTime sql.NullTime
+	if !incrementalMode {
+		fullPrecalcTime = sql.NullTime{Time: startTime, Valid: true}
+	}
+	if err := s.store.UpdatePrecalcState(ctx, db.UpdatePrecalcStateParams{
+		LastPrecalcAt:     sql.NullTime{Time: startTime, Valid: true},
+		LastFullPrecalcAt: fullPrecalcTime,
+		TotalNodes:        sql.NullInt32{Int32: totalNodes, Valid: true},
+		TotalLinks:        sql.NullInt32{Int32: totalLinks, Valid: true},
+		PrecalcDurationMs: sql.NullInt32{Int32: durationMs, Valid: true},
+	}); err != nil {
+		logger.Warn("Failed to update precalc state", "error", err)
+	}
+	
 	return nil
 }
 
@@ -739,8 +996,9 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	iterations := cfg.LayoutIterations
 	batchSize := cfg.LayoutBatchSize
 	epsilon := cfg.LayoutEpsilon
+	theta := cfg.LayoutTheta
 
-	log.Printf("⚙️ layout configuration: max_nodes=%d, iterations=%d, batch_size=%d, epsilon=%.2f", maxNodes, iterations, batchSize, epsilon)
+	log.Printf("⚙️ layout configuration: max_nodes=%d, iterations=%d, batch_size=%d, epsilon=%.2f, theta=%.2f", maxNodes, iterations, batchSize, epsilon, theta)
 
 	if maxNodes <= 0 || iterations <= 0 {
 		log.Printf("ℹ️ layout computation disabled via configuration")
@@ -815,7 +1073,8 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 	cool := R / float64(iterations)
 	dispX := make([]float64, N)
 	dispY := make([]float64, N)
-	var rep = func(dist float64) float64 { return (k * k) / dist }
+	repX := make([]float64, N) // Reusable buffer for Barnes-Hut forces
+	repY := make([]float64, N)
 	var attr = func(dist float64) float64 { return (dist * dist) / k }
 
 	layoutComputeStart := time.Now()
@@ -823,23 +1082,16 @@ func (s *Service) computeAndStoreLayout(ctx context.Context) error {
 		for i := 0; i < N; i++ {
 			dispX[i], dispY[i] = 0, 0
 		}
-		for v := 0; v < N; v++ {
-			for u := v + 1; u < N; u++ {
-				dx := X[v] - X[u]
-				dy := Y[v] - Y[u]
-				dist := math.Hypot(dx, dy)
-				if dist < 1e-6 {
-					dx, dy, dist = (randFloat() - 0.5), (randFloat() - 0.5), 1
-				}
-				force := rep(dist)
-				rx := dx / dist * force
-				ry := dy / dist * force
-				dispX[v] += rx
-				dispY[v] += ry
-				dispX[u] -= rx
-				dispY[u] -= ry
-			}
+
+		// Use Barnes-Hut for O(n log n) repulsive forces (writes into repX, repY)
+		repStrength := k * k
+		calculateBarnesHutForces(X, Y, repX, repY, theta, repStrength)
+		for i := 0; i < N; i++ {
+			dispX[i] += repX[i]
+			dispY[i] += repY[i]
 		}
+
+		// Attractive forces along edges (still O(E))
 		for _, e := range E {
 			dx := X[e.a] - X[e.b]
 			dy := Y[e.a] - Y[e.b]

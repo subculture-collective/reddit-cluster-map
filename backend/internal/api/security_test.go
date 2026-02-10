@@ -19,7 +19,7 @@ func TestSecurityHeaders(t *testing.T) {
 	t.Log("- Content-Security-Policy: default-src 'self'")
 	t.Log("- Permissions-Policy: geolocation=()")
 	t.Log("See backend/internal/middleware/security_test.go for actual tests")
-	
+
 	// This test always passes as it's documentation
 	return
 }

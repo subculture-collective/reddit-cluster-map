@@ -299,7 +299,7 @@ LEFT JOIN (
 ORDER BY total_activity DESC, u.id;
 
 -- name: ListGraphNodesByWeight :many
-SELECT id, name, val, type
+SELECT id, name, val, type, pos_x, pos_y, pos_z
 FROM graph_nodes gn
 ORDER BY (
     CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
@@ -375,9 +375,9 @@ WITH community_stats AS (
         gc.label,
         gc.size,
         gc.modularity,
-        AVG(gn.pos_x) as avg_x,
-        AVG(gn.pos_y) as avg_y,
-        AVG(gn.pos_z) as avg_z
+        COALESCE(AVG(gn.pos_x), 0) as avg_x,
+        COALESCE(AVG(gn.pos_y), 0) as avg_y,
+        COALESCE(AVG(gn.pos_z), 0) as avg_z
     FROM graph_communities gc
     LEFT JOIN graph_community_members gcm ON gc.id = gcm.community_id
     LEFT JOIN graph_nodes gn ON gcm.node_id = gn.id
@@ -449,6 +449,46 @@ WHERE gl.source IN (SELECT node_id FROM member_nodes)
 ORDER BY data_type, id
 LIMIT $2;
 
+-- ============================================================
+-- Edge Bundle Queries
+-- ============================================================
+
+-- name: ClearEdgeBundles :exec
+TRUNCATE TABLE graph_bundles;
+
+-- name: CreateEdgeBundle :exec
+INSERT INTO graph_bundles (
+    source_community_id,
+    target_community_id,
+    weight,
+    avg_strength,
+    control_x,
+    control_y,
+    control_z
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+) ON CONFLICT (source_community_id, target_community_id)
+DO UPDATE SET 
+    weight = EXCLUDED.weight,
+    avg_strength = EXCLUDED.avg_strength,
+    control_x = EXCLUDED.control_x,
+    control_y = EXCLUDED.control_y,
+    control_z = EXCLUDED.control_z,
+    updated_at = now();
+
+-- name: GetEdgeBundles :many
+SELECT
+    source_community_id,
+    target_community_id,
+    weight,
+    avg_strength,
+    control_x,
+    control_y,
+    control_z
+FROM graph_bundles
+WHERE weight >= $1
+ORDER BY weight DESC;
+
 -- name: SearchGraphNodes :many
 -- Fuzzy search for graph nodes by name or ID
 -- Uses ILIKE for case-insensitive partial matching
@@ -474,4 +514,317 @@ ORDER BY
         ELSE 2
     END,
     CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END DESC
+LIMIT $2;
+
+-- ============================================================
+-- Community Hierarchy Queries
+-- ============================================================
+
+-- name: ClearCommunityHierarchy :exec
+TRUNCATE TABLE graph_community_hierarchy;
+
+-- name: InsertCommunityHierarchy :exec
+INSERT INTO graph_community_hierarchy (
+    node_id,
+    level,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+) ON CONFLICT (node_id, level) DO UPDATE SET
+    community_id = EXCLUDED.community_id,
+    parent_community_id = EXCLUDED.parent_community_id,
+    centroid_x = EXCLUDED.centroid_x,
+    centroid_y = EXCLUDED.centroid_y,
+    centroid_z = EXCLUDED.centroid_z;
+
+-- name: GetCommunityHierarchy :many
+SELECT 
+    node_id,
+    level,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+FROM graph_community_hierarchy
+ORDER BY level, community_id, node_id;
+
+-- name: GetNodesAtLevel :many
+SELECT 
+    node_id,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+FROM graph_community_hierarchy
+WHERE level = $1
+ORDER BY community_id, node_id;
+
+-- name: GetHierarchyLevels :many
+SELECT DISTINCT level
+FROM graph_community_hierarchy
+ORDER BY level;
+
+-- name: GetCommunitiesAtLevel :many
+SELECT 
+    community_id,
+    COUNT(*) as member_count,
+    AVG(centroid_x) as avg_x,
+    AVG(centroid_y) as avg_y,
+    AVG(centroid_z) as avg_z
+FROM graph_community_hierarchy
+WHERE level = $1
+GROUP BY community_id
+ORDER BY member_count DESC;
+
+-- name: GetNodesInBoundingBox :many
+-- Retrieves nodes within a 3D bounding box using the spatial index
+-- Parameters: x_min, x_max, y_min, y_max, z_min, z_max, limit
+-- The spatial index (idx_graph_nodes_spatial_nonnull) makes this query efficient
+SELECT 
+    id,
+    name,
+    val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+  AND pos_z BETWEEN $5 AND $6
+ORDER BY (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, id
+LIMIT $7;
+
+-- name: GetNodesInBoundingBox2D :many
+-- Retrieves nodes within a 2D bounding box (ignoring z coordinate)
+-- Parameters: x_min, x_max, y_min, y_max, limit
+-- Useful for 2D viewport queries where z is not relevant
+-- Note: Includes pos_z IS NOT NULL to match the partial GiST index predicate (which requires all position columns to be non-null)
+SELECT 
+    id,
+    name,
+    val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+ORDER BY (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, id
+LIMIT $5;
+
+-- name: GetLinksForNodesInBoundingBox :many
+-- Retrieves links where both source and target nodes are within the bounding box
+-- Uses the same spatial filtering approach
+-- Parameters: x_min, x_max, y_min, y_max, z_min, z_max, limit
+WITH bbox_nodes AS (
+    SELECT id
+    FROM graph_nodes
+    WHERE pos_x IS NOT NULL
+      AND pos_y IS NOT NULL
+      AND pos_z IS NOT NULL
+      AND pos_x BETWEEN $1 AND $2
+      AND pos_y BETWEEN $3 AND $4
+      AND pos_z BETWEEN $5 AND $6
+)
+SELECT 
+    gl.id,
+    gl.source,
+    gl.target
+FROM graph_links gl
+WHERE EXISTS (SELECT 1 FROM bbox_nodes WHERE id = gl.source)
+  AND EXISTS (SELECT 1 FROM bbox_nodes WHERE id = gl.target)
+LIMIT $7;
+
+-- name: CountNodesInBoundingBox :one
+-- Count nodes within a bounding box (useful for pagination)
+-- Parameters: x_min, x_max, y_min, y_max, z_min, z_max
+SELECT COUNT(*)
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+  AND pos_z BETWEEN $5 AND $6;
+
+-- ============================================================
+-- Incremental Precalculation Queries
+-- ============================================================
+
+-- name: GetPrecalcState :one
+-- Get the current precalculation state
+SELECT * FROM precalc_state WHERE id = 1;
+
+-- name: UpdatePrecalcState :exec
+-- Update the precalculation state after a run
+UPDATE precalc_state
+SET 
+    last_precalc_at = $1,
+    last_full_precalc_at = COALESCE($2, last_full_precalc_at),
+    total_nodes = $3,
+    total_links = $4,
+    precalc_duration_ms = $5,
+    updated_at = now()
+WHERE id = 1;
+
+-- name: GetChangedSubredditsSince :many
+-- Get subreddits that have been created or updated since the given timestamp
+SELECT id, name, subscribers
+FROM subreddits
+WHERE updated_at > $1 OR created_at > $1
+ORDER BY id;
+
+-- name: GetChangedUsersSince :many
+-- Get users that have been created or updated since the given timestamp
+SELECT id, username
+FROM users
+WHERE updated_at > $1 OR created_at > $1
+ORDER BY id;
+
+-- name: GetChangedPostsSince :many
+-- Get posts that have been created or updated since the given timestamp
+SELECT id, subreddit_id, author_id
+FROM posts
+WHERE updated_at > $1
+ORDER BY id;
+
+-- name: GetChangedCommentsSince :many
+-- Get comments that have been created or updated since the given timestamp
+SELECT id, subreddit_id, author_id, post_id
+FROM comments
+WHERE updated_at > $1
+ORDER BY id;
+
+-- name: GetAffectedUserIDs :many
+-- Get user IDs affected by changed posts/comments
+WITH changed_authors AS (
+    SELECT DISTINCT author_id FROM posts WHERE posts.updated_at > $1
+    UNION
+    SELECT DISTINCT author_id FROM comments WHERE comments.updated_at > $1
+)
+SELECT author_id FROM changed_authors
+ORDER BY author_id;
+
+-- name: GetAffectedSubredditIDs :many
+-- Get subreddit IDs affected by changed posts/comments
+WITH changed_subreddits AS (
+    SELECT DISTINCT subreddit_id FROM posts WHERE posts.updated_at > $1
+    UNION
+    SELECT DISTINCT subreddit_id FROM comments WHERE comments.updated_at > $1
+    UNION
+    SELECT id as subreddit_id FROM subreddits WHERE subreddits.updated_at > $1 OR subreddits.created_at > $1
+)
+SELECT subreddit_id FROM changed_subreddits
+ORDER BY subreddit_id;
+
+-- name: CountChangedEntities :one
+-- Count how many entities have changed since the given timestamp
+SELECT 
+    (SELECT COUNT(*) FROM subreddits s WHERE s.updated_at > $1 OR s.created_at > $1) as changed_subreddits,
+    (SELECT COUNT(*) FROM users u WHERE u.updated_at > $1 OR u.created_at > $1) as changed_users,
+    (SELECT COUNT(*) FROM posts p WHERE p.updated_at > $1) as changed_posts,
+    (SELECT COUNT(*) FROM comments c WHERE c.updated_at > $1) as changed_comments;
+
+-- name: GetUserActivitySince :many
+-- Get user activity that has been updated since the given timestamp
+-- Returns users who have posted or commented since the given time
+SELECT DISTINCT
+    u.id,
+    u.username,
+    COALESCE(p.post_count, 0) + COALESCE(c.comment_count, 0) AS total_activity
+FROM users u
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS post_count
+    FROM posts
+    WHERE posts.updated_at > $1
+    GROUP BY author_id
+) p ON p.author_id = u.id
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS comment_count
+    FROM comments
+    WHERE comments.updated_at > $1
+    GROUP BY author_id
+) c ON c.author_id = u.id
+WHERE (p.post_count IS NOT NULL AND p.post_count > 0)
+   OR (c.comment_count IS NOT NULL AND c.comment_count > 0)
+ORDER BY total_activity DESC, u.id;
+
+-- name: DeleteOrphanedGraphNodes :exec
+-- Delete graph nodes that no longer have corresponding source entities
+-- This is used after incremental updates to clean up stale data
+DELETE FROM graph_nodes
+WHERE (type = 'user' AND id NOT IN (SELECT 'user_' || id::text FROM users))
+   OR (type = 'subreddit' AND id NOT IN (SELECT 'subreddit_' || id::text FROM subreddits));
+
+-- name: DeleteOrphanedGraphLinks :exec
+-- Delete graph links where source or target nodes no longer exist
+DELETE FROM graph_links
+WHERE source NOT IN (SELECT id FROM graph_nodes)
+   OR target NOT IN (SELECT id FROM graph_nodes);
+
+-- ============================================================
+-- Pagination Queries
+-- ============================================================
+
+-- name: GetPaginatedGraphNodes :many
+-- Cursor-based pagination for graph nodes ordered by weight (val) descending
+-- Cursor format: "weight:id" for tie-breaking
+-- Parameters: $1=cursor_weight (BIGINT), $2=cursor_id (TEXT), $3=page_size (INT)
+-- If cursor_weight is NULL, starts from beginning
+SELECT 
+    id,
+    name,
+    val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE 
+    -- If no cursor, get from start; otherwise use cursor for pagination
+    CASE 
+        WHEN $1::BIGINT IS NULL THEN TRUE
+        ELSE (
+            -- Primary sort: weight descending
+            (CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END) < $1::BIGINT
+            OR (
+                -- Tie-breaker: same weight, but ID is greater (for consistent ordering)
+                (CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END) = $1::BIGINT
+                AND id > $2::TEXT
+            )
+        )
+    END
+ORDER BY (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, id
+LIMIT $3;
+
+-- name: GetLinksForPaginatedNodes :many
+-- Get links where both source and target are in the provided node ID list
+-- Parameters: $1=node_ids (text array)
+SELECT 
+    id,
+    source,
+    target
+FROM graph_links
+WHERE source = ANY($1::text[]) 
+  AND target = ANY($1::text[])
 LIMIT $2;

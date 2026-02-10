@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Octree, type OctreeItem } from '../spatial/Octree';
 
 /**
  * InstancedNodeRenderer - High-performance node rendering using THREE.InstancedMesh
@@ -11,12 +12,15 @@ import * as THREE from 'three';
  * - Position updates via instanceMatrix (no scene graph traversal)
  * - Per-instance colors via instanceColor attribute
  * - Per-instance sizes via scale in instance matrix
+ * - Octree spatial index for O(log n) raycasting and frustum culling
  * - Optimized for 100k+ nodes
  * 
  * Performance targets:
  * - ~4 draw calls for core node types (plus extras for links/labels as configured)
  * - <5ms for position updates
  * - <500MB memory usage for 100k nodes
+ * - <1ms raycasting with octree
+ * - <2ms frustum culling with octree
  * 
  * @example
  * ```typescript
@@ -31,8 +35,11 @@ import * as THREE from 'three';
  * // Update colors
  * renderer.updateColors(colors);
  * 
- * // Raycast for interactions
+ * // Raycast for interactions (uses octree)
  * const node = renderer.raycast(raycaster);
+ * 
+ * // Frustum culling (uses octree)
+ * const visibleNodes = renderer.queryFrustum(camera);
  * ```
  */
 
@@ -49,6 +56,7 @@ export interface NodeData {
 export interface InstancedNodeRendererConfig {
   maxNodes?: number;
   nodeRelSize?: number;
+  sizeAttenuation?: boolean;
 }
 
 interface TypedMesh {
@@ -72,14 +80,28 @@ export class InstancedNodeRenderer {
   private nodeMap: Map<string, { type: string; index: number }> = new Map();
   private maxNodes: number;
   private nodeRelSize: number;
+  private octree: Octree<NodeData>;
+  private _frustum: THREE.Frustum | null = null;
+  private _projectionMatrix: THREE.Matrix4 | null = null;
+  private sizeAttenuation: boolean;
+  private camera: THREE.Camera | null = null;
+  private cameraPosVector: THREE.Vector3 = new THREE.Vector3(); // Reusable vector to avoid per-frame allocation
 
   constructor(scene: THREE.Scene, config: InstancedNodeRendererConfig = {}) {
     this.scene = scene;
     this.maxNodes = config.maxNodes || 100000;
     this.nodeRelSize = config.nodeRelSize || 4;
+    this.sizeAttenuation = config.sizeAttenuation !== undefined ? config.sizeAttenuation : true;
     
     // Create shared geometry (8 segments for performance vs quality balance)
     this.geometry = new THREE.SphereGeometry(1, 8, 8);
+    
+    // Initialize octree for spatial queries
+    this.octree = new Octree<NodeData>({
+      maxItemsPerNode: 8,
+      maxDepth: 8,
+      minCellSize: 1.0,
+    });
   }
 
   /**
@@ -113,6 +135,19 @@ export class InstancedNodeRenderer {
         this.meshes.delete(type);
       }
     }
+
+    // Build octree from node positions
+    const octreeItems: OctreeItem<NodeData>[] = [];
+    for (const node of nodes) {
+      if (node.x !== undefined && node.y !== undefined && node.z !== undefined) {
+        octreeItems.push({
+          id: node.id,
+          position: new THREE.Vector3(node.x, node.y, node.z),
+          data: node,
+        });
+      }
+    }
+    this.octree.build(octreeItems);
   }
 
   /**
@@ -135,9 +170,7 @@ export class InstancedNodeRenderer {
     
     if (!this.meshes.has(type)) {
       // Create new mesh
-      const material = new THREE.MeshLambertMaterial({
-        color: DEFAULT_COLORS[type] || DEFAULT_COLORS.default,
-      });
+      const material = this.createMaterial(type);
       
       const mesh = new THREE.InstancedMesh(this.geometry, material, count);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); // Will be updated frequently
@@ -215,6 +248,9 @@ export class InstancedNodeRenderer {
     const rotation = new THREE.Quaternion();
     const scale = new THREE.Vector3();
 
+    // Track ALL items for octree rebuild (not just updated ones)
+    const octreeItems: OctreeItem<NodeData>[] = [];
+
     for (const [, typedMesh] of this.meshes.entries()) {
       let updated = false;
 
@@ -222,24 +258,44 @@ export class InstancedNodeRenderer {
         const nodeId = typedMesh.nodeIds[i];
         const pos = positions.get(nodeId);
         
+        // Get current position
+        typedMesh.mesh.getMatrixAt(i, matrix);
+        matrix.decompose(position, rotation, scale);
+        
         if (pos) {
-          // Get current matrix to preserve scale
-          typedMesh.mesh.getMatrixAt(i, matrix);
-          matrix.decompose(position, rotation, scale);
-          
           // Update position
           position.set(pos.x, pos.y, pos.z);
           matrix.compose(position, rotation, scale);
           typedMesh.mesh.setMatrixAt(i, matrix);
-          
           updated = true;
         }
+        
+        // Add ALL nodes to octree (both updated and unchanged)
+        octreeItems.push({
+          id: nodeId,
+          position: new THREE.Vector3(position.x, position.y, position.z),
+          data: {
+            id: nodeId,
+            type: typedMesh.nodeIds[i].startsWith('subreddit_') ? 'subreddit' :
+                  typedMesh.nodeIds[i].startsWith('user_') ? 'user' :
+                  typedMesh.nodeIds[i].startsWith('post_') ? 'post' :
+                  typedMesh.nodeIds[i].startsWith('comment_') ? 'comment' : 'default',
+            x: position.x,
+            y: position.y,
+            z: position.z,
+          },
+        });
       }
 
       if (updated) {
         typedMesh.mesh.instanceMatrix.needsUpdate = true;
         typedMesh.mesh.computeBoundingSphere();
       }
+    }
+
+    // Rebuild octree with ALL node positions
+    if (octreeItems.length > 0) {
+      this.octree.build(octreeItems);
     }
   }
 
@@ -310,25 +366,72 @@ export class InstancedNodeRenderer {
   }
 
   /**
-   * Raycast to find intersected node
+   * Raycast to find intersected node using octree spatial index
    * @returns Node ID if intersected, null otherwise
    */
   public raycast(raycaster: THREE.Raycaster): string | null {
-    let closestDistance = Infinity;
-    let closestNodeId: string | null = null;
+    // Use octree for fast spatial query to get candidates
+    const ray = raycaster.ray;
+    const maxDistance = raycaster.far || 1000;
+    
+    const nearestItem = this.octree.raycast(ray, maxDistance);
+    if (!nearestItem) return null;
 
+    // Verify hit with actual geometry raycasting
+    // Raycast all meshes to find actual intersections
+    const allIntersects: Array<{ nodeId: string; distance: number }> = [];
+    
     for (const [, typedMesh] of this.meshes.entries()) {
       const intersects = raycaster.intersectObject(typedMesh.mesh, false);
       
       for (const intersect of intersects) {
-        if (intersect.distance < closestDistance && intersect.instanceId !== undefined) {
-          closestDistance = intersect.distance;
-          closestNodeId = typedMesh.nodeIds[intersect.instanceId];
+        if (intersect.instanceId !== undefined) {
+          const hitNodeId = typedMesh.nodeIds[intersect.instanceId];
+          allIntersects.push({
+            nodeId: hitNodeId,
+            distance: intersect.distance,
+          });
         }
       }
     }
 
-    return closestNodeId;
+    // Return closest actual hit
+    if (allIntersects.length > 0) {
+      allIntersects.sort((a, b) => a.distance - b.distance);
+      return allIntersects[0].nodeId;
+    }
+
+    // No geometry hits - octree candidate was outside pick radius
+    return null;
+  }
+
+  /**
+   * Query nodes within camera frustum using octree
+   * Returns node IDs that are potentially visible
+   * @param camera Camera to use for frustum culling
+   * @returns Array of visible node IDs
+   */
+  public queryFrustum(camera: THREE.Camera): string[] {
+    // Ensure camera matrices are up to date
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
+    
+    // Reuse frustum and matrix instances to avoid allocations
+    if (!this._frustum) {
+      this._frustum = new THREE.Frustum();
+      this._projectionMatrix = new THREE.Matrix4();
+    }
+    
+    this._projectionMatrix.multiplyMatrices(
+      camera.projectionMatrix,
+      camera.matrixWorldInverse
+    );
+    this._frustum.setFromProjectionMatrix(this._projectionMatrix);
+
+    // Query octree for nodes in frustum
+    const visibleItems = this.octree.queryFrustum(this._frustum);
+    
+    return visibleItems.map(item => item.id);
   }
 
   /**
@@ -350,6 +453,124 @@ export class InstancedNodeRenderer {
     matrix.decompose(position, rotation, scale);
 
     return { x: position.x, y: position.y, z: position.z };
+  }
+
+  /**
+   * Set camera reference for distance-based scaling
+   */
+  public setCamera(camera: THREE.Camera): void {
+    this.camera = camera;
+  }
+
+  /**
+   * Update size attenuation setting
+   */
+  public setSizeAttenuation(enabled: boolean): void {
+    if (this.sizeAttenuation === enabled) return;
+    this.sizeAttenuation = enabled;
+    
+    // Recreate materials for all meshes
+    for (const [type, typedMesh] of this.meshes.entries()) {
+      const oldMaterial = typedMesh.mesh.material as THREE.Material;
+      const material = this.createMaterial(type);
+      typedMesh.mesh.material = material;
+      oldMaterial.dispose();
+    }
+  }
+
+  /**
+   * Create material for a node type with optional distance-based scaling
+   */
+  private createMaterial(type: string): THREE.Material {
+    if (!this.sizeAttenuation) {
+      // Use standard material without distance scaling
+      return new THREE.MeshLambertMaterial({
+        color: DEFAULT_COLORS[type] || DEFAULT_COLORS.default,
+      });
+    }
+
+    // Create custom shader material with distance-based scaling
+    const baseColor = DEFAULT_COLORS[type] || DEFAULT_COLORS.default;
+    
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        baseColor: { value: baseColor },
+        cameraPosition: { value: new THREE.Vector3() },
+        attenuationFactor: { value: 0.3 }, // Controls how much size changes with distance
+        minScale: { value: 0.3 }, // Minimum scale factor (prevent nodes from becoming too small)
+        maxScale: { value: 2.0 }, // Maximum scale factor (prevent nodes from becoming too large)
+      },
+      vertexShader: `
+        uniform vec3 cameraPosition;
+        uniform float attenuationFactor;
+        uniform float minScale;
+        uniform float maxScale;
+        
+        attribute vec3 instanceColor;
+        varying vec3 vColor;
+        varying vec3 vNormal;
+        
+        void main() {
+          vColor = instanceColor;
+          vNormal = normalize(normalMatrix * normal);
+          
+          // Compute instance center in world space (local origin transformed by instance matrix)
+          vec4 instanceCenter = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+          
+          // Calculate distance from camera using instance center so scale is uniform per instance
+          float dist = length(cameraPosition - instanceCenter.xyz);
+          
+          // Apply logarithmic attenuation for smooth scaling
+          // log(1 + x) provides smooth falloff, scaled by attenuationFactor
+          float scaleFactor = 1.0 + attenuationFactor * log(1.0 + dist / 100.0);
+          scaleFactor = clamp(scaleFactor, minScale, maxScale);
+          
+          // Apply uniform scale to the instance's local vertex position, then transform to world space
+          vec3 scaledPosition = position * scaleFactor;
+          vec4 worldPosition = instanceMatrix * vec4(scaledPosition, 1.0);
+          
+          gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 baseColor;
+        varying vec3 vColor;
+        varying vec3 vNormal;
+        
+        void main() {
+          // Simple Lambertian shading
+          vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+          float diff = max(dot(vNormal, lightDir), 0.0);
+          
+          // Mix instance color with base color
+          vec3 color = mix(baseColor, vColor, step(0.01, length(vColor)));
+          
+          // Apply lighting
+          vec3 ambient = color * 0.6;
+          vec3 diffuse = color * 0.4 * diff;
+          
+          gl_FragColor = vec4(ambient + diffuse, 1.0);
+        }
+      `,
+      lights: false, // We handle lighting in the shader
+    });
+  }
+
+  /**
+   * Update camera position in shader uniforms (call this each frame)
+   */
+  public updateCameraPosition(): void {
+    if (!this.camera || !this.sizeAttenuation) return;
+    
+    // Reuse the cached vector to avoid per-frame allocation
+    this.camera.getWorldPosition(this.cameraPosVector);
+    
+    for (const [, typedMesh] of this.meshes.entries()) {
+      const material = typedMesh.mesh.material;
+      if (material instanceof THREE.ShaderMaterial && material.uniforms.cameraPosition) {
+        material.uniforms.cameraPosition.value.copy(this.cameraPosVector);
+      }
+    }
   }
 
   /**

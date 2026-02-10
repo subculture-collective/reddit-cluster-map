@@ -87,6 +87,51 @@ func (f *fakeStore) GetUserTotalActivity(ctx context.Context, authorID int32) (i
 	return 2, nil
 }
 
+// Incremental precalculation methods
+func (f *fakeStore) GetPrecalcState(ctx context.Context) (db.PrecalcState, error) {
+	// Return empty state for initial testing
+	return db.PrecalcState{
+		ID:                1,
+		LastPrecalcAt:     sql.NullTime{Valid: false},
+		LastFullPrecalcAt: sql.NullTime{Valid: false},
+		TotalNodes:        sql.NullInt32{Int32: 0, Valid: false},
+		TotalLinks:        sql.NullInt32{Int32: 0, Valid: false},
+	}, nil
+}
+
+func (f *fakeStore) UpdatePrecalcState(ctx context.Context, arg db.UpdatePrecalcStateParams) error {
+	return nil
+}
+
+func (f *fakeStore) GetChangedSubredditsSince(ctx context.Context, updatedAt sql.NullTime) ([]db.GetChangedSubredditsSinceRow, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) GetChangedUsersSince(ctx context.Context, updatedAt sql.NullTime) ([]db.GetChangedUsersSinceRow, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) CountChangedEntities(ctx context.Context, updatedAt sql.NullTime) (db.CountChangedEntitiesRow, error) {
+	return db.CountChangedEntitiesRow{
+		ChangedSubreddits: 0,
+		ChangedUsers:      0,
+		ChangedPosts:      0,
+		ChangedComments:   0,
+	}, nil
+}
+
+func (f *fakeStore) GetUserActivitySince(ctx context.Context, updatedAt sql.NullTime) ([]db.GetUserActivitySinceRow, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) GetAffectedUserIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) GetAffectedSubredditIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error) {
+	return nil, nil
+}
+
 func TestPrecalculateGraphData_MinimalWithoutDetailed(t *testing.T) {
 	os.Setenv("DETAILED_GRAPH", "false")
 	t.Cleanup(func() { os.Unsetenv("DETAILED_GRAPH") })
@@ -150,5 +195,50 @@ func TestCheckPositionColumnsExist_Fake(t *testing.T) {
 	err := svc.computeAndStoreLayout(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error with fake store, got: %v", err)
+	}
+}
+
+func TestPrecalculateGraphDataWithMode_IncrementalFirstRun(t *testing.T) {
+	// Test that first run always does full rebuild
+	os.Setenv("DETAILED_GRAPH", "false")
+	t.Cleanup(func() { os.Unsetenv("DETAILED_GRAPH") })
+	config.ResetForTest()
+	config.Load()
+
+	fs := newFakeStore()
+	svc := NewService(fs)
+	
+	// First run should be full rebuild since no last_precalc_at
+	if err := svc.PrecalculateGraphDataWithMode(context.Background(), false); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	
+	// Verify nodes were inserted
+	if _, ok := fs.insertedNodes["user_10"]; !ok {
+		t.Fatalf("expected user node to be inserted")
+	}
+	if _, ok := fs.insertedNodes["subreddit_1"]; !ok {
+		t.Fatalf("expected subreddit_1 node to be inserted")
+	}
+}
+
+func TestPrecalculateGraphDataWithMode_ForceFullRebuild(t *testing.T) {
+	// Test that fullRebuild flag forces full rebuild
+	os.Setenv("DETAILED_GRAPH", "false")
+	t.Cleanup(func() { os.Unsetenv("DETAILED_GRAPH") })
+	config.ResetForTest()
+	config.Load()
+
+	fs := newFakeStore()
+	svc := NewService(fs)
+	
+	// Force full rebuild
+	if err := svc.PrecalculateGraphDataWithMode(context.Background(), true); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	
+	// Verify nodes were inserted
+	if _, ok := fs.insertedNodes["user_10"]; !ok {
+		t.Fatalf("expected user node to be inserted")
 	}
 }

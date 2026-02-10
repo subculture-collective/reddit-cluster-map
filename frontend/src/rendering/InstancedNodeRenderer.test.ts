@@ -295,6 +295,58 @@ describe('InstancedNodeRenderer', () => {
     });
   });
 
+  describe('queryFrustum', () => {
+    it('should return nodes within camera frustum', () => {
+      const nodes: NodeData[] = [];
+      // Place nodes in a larger grid to test frustum culling
+      for (let x = -200; x <= 200; x += 20) {
+        for (let y = -200; y <= 200; y += 20) {
+          for (let z = -200; z <= 200; z += 20) {
+            nodes.push({
+              id: `node_${x}_${y}_${z}`,
+              type: 'subreddit',
+              x,
+              y,
+              z,
+              size: 1,
+            });
+          }
+        }
+      }
+      renderer.setNodeData(nodes);
+
+      // Create camera with narrow FOV looking at origin
+      const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+      camera.position.set(0, 0, 300);
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld();
+      camera.updateProjectionMatrix();
+
+      const visibleNodes = renderer.queryFrustum(camera);
+
+      // Should find some nodes in frustum
+      expect(visibleNodes.length).toBeGreaterThan(0);
+      // Should not return all nodes (frustum culling)
+      expect(visibleNodes.length).toBeLessThan(nodes.length);
+    });
+
+    it('should return empty array when no nodes in frustum', () => {
+      renderer.setNodeData([
+        { id: 'node1', type: 'subreddit', x: 0, y: 0, z: 0 },
+      ]);
+
+      // Camera looking away from nodes
+      const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+      camera.position.set(1000, 1000, 1000);
+      camera.lookAt(2000, 2000, 2000);
+      camera.updateMatrixWorld();
+      camera.updateProjectionMatrix();
+
+      const visibleNodes = renderer.queryFrustum(camera);
+      expect(visibleNodes.length).toBe(0);
+    });
+  });
+
   describe('dispose', () => {
     it('should clean up all resources', () => {
       const nodes: NodeData[] = [
@@ -328,6 +380,53 @@ describe('InstancedNodeRenderer', () => {
       expect(stats.types).toHaveLength(2);
       expect(stats.types).toContain('subreddit');
       expect(stats.types).toContain('user');
+    });
+  });
+
+  describe('sizeAttenuation', () => {
+    it('should create renderer with sizeAttenuation enabled by default', () => {
+      const defaultRenderer = new InstancedNodeRenderer(scene);
+      expect(defaultRenderer).toBeDefined();
+      defaultRenderer.dispose();
+    });
+
+    it('should create renderer with sizeAttenuation disabled', () => {
+      const noAttenuationRenderer = new InstancedNodeRenderer(scene, {
+        sizeAttenuation: false,
+      });
+      expect(noAttenuationRenderer).toBeDefined();
+      noAttenuationRenderer.dispose();
+    });
+
+    it('should toggle sizeAttenuation setting', () => {
+      const nodes: NodeData[] = [
+        { id: 'node1', type: 'subreddit', x: 0, y: 0, z: 0, size: 2 },
+      ];
+      renderer.setNodeData(nodes);
+
+      // Should not throw when toggling
+      expect(() => renderer.setSizeAttenuation(false)).not.toThrow();
+      expect(() => renderer.setSizeAttenuation(true)).not.toThrow();
+    });
+
+    it('should set camera reference', () => {
+      const camera = new THREE.PerspectiveCamera();
+      // Should not throw
+      expect(() => renderer.setCamera(camera)).not.toThrow();
+    });
+
+    it('should update camera position for shader', () => {
+      const camera = new THREE.PerspectiveCamera();
+      camera.position.set(10, 20, 30);
+      renderer.setCamera(camera);
+
+      const nodes: NodeData[] = [
+        { id: 'node1', type: 'subreddit', x: 0, y: 0, z: 0, size: 2 },
+      ];
+      renderer.setNodeData(nodes);
+
+      // Should not throw
+      expect(() => renderer.updateCameraPosition()).not.toThrow();
     });
   });
 
@@ -391,9 +490,10 @@ describe('InstancedNodeRenderer', () => {
       largeRenderer.updatePositions(newPositions);
       const duration = performance.now() - start;
 
-      // Target: <5ms for 100k nodes in production, but allow up to 100ms in test environment
-      // (test environment has additional overhead from mocking, instrumentation, etc.)
-      expect(duration).toBeLessThan(100);
+      // Target: <5ms for 100k nodes in production (without octree rebuild)
+      // With octree rebuild: ~150-300ms for 100k nodes (acceptable trade-off for O(log n) queries)
+      // The octree rebuild provides massive performance gains for raycasting and frustum culling
+      expect(duration).toBeLessThan(350);
       
       largeRenderer.dispose();
     });

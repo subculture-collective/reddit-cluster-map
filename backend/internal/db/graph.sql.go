@@ -64,6 +64,19 @@ func (q *Queries) BulkInsertGraphNode(ctx context.Context, arg BulkInsertGraphNo
 	return err
 }
 
+const clearCommunityHierarchy = `-- name: ClearCommunityHierarchy :exec
+
+TRUNCATE TABLE graph_community_hierarchy
+`
+
+// ============================================================
+// Community Hierarchy Queries
+// ============================================================
+func (q *Queries) ClearCommunityHierarchy(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearCommunityHierarchy)
+	return err
+}
+
 const clearCommunityTables = `-- name: ClearCommunityTables :exec
 
 TRUNCATE TABLE graph_communities CASCADE
@@ -74,6 +87,19 @@ TRUNCATE TABLE graph_communities CASCADE
 // ============================================================
 func (q *Queries) ClearCommunityTables(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, clearCommunityTables)
+	return err
+}
+
+const clearEdgeBundles = `-- name: ClearEdgeBundles :exec
+
+TRUNCATE TABLE graph_bundles
+`
+
+// ============================================================
+// Edge Bundle Queries
+// ============================================================
+func (q *Queries) ClearEdgeBundles(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearEdgeBundles)
 	return err
 }
 
@@ -102,6 +128,70 @@ TRUNCATE TABLE user_subreddit_activity
 func (q *Queries) ClearUserSubredditActivity(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, clearUserSubredditActivity)
 	return err
+}
+
+const countChangedEntities = `-- name: CountChangedEntities :one
+SELECT 
+    (SELECT COUNT(*) FROM subreddits s WHERE s.updated_at > $1 OR s.created_at > $1) as changed_subreddits,
+    (SELECT COUNT(*) FROM users u WHERE u.updated_at > $1 OR u.created_at > $1) as changed_users,
+    (SELECT COUNT(*) FROM posts p WHERE p.updated_at > $1) as changed_posts,
+    (SELECT COUNT(*) FROM comments c WHERE c.updated_at > $1) as changed_comments
+`
+
+type CountChangedEntitiesRow struct {
+	ChangedSubreddits int64
+	ChangedUsers      int64
+	ChangedPosts      int64
+	ChangedComments   int64
+}
+
+// Count how many entities have changed since the given timestamp
+func (q *Queries) CountChangedEntities(ctx context.Context, updatedAt sql.NullTime) (CountChangedEntitiesRow, error) {
+	row := q.db.QueryRowContext(ctx, countChangedEntities, updatedAt)
+	var i CountChangedEntitiesRow
+	err := row.Scan(
+		&i.ChangedSubreddits,
+		&i.ChangedUsers,
+		&i.ChangedPosts,
+		&i.ChangedComments,
+	)
+	return i, err
+}
+
+const countNodesInBoundingBox = `-- name: CountNodesInBoundingBox :one
+SELECT COUNT(*)
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+  AND pos_z BETWEEN $5 AND $6
+`
+
+type CountNodesInBoundingBoxParams struct {
+	PosX   sql.NullFloat64
+	PosX_2 sql.NullFloat64
+	PosY   sql.NullFloat64
+	PosY_2 sql.NullFloat64
+	PosZ   sql.NullFloat64
+	PosZ_2 sql.NullFloat64
+}
+
+// Count nodes within a bounding box (useful for pagination)
+// Parameters: x_min, x_max, y_min, y_max, z_min, z_max
+func (q *Queries) CountNodesInBoundingBox(ctx context.Context, arg CountNodesInBoundingBoxParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countNodesInBoundingBox,
+		arg.PosX,
+		arg.PosX_2,
+		arg.PosY,
+		arg.PosY_2,
+		arg.PosZ,
+		arg.PosZ_2,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createCommunity = `-- name: CreateCommunity :one
@@ -172,6 +262,50 @@ type CreateCommunityMemberParams struct {
 
 func (q *Queries) CreateCommunityMember(ctx context.Context, arg CreateCommunityMemberParams) error {
 	_, err := q.db.ExecContext(ctx, createCommunityMember, arg.CommunityID, arg.NodeID)
+	return err
+}
+
+const createEdgeBundle = `-- name: CreateEdgeBundle :exec
+INSERT INTO graph_bundles (
+    source_community_id,
+    target_community_id,
+    weight,
+    avg_strength,
+    control_x,
+    control_y,
+    control_z
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+) ON CONFLICT (source_community_id, target_community_id)
+DO UPDATE SET 
+    weight = EXCLUDED.weight,
+    avg_strength = EXCLUDED.avg_strength,
+    control_x = EXCLUDED.control_x,
+    control_y = EXCLUDED.control_y,
+    control_z = EXCLUDED.control_z,
+    updated_at = now()
+`
+
+type CreateEdgeBundleParams struct {
+	SourceCommunityID int32
+	TargetCommunityID int32
+	Weight            int32
+	AvgStrength       sql.NullFloat64
+	ControlX          sql.NullFloat64
+	ControlY          sql.NullFloat64
+	ControlZ          sql.NullFloat64
+}
+
+func (q *Queries) CreateEdgeBundle(ctx context.Context, arg CreateEdgeBundleParams) error {
+	_, err := q.db.ExecContext(ctx, createEdgeBundle,
+		arg.SourceCommunityID,
+		arg.TargetCommunityID,
+		arg.Weight,
+		arg.AvgStrength,
+		arg.ControlX,
+		arg.ControlY,
+		arg.ControlZ,
+	)
 	return err
 }
 
@@ -264,6 +398,101 @@ func (q *Queries) CreateUserSubredditActivity(ctx context.Context, arg CreateUse
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteOrphanedGraphLinks = `-- name: DeleteOrphanedGraphLinks :exec
+DELETE FROM graph_links
+WHERE source NOT IN (SELECT id FROM graph_nodes)
+   OR target NOT IN (SELECT id FROM graph_nodes)
+`
+
+// Delete graph links where source or target nodes no longer exist
+func (q *Queries) DeleteOrphanedGraphLinks(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteOrphanedGraphLinks)
+	return err
+}
+
+const deleteOrphanedGraphNodes = `-- name: DeleteOrphanedGraphNodes :exec
+DELETE FROM graph_nodes
+WHERE (type = 'user' AND id NOT IN (SELECT 'user_' || id::text FROM users))
+   OR (type = 'subreddit' AND id NOT IN (SELECT 'subreddit_' || id::text FROM subreddits))
+`
+
+// Delete graph nodes that no longer have corresponding source entities
+// This is used after incremental updates to clean up stale data
+func (q *Queries) DeleteOrphanedGraphNodes(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteOrphanedGraphNodes)
+	return err
+}
+
+const getAffectedSubredditIDs = `-- name: GetAffectedSubredditIDs :many
+WITH changed_subreddits AS (
+    SELECT DISTINCT subreddit_id FROM posts WHERE posts.updated_at > $1
+    UNION
+    SELECT DISTINCT subreddit_id FROM comments WHERE comments.updated_at > $1
+    UNION
+    SELECT id as subreddit_id FROM subreddits WHERE subreddits.updated_at > $1 OR subreddits.created_at > $1
+)
+SELECT subreddit_id FROM changed_subreddits
+ORDER BY subreddit_id
+`
+
+// Get subreddit IDs affected by changed posts/comments
+func (q *Queries) GetAffectedSubredditIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, getAffectedSubredditIDs, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int32
+	for rows.Next() {
+		var subreddit_id int32
+		if err := rows.Scan(&subreddit_id); err != nil {
+			return nil, err
+		}
+		items = append(items, subreddit_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAffectedUserIDs = `-- name: GetAffectedUserIDs :many
+WITH changed_authors AS (
+    SELECT DISTINCT author_id FROM posts WHERE posts.updated_at > $1
+    UNION
+    SELECT DISTINCT author_id FROM comments WHERE comments.updated_at > $1
+)
+SELECT author_id FROM changed_authors
+ORDER BY author_id
+`
+
+// Get user IDs affected by changed posts/comments
+func (q *Queries) GetAffectedUserIDs(ctx context.Context, updatedAt sql.NullTime) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, getAffectedUserIDs, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int32
+	for rows.Next() {
+		var author_id int32
+		if err := rows.Scan(&author_id); err != nil {
+			return nil, err
+		}
+		items = append(items, author_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getAllComments = `-- name: GetAllComments :many
@@ -510,6 +739,209 @@ func (q *Queries) GetAllUsers(ctx context.Context) ([]GetAllUsersRow, error) {
 	return items, nil
 }
 
+const getChangedCommentsSince = `-- name: GetChangedCommentsSince :many
+SELECT id, subreddit_id, author_id, post_id
+FROM comments
+WHERE updated_at > $1
+ORDER BY id
+`
+
+type GetChangedCommentsSinceRow struct {
+	ID          string
+	SubredditID int32
+	AuthorID    int32
+	PostID      string
+}
+
+// Get comments that have been created or updated since the given timestamp
+func (q *Queries) GetChangedCommentsSince(ctx context.Context, updatedAt sql.NullTime) ([]GetChangedCommentsSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChangedCommentsSince, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChangedCommentsSinceRow
+	for rows.Next() {
+		var i GetChangedCommentsSinceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SubredditID,
+			&i.AuthorID,
+			&i.PostID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChangedPostsSince = `-- name: GetChangedPostsSince :many
+SELECT id, subreddit_id, author_id
+FROM posts
+WHERE updated_at > $1
+ORDER BY id
+`
+
+type GetChangedPostsSinceRow struct {
+	ID          string
+	SubredditID int32
+	AuthorID    int32
+}
+
+// Get posts that have been created or updated since the given timestamp
+func (q *Queries) GetChangedPostsSince(ctx context.Context, updatedAt sql.NullTime) ([]GetChangedPostsSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChangedPostsSince, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChangedPostsSinceRow
+	for rows.Next() {
+		var i GetChangedPostsSinceRow
+		if err := rows.Scan(&i.ID, &i.SubredditID, &i.AuthorID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChangedSubredditsSince = `-- name: GetChangedSubredditsSince :many
+SELECT id, name, subscribers
+FROM subreddits
+WHERE updated_at > $1 OR created_at > $1
+ORDER BY id
+`
+
+type GetChangedSubredditsSinceRow struct {
+	ID          int32
+	Name        string
+	Subscribers sql.NullInt32
+}
+
+// Get subreddits that have been created or updated since the given timestamp
+func (q *Queries) GetChangedSubredditsSince(ctx context.Context, updatedAt sql.NullTime) ([]GetChangedSubredditsSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChangedSubredditsSince, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChangedSubredditsSinceRow
+	for rows.Next() {
+		var i GetChangedSubredditsSinceRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Subscribers); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChangedUsersSince = `-- name: GetChangedUsersSince :many
+SELECT id, username
+FROM users
+WHERE updated_at > $1 OR created_at > $1
+ORDER BY id
+`
+
+type GetChangedUsersSinceRow struct {
+	ID       int32
+	Username string
+}
+
+// Get users that have been created or updated since the given timestamp
+func (q *Queries) GetChangedUsersSince(ctx context.Context, updatedAt sql.NullTime) ([]GetChangedUsersSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChangedUsersSince, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChangedUsersSinceRow
+	for rows.Next() {
+		var i GetChangedUsersSinceRow
+		if err := rows.Scan(&i.ID, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getCommunitiesAtLevel = `-- name: GetCommunitiesAtLevel :many
+SELECT 
+    community_id,
+    COUNT(*) as member_count,
+    AVG(centroid_x) as avg_x,
+    AVG(centroid_y) as avg_y,
+    AVG(centroid_z) as avg_z
+FROM graph_community_hierarchy
+WHERE level = $1
+GROUP BY community_id
+ORDER BY member_count DESC
+`
+
+type GetCommunitiesAtLevelRow struct {
+	CommunityID int32
+	MemberCount int64
+	AvgX        float64
+	AvgY        float64
+	AvgZ        float64
+}
+
+func (q *Queries) GetCommunitiesAtLevel(ctx context.Context, level int32) ([]GetCommunitiesAtLevelRow, error) {
+	rows, err := q.db.QueryContext(ctx, getCommunitiesAtLevel, level)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCommunitiesAtLevelRow
+	for rows.Next() {
+		var i GetCommunitiesAtLevelRow
+		if err := rows.Scan(
+			&i.CommunityID,
+			&i.MemberCount,
+			&i.AvgX,
+			&i.AvgY,
+			&i.AvgZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getCommunity = `-- name: GetCommunity :one
 SELECT id, label, size, modularity, created_at, updated_at FROM graph_communities
 WHERE id = $1
@@ -527,6 +959,60 @@ func (q *Queries) GetCommunity(ctx context.Context, id int32) (GraphCommunity, e
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getCommunityHierarchy = `-- name: GetCommunityHierarchy :many
+SELECT 
+    node_id,
+    level,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+FROM graph_community_hierarchy
+ORDER BY level, community_id, node_id
+`
+
+type GetCommunityHierarchyRow struct {
+	NodeID            string
+	Level             int32
+	CommunityID       int32
+	ParentCommunityID sql.NullInt32
+	CentroidX         sql.NullFloat64
+	CentroidY         sql.NullFloat64
+	CentroidZ         sql.NullFloat64
+}
+
+func (q *Queries) GetCommunityHierarchy(ctx context.Context) ([]GetCommunityHierarchyRow, error) {
+	rows, err := q.db.QueryContext(ctx, getCommunityHierarchy)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCommunityHierarchyRow
+	for rows.Next() {
+		var i GetCommunityHierarchyRow
+		if err := rows.Scan(
+			&i.NodeID,
+			&i.Level,
+			&i.CommunityID,
+			&i.ParentCommunityID,
+			&i.CentroidX,
+			&i.CentroidY,
+			&i.CentroidZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getCommunityLinks = `-- name: GetCommunityLinks :many
@@ -717,9 +1203,9 @@ WITH community_stats AS (
         gc.label,
         gc.size,
         gc.modularity,
-        AVG(gn.pos_x) as avg_x,
-        AVG(gn.pos_y) as avg_y,
-        AVG(gn.pos_z) as avg_z
+        COALESCE(AVG(gn.pos_x), 0) as avg_x,
+        COALESCE(AVG(gn.pos_y), 0) as avg_y,
+        COALESCE(AVG(gn.pos_z), 0) as avg_z
     FROM graph_communities gc
     LEFT JOIN graph_community_members gcm ON gc.id = gcm.community_id
     LEFT JOIN graph_nodes gn ON gcm.node_id = gn.id
@@ -746,9 +1232,9 @@ type GetCommunitySupernodesWithPositionsRow struct {
 	Name     string
 	Val      string
 	Type     string
-	PosX     float64
-	PosY     float64
-	PosZ     float64
+	PosX     interface{}
+	PosY     interface{}
+	PosZ     interface{}
 	Source   interface{}
 	Target   interface{}
 }
@@ -785,6 +1271,534 @@ func (q *Queries) GetCommunitySupernodesWithPositions(ctx context.Context) ([]Ge
 		return nil, err
 	}
 	return items, nil
+}
+
+const getEdgeBundles = `-- name: GetEdgeBundles :many
+SELECT
+    source_community_id,
+    target_community_id,
+    weight,
+    avg_strength,
+    control_x,
+    control_y,
+    control_z
+FROM graph_bundles
+WHERE weight >= $1
+ORDER BY weight DESC
+`
+
+type GetEdgeBundlesRow struct {
+	SourceCommunityID int32
+	TargetCommunityID int32
+	Weight            int32
+	AvgStrength       sql.NullFloat64
+	ControlX          sql.NullFloat64
+	ControlY          sql.NullFloat64
+	ControlZ          sql.NullFloat64
+}
+
+func (q *Queries) GetEdgeBundles(ctx context.Context, weight int32) ([]GetEdgeBundlesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getEdgeBundles, weight)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetEdgeBundlesRow
+	for rows.Next() {
+		var i GetEdgeBundlesRow
+		if err := rows.Scan(
+			&i.SourceCommunityID,
+			&i.TargetCommunityID,
+			&i.Weight,
+			&i.AvgStrength,
+			&i.ControlX,
+			&i.ControlY,
+			&i.ControlZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getHierarchyLevels = `-- name: GetHierarchyLevels :many
+SELECT DISTINCT level
+FROM graph_community_hierarchy
+ORDER BY level
+`
+
+func (q *Queries) GetHierarchyLevels(ctx context.Context) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, getHierarchyLevels)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int32
+	for rows.Next() {
+		var level int32
+		if err := rows.Scan(&level); err != nil {
+			return nil, err
+		}
+		items = append(items, level)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getLinksForNodesInBoundingBox = `-- name: GetLinksForNodesInBoundingBox :many
+WITH bbox_nodes AS (
+    SELECT id
+    FROM graph_nodes
+    WHERE pos_x IS NOT NULL
+      AND pos_y IS NOT NULL
+      AND pos_z IS NOT NULL
+      AND pos_x BETWEEN $1 AND $2
+      AND pos_y BETWEEN $3 AND $4
+      AND pos_z BETWEEN $5 AND $6
+)
+SELECT 
+    gl.id,
+    gl.source,
+    gl.target
+FROM graph_links gl
+WHERE EXISTS (SELECT 1 FROM bbox_nodes WHERE id = gl.source)
+  AND EXISTS (SELECT 1 FROM bbox_nodes WHERE id = gl.target)
+LIMIT $7
+`
+
+type GetLinksForNodesInBoundingBoxParams struct {
+	PosX   sql.NullFloat64
+	PosX_2 sql.NullFloat64
+	PosY   sql.NullFloat64
+	PosY_2 sql.NullFloat64
+	PosZ   sql.NullFloat64
+	PosZ_2 sql.NullFloat64
+	Limit  int32
+}
+
+type GetLinksForNodesInBoundingBoxRow struct {
+	ID     int32
+	Source string
+	Target string
+}
+
+// Retrieves links where both source and target nodes are within the bounding box
+// Uses the same spatial filtering approach
+// Parameters: x_min, x_max, y_min, y_max, z_min, z_max, limit
+func (q *Queries) GetLinksForNodesInBoundingBox(ctx context.Context, arg GetLinksForNodesInBoundingBoxParams) ([]GetLinksForNodesInBoundingBoxRow, error) {
+	rows, err := q.db.QueryContext(ctx, getLinksForNodesInBoundingBox,
+		arg.PosX,
+		arg.PosX_2,
+		arg.PosY,
+		arg.PosY_2,
+		arg.PosZ,
+		arg.PosZ_2,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetLinksForNodesInBoundingBoxRow
+	for rows.Next() {
+		var i GetLinksForNodesInBoundingBoxRow
+		if err := rows.Scan(&i.ID, &i.Source, &i.Target); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getLinksForPaginatedNodes = `-- name: GetLinksForPaginatedNodes :many
+SELECT 
+    id,
+    source,
+    target
+FROM graph_links
+WHERE source = ANY($1::text[]) 
+  AND target = ANY($1::text[])
+LIMIT $2
+`
+
+type GetLinksForPaginatedNodesParams struct {
+	Column1 []string
+	Limit   int32
+}
+
+type GetLinksForPaginatedNodesRow struct {
+	ID     int32
+	Source string
+	Target string
+}
+
+// Get links where both source and target are in the provided node ID list
+// Parameters: $1=node_ids (text array)
+func (q *Queries) GetLinksForPaginatedNodes(ctx context.Context, arg GetLinksForPaginatedNodesParams) ([]GetLinksForPaginatedNodesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getLinksForPaginatedNodes, pq.Array(arg.Column1), arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetLinksForPaginatedNodesRow
+	for rows.Next() {
+		var i GetLinksForPaginatedNodesRow
+		if err := rows.Scan(&i.ID, &i.Source, &i.Target); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getNodesAtLevel = `-- name: GetNodesAtLevel :many
+SELECT 
+    node_id,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+FROM graph_community_hierarchy
+WHERE level = $1
+ORDER BY community_id, node_id
+`
+
+type GetNodesAtLevelRow struct {
+	NodeID            string
+	CommunityID       int32
+	ParentCommunityID sql.NullInt32
+	CentroidX         sql.NullFloat64
+	CentroidY         sql.NullFloat64
+	CentroidZ         sql.NullFloat64
+}
+
+func (q *Queries) GetNodesAtLevel(ctx context.Context, level int32) ([]GetNodesAtLevelRow, error) {
+	rows, err := q.db.QueryContext(ctx, getNodesAtLevel, level)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetNodesAtLevelRow
+	for rows.Next() {
+		var i GetNodesAtLevelRow
+		if err := rows.Scan(
+			&i.NodeID,
+			&i.CommunityID,
+			&i.ParentCommunityID,
+			&i.CentroidX,
+			&i.CentroidY,
+			&i.CentroidZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getNodesInBoundingBox = `-- name: GetNodesInBoundingBox :many
+SELECT 
+    id,
+    name,
+    val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+  AND pos_z BETWEEN $5 AND $6
+ORDER BY (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, id
+LIMIT $7
+`
+
+type GetNodesInBoundingBoxParams struct {
+	PosX   sql.NullFloat64
+	PosX_2 sql.NullFloat64
+	PosY   sql.NullFloat64
+	PosY_2 sql.NullFloat64
+	PosZ   sql.NullFloat64
+	PosZ_2 sql.NullFloat64
+	Limit  int32
+}
+
+type GetNodesInBoundingBoxRow struct {
+	ID   string
+	Name string
+	Val  sql.NullString
+	Type sql.NullString
+	PosX sql.NullFloat64
+	PosY sql.NullFloat64
+	PosZ sql.NullFloat64
+}
+
+// Retrieves nodes within a 3D bounding box using the spatial index
+// Parameters: x_min, x_max, y_min, y_max, z_min, z_max, limit
+// The spatial index (idx_graph_nodes_spatial_nonnull) makes this query efficient
+func (q *Queries) GetNodesInBoundingBox(ctx context.Context, arg GetNodesInBoundingBoxParams) ([]GetNodesInBoundingBoxRow, error) {
+	rows, err := q.db.QueryContext(ctx, getNodesInBoundingBox,
+		arg.PosX,
+		arg.PosX_2,
+		arg.PosY,
+		arg.PosY_2,
+		arg.PosZ,
+		arg.PosZ_2,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetNodesInBoundingBoxRow
+	for rows.Next() {
+		var i GetNodesInBoundingBoxRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Val,
+			&i.Type,
+			&i.PosX,
+			&i.PosY,
+			&i.PosZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getNodesInBoundingBox2D = `-- name: GetNodesInBoundingBox2D :many
+SELECT 
+    id,
+    name,
+    val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE pos_x IS NOT NULL
+  AND pos_y IS NOT NULL
+  AND pos_z IS NOT NULL
+  AND pos_x BETWEEN $1 AND $2
+  AND pos_y BETWEEN $3 AND $4
+ORDER BY (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, id
+LIMIT $5
+`
+
+type GetNodesInBoundingBox2DParams struct {
+	PosX   sql.NullFloat64
+	PosX_2 sql.NullFloat64
+	PosY   sql.NullFloat64
+	PosY_2 sql.NullFloat64
+	Limit  int32
+}
+
+type GetNodesInBoundingBox2DRow struct {
+	ID   string
+	Name string
+	Val  sql.NullString
+	Type sql.NullString
+	PosX sql.NullFloat64
+	PosY sql.NullFloat64
+	PosZ sql.NullFloat64
+}
+
+// Retrieves nodes within a 2D bounding box (ignoring z coordinate)
+// Parameters: x_min, x_max, y_min, y_max, limit
+// Useful for 2D viewport queries where z is not relevant
+// Note: Includes pos_z IS NOT NULL to match the partial GiST index predicate (which requires all position columns to be non-null)
+func (q *Queries) GetNodesInBoundingBox2D(ctx context.Context, arg GetNodesInBoundingBox2DParams) ([]GetNodesInBoundingBox2DRow, error) {
+	rows, err := q.db.QueryContext(ctx, getNodesInBoundingBox2D,
+		arg.PosX,
+		arg.PosX_2,
+		arg.PosY,
+		arg.PosY_2,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetNodesInBoundingBox2DRow
+	for rows.Next() {
+		var i GetNodesInBoundingBox2DRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Val,
+			&i.Type,
+			&i.PosX,
+			&i.PosY,
+			&i.PosZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPaginatedGraphNodes = `-- name: GetPaginatedGraphNodes :many
+
+SELECT 
+    id,
+    name,
+    val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE 
+    -- If no cursor, get from start; otherwise use cursor for pagination
+    CASE 
+        WHEN $1::BIGINT IS NULL THEN TRUE
+        ELSE (
+            -- Primary sort: weight descending
+            (CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END) < $1::BIGINT
+            OR (
+                -- Tie-breaker: same weight, but ID is greater (for consistent ordering)
+                (CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END) = $1::BIGINT
+                AND id > $2::TEXT
+            )
+        )
+    END
+ORDER BY (
+    CASE WHEN val ~ '^[0-9]+$' THEN CAST(val AS BIGINT) ELSE 0 END
+) DESC NULLS LAST, id
+LIMIT $3
+`
+
+type GetPaginatedGraphNodesParams struct {
+	Column1 int64
+	Column2 string
+	Limit   int32
+}
+
+type GetPaginatedGraphNodesRow struct {
+	ID   string
+	Name string
+	Val  sql.NullString
+	Type sql.NullString
+	PosX sql.NullFloat64
+	PosY sql.NullFloat64
+	PosZ sql.NullFloat64
+}
+
+// ============================================================
+// Pagination Queries
+// ============================================================
+// Cursor-based pagination for graph nodes ordered by weight (val) descending
+// Cursor format: "weight:id" for tie-breaking
+// Parameters: $1=cursor_weight (BIGINT), $2=cursor_id (TEXT), $3=page_size (INT)
+// If cursor_weight is NULL, starts from beginning
+func (q *Queries) GetPaginatedGraphNodes(ctx context.Context, arg GetPaginatedGraphNodesParams) ([]GetPaginatedGraphNodesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPaginatedGraphNodes, arg.Column1, arg.Column2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPaginatedGraphNodesRow
+	for rows.Next() {
+		var i GetPaginatedGraphNodesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Val,
+			&i.Type,
+			&i.PosX,
+			&i.PosY,
+			&i.PosZ,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPrecalcState = `-- name: GetPrecalcState :one
+
+SELECT id, last_precalc_at, last_full_precalc_at, total_nodes, total_links, precalc_duration_ms, created_at, updated_at FROM precalc_state WHERE id = 1
+`
+
+// ============================================================
+// Incremental Precalculation Queries
+// ============================================================
+// Get the current precalculation state
+func (q *Queries) GetPrecalcState(ctx context.Context) (PrecalcState, error) {
+	row := q.db.QueryRowContext(ctx, getPrecalcState)
+	var i PrecalcState
+	err := row.Scan(
+		&i.ID,
+		&i.LastPrecalcAt,
+		&i.LastFullPrecalcAt,
+		&i.TotalNodes,
+		&i.TotalLinks,
+		&i.PrecalcDurationMs,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getPrecalculatedGraphDataCappedAll = `-- name: GetPrecalculatedGraphDataCappedAll :many
@@ -1091,6 +2105,60 @@ func (q *Queries) GetSubredditOverlap(ctx context.Context, arg GetSubredditOverl
 	return count, err
 }
 
+const getUserActivitySince = `-- name: GetUserActivitySince :many
+SELECT DISTINCT
+    u.id,
+    u.username,
+    COALESCE(p.post_count, 0) + COALESCE(c.comment_count, 0) AS total_activity
+FROM users u
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS post_count
+    FROM posts
+    WHERE posts.updated_at > $1
+    GROUP BY author_id
+) p ON p.author_id = u.id
+LEFT JOIN (
+    SELECT author_id, CAST(COUNT(*) AS BIGINT) AS comment_count
+    FROM comments
+    WHERE comments.updated_at > $1
+    GROUP BY author_id
+) c ON c.author_id = u.id
+WHERE (p.post_count IS NOT NULL AND p.post_count > 0)
+   OR (c.comment_count IS NOT NULL AND c.comment_count > 0)
+ORDER BY total_activity DESC, u.id
+`
+
+type GetUserActivitySinceRow struct {
+	ID            int32
+	Username      string
+	TotalActivity int32
+}
+
+// Get user activity that has been updated since the given timestamp
+// Returns users who have posted or commented since the given time
+func (q *Queries) GetUserActivitySince(ctx context.Context, updatedAt sql.NullTime) ([]GetUserActivitySinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUserActivitySince, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserActivitySinceRow
+	for rows.Next() {
+		var i GetUserActivitySinceRow
+		if err := rows.Scan(&i.ID, &i.Username, &i.TotalActivity); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserSubredditActivityCount = `-- name: GetUserSubredditActivityCount :one
 SELECT (
     (SELECT COUNT(*) FROM posts p WHERE p.author_id = $1 AND p.subreddit_id = $2) +
@@ -1164,6 +2232,48 @@ func (q *Queries) GetUserTotalActivity(ctx context.Context, authorID int32) (int
 	return total_activity, err
 }
 
+const insertCommunityHierarchy = `-- name: InsertCommunityHierarchy :exec
+INSERT INTO graph_community_hierarchy (
+    node_id,
+    level,
+    community_id,
+    parent_community_id,
+    centroid_x,
+    centroid_y,
+    centroid_z
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+) ON CONFLICT (node_id, level) DO UPDATE SET
+    community_id = EXCLUDED.community_id,
+    parent_community_id = EXCLUDED.parent_community_id,
+    centroid_x = EXCLUDED.centroid_x,
+    centroid_y = EXCLUDED.centroid_y,
+    centroid_z = EXCLUDED.centroid_z
+`
+
+type InsertCommunityHierarchyParams struct {
+	NodeID            string
+	Level             int32
+	CommunityID       int32
+	ParentCommunityID sql.NullInt32
+	CentroidX         sql.NullFloat64
+	CentroidY         sql.NullFloat64
+	CentroidZ         sql.NullFloat64
+}
+
+func (q *Queries) InsertCommunityHierarchy(ctx context.Context, arg InsertCommunityHierarchyParams) error {
+	_, err := q.db.ExecContext(ctx, insertCommunityHierarchy,
+		arg.NodeID,
+		arg.Level,
+		arg.CommunityID,
+		arg.ParentCommunityID,
+		arg.CentroidX,
+		arg.CentroidY,
+		arg.CentroidZ,
+	)
+	return err
+}
+
 const listGraphLinksAmong = `-- name: ListGraphLinksAmong :many
 SELECT source, target
 FROM graph_links
@@ -1199,7 +2309,7 @@ func (q *Queries) ListGraphLinksAmong(ctx context.Context, dollar_1 []string) ([
 }
 
 const listGraphNodesByWeight = `-- name: ListGraphNodesByWeight :many
-SELECT id, name, val, type
+SELECT id, name, val, type, pos_x, pos_y, pos_z
 FROM graph_nodes gn
 ORDER BY (
     CASE WHEN gn.val ~ '^[0-9]+$' THEN CAST(gn.val AS BIGINT) ELSE 0 END
@@ -1212,6 +2322,9 @@ type ListGraphNodesByWeightRow struct {
 	Name string
 	Val  sql.NullString
 	Type sql.NullString
+	PosX sql.NullFloat64
+	PosY sql.NullFloat64
+	PosZ sql.NullFloat64
 }
 
 func (q *Queries) ListGraphNodesByWeight(ctx context.Context, limit int32) ([]ListGraphNodesByWeightRow, error) {
@@ -1228,6 +2341,9 @@ func (q *Queries) ListGraphNodesByWeight(ctx context.Context, limit int32) ([]Li
 			&i.Name,
 			&i.Val,
 			&i.Type,
+			&i.PosX,
+			&i.PosY,
+			&i.PosZ,
 		); err != nil {
 			return nil, err
 		}
@@ -1389,6 +2505,38 @@ func (q *Queries) UpdateGraphNodePositions(ctx context.Context, arg UpdateGraphN
 		pq.Array(arg.Column2),
 		pq.Array(arg.Column3),
 		pq.Array(arg.Column4),
+	)
+	return err
+}
+
+const updatePrecalcState = `-- name: UpdatePrecalcState :exec
+UPDATE precalc_state
+SET 
+    last_precalc_at = $1,
+    last_full_precalc_at = COALESCE($2, last_full_precalc_at),
+    total_nodes = $3,
+    total_links = $4,
+    precalc_duration_ms = $5,
+    updated_at = now()
+WHERE id = 1
+`
+
+type UpdatePrecalcStateParams struct {
+	LastPrecalcAt     sql.NullTime
+	LastFullPrecalcAt sql.NullTime
+	TotalNodes        sql.NullInt32
+	TotalLinks        sql.NullInt32
+	PrecalcDurationMs sql.NullInt32
+}
+
+// Update the precalculation state after a run
+func (q *Queries) UpdatePrecalcState(ctx context.Context, arg UpdatePrecalcStateParams) error {
+	_, err := q.db.ExecContext(ctx, updatePrecalcState,
+		arg.LastPrecalcAt,
+		arg.LastFullPrecalcAt,
+		arg.TotalNodes,
+		arg.TotalLinks,
+		arg.PrecalcDurationMs,
 	)
 	return err
 }

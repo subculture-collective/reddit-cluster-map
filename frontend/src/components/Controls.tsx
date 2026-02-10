@@ -8,6 +8,7 @@ type Physics = {
   velocityDecay: number;
   cooldownTicks: number;
   collisionRadius: number;
+  autoTune?: boolean;
 };
 
 type SubredditSize =
@@ -43,6 +44,8 @@ interface Props {
   onToggleCommunityColors?: (enabled: boolean) => void;
   usePrecomputedLayout?: boolean;
   onTogglePrecomputedLayout?: (enabled: boolean) => void;
+  sizeAttenuation?: boolean;
+  onToggleSizeAttenuation?: (enabled: boolean) => void;
 }
 
 export default function Controls(props: Props) {
@@ -73,6 +76,8 @@ export default function Controls(props: Props) {
     onToggleCommunityColors,
     usePrecomputedLayout,
     onTogglePrecomputedLayout,
+    sizeAttenuation,
+    onToggleSizeAttenuation,
   } = props;
   const [search, setSearch] = useState("");
   const [srv, setSrv] = useState<{
@@ -196,6 +201,16 @@ export default function Controls(props: Props) {
           Use precomputed layout
         </label>
       )}
+      {onToggleSizeAttenuation && (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={!!sizeAttenuation}
+            onChange={(e) => onToggleSizeAttenuation?.(e.target.checked)}
+          />
+          Distance-based node sizing
+        </label>
+      )}
       <div className="text-xs text-white/70">Admin</div>
       <div className="flex items-center gap-3 text-sm">
         <button
@@ -295,6 +310,23 @@ export default function Controls(props: Props) {
           <option value="interSubLinks">Inter-sub links</option>
         </select>
       </div>
+
+      {/* Physics auto-tune toggle */}
+      <div className="text-xs text-white/70 border-t border-white/10 pt-2 mt-1">Physics</div>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={!!physics.autoTune}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            onPhysicsChange({
+              ...physics,
+              autoTune: e.target.checked,
+            })
+          }
+        />
+        Auto-tune physics
+        <span className="text-xs opacity-60">(3D instanced mode only)</span>
+      </label>
 
       {/* Physics: Repulsion (charge strength) */}
       <div className="flex gap-3 items-center">

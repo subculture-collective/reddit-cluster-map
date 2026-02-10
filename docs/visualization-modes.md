@@ -12,7 +12,7 @@ The application now supports three distinct visualization modes:
 
 ## 3D Graph View
 
-The original 3D visualization using `react-force-graph-3d`.
+The 3D visualization supports two rendering modes: an optimized InstancedMesh renderer and the original react-force-graph-3d renderer.
 
 ### Features:
 - 3D force-directed layout with WebGL rendering
@@ -23,10 +23,46 @@ The original 3D visualization using `react-force-graph-3d`.
 - Node hover tooltips
 - Click to select and focus nodes
 
+### Rendering Modes:
+
+#### InstancedMesh Renderer (Opt-in via `VITE_USE_INSTANCED_RENDERER`)
+When enabled, uses THREE.js InstancedMesh for dramatically improved performance:
+- Renders 100k+ nodes efficiently using GPU instancing
+- Position updates in <5ms
+- Memory usage <500MB for 100k nodes
+- Automatic level-of-detail based on camera distance
+- **Physics stabilization features** (see below)
+
+##### Physics Stabilization in InstancedMesh Renderer
+The InstancedMesh renderer includes advanced stability features:
+- **Velocity Clamping**: Caps at 50 units/frame to prevent runaway acceleration
+- **Position Bounds**: Constrains nodes within ±10,000 units from origin
+- **Convergence Detection**: Auto-stops when velocities drop below 0.1
+- **Auto-Tune Mode** (enabled by default):
+  - Charge scales as: `baseCharge × √(1000 / nodeCount)`
+  - Cooldown scales as: `max(200, nodeCount / 100)`
+  - Example: 100k nodes with -220 charge → -69.5 effective charge
+- **Manual Override**: Disable auto-tune to use slider values directly
+
+##### Physics Controls (InstancedMesh Renderer)
+- **Auto-tune physics** - Toggle automatic parameter scaling
+- **Repulsion** - Charge strength (-400 to 0)
+- **Link dist** - Distance between connected nodes (10 to 200)
+- **Damping** - Velocity decay (0.7 to 0.99)
+- **Cooldown** - Simulation iterations (0 to 400)
+- **Collision** - Overlap prevention radius (0 to 20)
+
+#### Original Renderer (Default)
+Uses react-force-graph-3d library:
+- Proven stability across browsers
+- Standard D3 force simulation
+- Good performance up to ~10k nodes
+
 ### Best For:
 - Exploring spatial relationships
 - Understanding overall network structure
 - Identifying clusters and communities
+- Large-scale graph visualization (10k+ nodes with InstancedMesh)
 - Impressive visual presentations
 
 ## 2D Graph View
@@ -53,6 +89,8 @@ A new D3.js-based 2D visualization that mirrors the 3D functionality.
   - `forceCollide` - Prevents node overlap
 - Configurable velocity decay for damping
 - All physics parameters controllable via UI
+
+**Note**: The 2D view uses standard D3 force simulation. Physics stabilization features (velocity clamping, position bounds, auto-tune) are currently only available in the 3D InstancedMesh renderer.
 
 ### Best For:
 - Detailed analysis and exploration
