@@ -365,10 +365,10 @@ export default function Graph3DInstanced(props: Props) {
             // Update link visibility and opacity based on LOD
             // updateVisibility() skips work if camera hasn't moved significantly
             // refresh() skips work if visibility hasn't changed (needsUpdate flag)
-            const nowMs = Date.now();
+            const nowDateMs = Date.now();
             if (
                 linkRenderer &&
-                nowMs - lastLinkVisibilityUpdate > LINK_VISIBILITY_UPDATE_INTERVAL
+                nowDateMs - lastLinkVisibilityUpdate > LINK_VISIBILITY_UPDATE_INTERVAL
             ) {
                 if (lodParams.showLinks) {
                     linkRenderer.updateVisibility(camera);
@@ -380,14 +380,14 @@ export default function Graph3DInstanced(props: Props) {
                     linkRenderer.setOpacity(0);
                     linkRenderer.refresh();
                 }
-                lastLinkVisibilityUpdate = nowMs;
+                lastLinkVisibilityUpdate = nowDateMs;
             }
 
             renderer.render(scene, camera);
 
             // Throttle camera change emissions
             if (onCameraChange) {
-                if (nowMs - lastCameraUpdate > CAMERA_UPDATE_INTERVAL) {
+                if (nowDateMs - lastCameraUpdate > CAMERA_UPDATE_INTERVAL) {
                     const { x, y, z } = camera.position;
                     // Only emit if position changed significantly
                     if (
@@ -399,7 +399,7 @@ export default function Graph3DInstanced(props: Props) {
                         lastCamPos.x = x;
                         lastCamPos.y = y;
                         lastCamPos.z = z;
-                        lastCameraUpdate = nowMs;
+                        lastCameraUpdate = nowDateMs;
                     }
                 }
             }
@@ -446,6 +446,7 @@ export default function Graph3DInstanced(props: Props) {
         enableAdaptiveLOD,
         lodConfig,
         currentLODTier,
+        onLODTierChange,
     ]);
 
     // Process graph data with filters
