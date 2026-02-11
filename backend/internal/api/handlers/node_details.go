@@ -127,7 +127,7 @@ func GetNodeDetails(q NodeDetailsReader) http.HandlerFunc {
 			Name:      nodeDetails.Name,
 			Val:       nodeDetails.Val,
 			Type:      nodeDetails.Type.String,
-			Degree:    len(neighbors),
+			Degree:    int(nodeDetails.Degree),
 			Neighbors: neighborList,
 		}
 
