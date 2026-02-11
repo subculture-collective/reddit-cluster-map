@@ -440,7 +440,8 @@ jobs:
 Compare results over time:
 
 ```bash
-# Generate comparison report (custom script)
+# Generate comparison report (example - custom script to be implemented by user)
+# This script would compare two test result JSON files and highlight differences
 ./scripts/compare-loadtest-results.sh \
   results/load-2026-02-01.json \
   results/load-2026-02-11.json
