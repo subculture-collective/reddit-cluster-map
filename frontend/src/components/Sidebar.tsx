@@ -453,8 +453,9 @@ export default function Sidebar(props: Props) {
 
               <div className="space-y-2">
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-20">Repulsion</label>
+                  <label htmlFor="physics-repulsion-slider" className="text-xs w-20">Repulsion</label>
                   <input
+                    id="physics-repulsion-slider"
                     type="range"
                     min={-400}
                     max={0}
@@ -467,6 +468,11 @@ export default function Sidebar(props: Props) {
                         chargeStrength: parseInt(e.target.value),
                       })
                     }
+                    aria-label={`Repulsion strength: ${physics.chargeStrength}`}
+                    aria-valuemin={-400}
+                    aria-valuemax={0}
+                    aria-valuenow={physics.chargeStrength}
+                    aria-valuetext={`${physics.chargeStrength}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {physics.chargeStrength}
@@ -474,8 +480,9 @@ export default function Sidebar(props: Props) {
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-20">Link dist</label>
+                  <label htmlFor="physics-linkdist-slider" className="text-xs w-20">Link dist</label>
                   <input
+                    id="physics-linkdist-slider"
                     type="range"
                     min={10}
                     max={200}
@@ -488,6 +495,11 @@ export default function Sidebar(props: Props) {
                         linkDistance: parseInt(e.target.value),
                       })
                     }
+                    aria-label={`Link distance: ${physics.linkDistance}`}
+                    aria-valuemin={10}
+                    aria-valuemax={200}
+                    aria-valuenow={physics.linkDistance}
+                    aria-valuetext={`${physics.linkDistance}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {physics.linkDistance}
@@ -495,8 +507,9 @@ export default function Sidebar(props: Props) {
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-20">Damping</label>
+                  <label htmlFor="physics-damping-slider" className="text-xs w-20">Damping</label>
                   <input
+                    id="physics-damping-slider"
                     type="range"
                     min={0.7}
                     max={0.99}
@@ -509,6 +522,11 @@ export default function Sidebar(props: Props) {
                         velocityDecay: parseFloat(e.target.value),
                       })
                     }
+                    aria-label={`Damping: ${physics.velocityDecay.toFixed(2)}`}
+                    aria-valuemin={0.7}
+                    aria-valuemax={0.99}
+                    aria-valuenow={physics.velocityDecay}
+                    aria-valuetext={`${physics.velocityDecay.toFixed(2)}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {physics.velocityDecay.toFixed(2)}
@@ -516,8 +534,9 @@ export default function Sidebar(props: Props) {
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-20">Cooldown</label>
+                  <label htmlFor="physics-cooldown-slider" className="text-xs w-20">Cooldown</label>
                   <input
+                    id="physics-cooldown-slider"
                     type="range"
                     min={0}
                     max={400}
@@ -530,6 +549,11 @@ export default function Sidebar(props: Props) {
                         cooldownTicks: parseInt(e.target.value),
                       })
                     }
+                    aria-label={`Cooldown ticks: ${physics.cooldownTicks}`}
+                    aria-valuemin={0}
+                    aria-valuemax={400}
+                    aria-valuenow={physics.cooldownTicks}
+                    aria-valuetext={`${physics.cooldownTicks}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {physics.cooldownTicks}
@@ -537,8 +561,9 @@ export default function Sidebar(props: Props) {
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-20">Collision</label>
+                  <label htmlFor="physics-collision-slider" className="text-xs w-20">Collision</label>
                   <input
+                    id="physics-collision-slider"
                     type="range"
                     min={0}
                     max={20}
@@ -551,6 +576,11 @@ export default function Sidebar(props: Props) {
                         collisionRadius: parseFloat(e.target.value),
                       })
                     }
+                    aria-label={`Collision radius: ${physics.collisionRadius.toFixed(1)}`}
+                    aria-valuemin={0}
+                    aria-valuemax={20}
+                    aria-valuenow={physics.collisionRadius}
+                    aria-valuetext={`${physics.collisionRadius.toFixed(1)}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {physics.collisionRadius.toFixed(1)}
@@ -638,8 +668,9 @@ export default function Sidebar(props: Props) {
 
               <div className="space-y-2">
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-24">Link opacity</label>
+                  <label htmlFor="display-linkopacity-slider" className="text-xs w-24">Link opacity</label>
                   <input
+                    id="display-linkopacity-slider"
                     type="range"
                     min={0}
                     max={1}
@@ -649,6 +680,11 @@ export default function Sidebar(props: Props) {
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       onLinkOpacityChange(parseFloat(e.target.value))
                     }
+                    aria-label={`Link opacity: ${(linkOpacity * 100).toFixed(0)}%`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(linkOpacity * 100)}
+                    aria-valuetext={`${(linkOpacity * 100).toFixed(0)}%`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {linkOpacity.toFixed(2)}
@@ -656,8 +692,9 @@ export default function Sidebar(props: Props) {
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-24">Node size</label>
+                  <label htmlFor="display-nodesize-slider" className="text-xs w-24">Node size</label>
                   <input
+                    id="display-nodesize-slider"
                     type="range"
                     min={2}
                     max={12}
@@ -667,6 +704,11 @@ export default function Sidebar(props: Props) {
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       onNodeRelSizeChange(parseInt(e.target.value))
                     }
+                    aria-label={`Node size: ${nodeRelSize}`}
+                    aria-valuemin={2}
+                    aria-valuemax={12}
+                    aria-valuenow={nodeRelSize}
+                    aria-valuetext={`${nodeRelSize}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {nodeRelSize}
@@ -682,15 +724,17 @@ export default function Sidebar(props: Props) {
               storageKey="sidebar-section-data"
             >
               <div className="flex gap-2 items-center">
-                <label className="text-xs whitespace-nowrap">
+                <label htmlFor="subreddit-size-select" className="text-xs whitespace-nowrap">
                   Subreddit size
                 </label>
                 <select
+                  id="subreddit-size-select"
                   className="flex-1 bg-black/40 border border-white/20 rounded px-2 py-1 text-xs outline-none"
                   value={subredditSize}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                     onSubredditSizeChange(e.target.value as SubredditSize)
                   }
+                  aria-label="Subreddit sizing metric"
                 >
                   <option value="subscribers">Subscribers</option>
                   <option value="activeUsers">Active users</option>
