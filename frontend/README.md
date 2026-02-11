@@ -69,6 +69,62 @@ The CI will enforce the new limits on subsequent PRs.
 
 The frontend fetches `${VITE_API_URL || '/api'}/graph?max_nodes=...&max_links=...` and renders the result.
 
+## Mobile Support
+
+The application is fully responsive and optimized for mobile devices:
+
+### Responsive Breakpoints
+- **Mobile**: < 768px width
+- **Tablet**: 768px - 1024px width
+- **Desktop**: ≥ 1024px width
+
+### Mobile Optimizations
+
+**Performance:**
+- Reduced default node count (5,000 on mobile, 10,000 on tablet, 20,000 on desktop)
+- Lower pixel ratio cap (1.5x on mobile, 2x on tablet/desktop)
+- Default to MEDIUM LOD tier on mobile for better framerate
+- Target: >15 FPS with 5,000 nodes
+
+**Touch Gestures:**
+- **One finger drag**: Rotate camera
+- **Two finger pinch**: Zoom in/out
+- **Two finger drag**: Pan camera
+- **Swipe up/down** (on Sidebar header): Expand/collapse bottom sheet
+
+**UI Layout:**
+- **Sidebar**: Converts from left sidebar (desktop) to bottom sheet (mobile)
+- **Inspector**: Converts from right sidebar (desktop) to bottom sheet (mobile)
+- **Legend/Minimap**: Auto-repositioned above bottom sheet on mobile
+- **SearchBar**: Centered at top, responsive width
+
+### Testing on Mobile Devices
+
+**iOS (Safari):**
+```bash
+# Get your local IP
+ipconfig getifaddr en0  # macOS
+# Or: ip addr show  # Linux
+
+# Start dev server
+npm run dev -- --host
+
+# Access from mobile: http://<your-ip>:5173
+```
+
+**Android (Chrome):**
+```bash
+# Same as iOS - start with --host flag
+npm run dev -- --host
+
+# Access from mobile browser
+```
+
+**Browser DevTools:**
+- Chrome DevTools: Toggle device toolbar (Cmd+Shift+M / Ctrl+Shift+M)
+- Test various viewport sizes: iPhone 12, iPad, etc.
+- Enable touch simulation for gesture testing
+
 ## Notes
 
 - Ensure there is no trailing slash in `VITE_API_URL` to avoid double slashes in requests.
