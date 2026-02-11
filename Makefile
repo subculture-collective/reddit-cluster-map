@@ -354,6 +354,76 @@ monitoring-up: ## Start monitoring stack (Prometheus + Grafana)
 monitoring-down: ## Stop monitoring stack
 	@cd backend && docker compose stop prometheus grafana
 
+##@ Load Testing
+
+loadtest-setup: check-env ## Setup load testing environment
+	@echo "==> Setting up load testing environment..."
+	@docker compose -f $(COMPOSE_FILE_PATH) -f $(ROOT_DIR)/backend/docker-compose.loadtest.yml up -d k6
+	@echo "✓ Load testing environment ready"
+
+loadtest-teardown: ## Teardown load testing environment
+	@echo "==> Tearing down load testing environment..."
+	@docker compose -f $(COMPOSE_FILE_PATH) -f $(ROOT_DIR)/backend/docker-compose.loadtest.yml down k6
+	@echo "✓ Load testing environment removed"
+
+loadtest-smoke: check-env ## Run smoke test (quick sanity check)
+	@echo "==> Running smoke test (1 VU, 30s)..."
+	@docker compose -f $(COMPOSE_FILE_PATH) -f $(ROOT_DIR)/backend/docker-compose.loadtest.yml run --rm k6 run /scripts/smoke.js
+	@echo "✓ Smoke test complete"
+
+loadtest-load: check-env ## Run load test (50 VU, 5min)
+	@echo "==> Running load test (50 VU, 5min)..."
+	@echo "⚠️  This test will take approximately 5 minutes to complete"
+	@docker compose -f $(COMPOSE_FILE_PATH) -f $(ROOT_DIR)/backend/docker-compose.loadtest.yml run --rm k6 run /scripts/load.js
+	@echo "✓ Load test complete"
+
+loadtest-stress: check-env ## Run stress test (200 VU ramp, 2min)
+	@echo "==> Running stress test (200 VU ramp, 2min)..."
+	@echo "⚠️  This test will push the system to its limits"
+	@docker compose -f $(COMPOSE_FILE_PATH) -f $(ROOT_DIR)/backend/docker-compose.loadtest.yml run --rm k6 run /scripts/stress.js
+	@echo "✓ Stress test complete"
+
+loadtest-soak: check-env ## Run soak test (10 VU, 30min)
+	@echo "==> Running soak test (10 VU, 30min)..."
+	@echo "⚠️  This test will take approximately 30 minutes to complete"
+	@echo "⚠️  Monitor memory usage in Grafana during this test"
+	@docker compose -f $(COMPOSE_FILE_PATH) -f $(ROOT_DIR)/backend/docker-compose.loadtest.yml run --rm k6 run /scripts/soak.js
+	@echo "✓ Soak test complete"
+
+loadtest: loadtest-smoke ## Run all load tests (smoke, load, stress, soak)
+	@echo ""
+	@echo "==> Running full load test suite..."
+	@echo "⚠️  This will take approximately 40 minutes to complete"
+	@echo ""
+	@$(MAKE) loadtest-smoke
+	@echo ""
+	@echo "Smoke test passed ✓"
+	@echo "Waiting 10 seconds before load test..."
+	@sleep 10
+	@echo ""
+	@$(MAKE) loadtest-load
+	@echo ""
+	@echo "Load test complete ✓"
+	@echo "Waiting 30 seconds before stress test..."
+	@sleep 30
+	@echo ""
+	@$(MAKE) loadtest-stress
+	@echo ""
+	@echo "Stress test complete ✓"
+	@echo "Waiting 60 seconds before soak test..."
+	@sleep 60
+	@echo ""
+	@$(MAKE) loadtest-soak
+	@echo ""
+	@echo "✓ All load tests complete!"
+	@echo ""
+	@echo "Results saved to backend/loadtest/results/"
+	@echo "Review results and compare with baselines in backend/loadtest/README.md"
+
+loadtest-results: ## View latest load test results
+	@echo "==> Latest load test results:"
+	@ls -lth $(ROOT_DIR)/backend/loadtest/results/*.json 2>/dev/null | head -5 || echo "No results found"
+
 ##@ Maintenance
 
 clean: ## Clean up build artifacts and temporary files

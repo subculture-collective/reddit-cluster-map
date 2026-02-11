@@ -1,0 +1,25 @@
+# Load Testing Compose Configuration
+# Use with: docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up
+
+services:
+    # k6 load testing service
+    k6:
+        container_name: reddit-cluster-k6
+        image: grafana/k6:latest
+        networks:
+            - web
+        volumes:
+            - ./loadtest:/scripts:ro
+            - ./loadtest/results:/results
+        environment:
+            - API_BASE_URL=http://api:8000
+            - ADMIN_TOKEN=${ADMIN_API_TOKEN}
+        # Override entrypoint to keep container running
+        # Tests are executed via docker exec
+        entrypoint: ["tail", "-f", "/dev/null"]
+        depends_on:
+            - api
+
+networks:
+    web:
+        external: true
