@@ -108,6 +108,7 @@ See the **[Developer Guide](docs/developer-guide.md)** for detailed workflows, t
 - **[Performance Documentation](docs/perf.md)** - Query optimization, benchmarking, and scaling
 - **[Performance Profiling Guide](docs/profiling.md)** - Runtime profiling, benchmarks, and optimization
 - **[Performance Analysis](docs/performance-analysis.md)** - Performance review and optimization recommendations
+- **[Load Testing Guide](docs/load-testing.md)** - k6-based load testing for API performance validation
 - **[OAuth Token Management](docs/oauth-token-management.md)** - Token refresh, credential rotation
 - **[Crawler Resilience](docs/CRAWLER_RESILIENCE.md)** - Rate limiting, retries, circuit breakers
 - **[Security Guide](docs/SECURITY.md)** - Security features and best practices
@@ -128,6 +129,9 @@ From `backend/`, run `make help` to see all available targets. Key ones:
 - `make performance-baseline` - Collect comprehensive performance baseline
 - `make profile-cpu` - Collect CPU profile (requires ENABLE_PROFILING=true)
 - `make profile-memory` - Collect memory profile (requires ENABLE_PROFILING=true)
+- `make loadtest` - Run k6 load tests (smoke, load, stress, soak)
+- `make loadtest-smoke` - Quick smoke test (30s)
+- `make loadtest-load` - Load test with 50 VUs (5min)
 - `make profile-all` - Collect all profiles (CPU, memory, goroutines)
 - `make integrity-check` - Run data integrity checks
 - `make integrity-clean` - Clean up data integrity issues
