@@ -69,6 +69,7 @@ frontend/yarn-error.log*
 frontend/pnpm-debug.log*
 frontend/lerna-debug.log*
 frontend/coverage/
+frontend/test-results/
 
 # Bundle analysis
 frontend/dist/stats.html
