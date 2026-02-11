@@ -1,19 +1,19 @@
 {
   "version": "0.0.0",
-  "timestamp": "2026-02-11T18:21:19.071Z",
+  "timestamp": "2026-02-11T18:24:44.577Z",
   "results": [
     {
       "fixture": "1k",
       "metrics": {
-        "renderTime": 590.7999999999884,
-        "steadyStateFps": 39.277036248044624,
-        "dataParseTime": 66,
+        "renderTime": 592.5,
+        "steadyStateFps": 48.666666666666664,
+        "dataParseTime": 67,
         "physicsWarmupTime": 5002,
-        "memoryUsage": 24.94128704071045,
-        "peakMemoryUsage": 24.94128704071045,
+        "memoryUsage": 26.793822288513184,
+        "peakMemoryUsage": 26.793822288513184,
         "nodeCount": 1000,
         "linkCount": 2500,
-        "timestamp": "2026-02-11T18:21:08.131Z"
+        "timestamp": "2026-02-11T18:24:16.691Z"
       },
       "metadata": {
         "browser": "chromium",
@@ -27,15 +27,37 @@
     {
       "fixture": "10k",
       "metrics": {
-        "renderTime": 1360.0999999999767,
-        "steadyStateFps": 9.543240752928824,
-        "dataParseTime": 748,
+        "renderTime": 992.1999999999534,
+        "steadyStateFps": 9.653794940079893,
+        "dataParseTime": 380,
         "physicsWarmupTime": 5001,
-        "memoryUsage": 39.88447952270508,
-        "peakMemoryUsage": 39.88447952270508,
+        "memoryUsage": 72.30369853973389,
+        "peakMemoryUsage": 72.30369853973389,
         "nodeCount": 10000,
         "linkCount": 25000,
-        "timestamp": "2026-02-11T18:21:18.605Z"
+        "timestamp": "2026-02-11T18:24:26.670Z"
+      },
+      "metadata": {
+        "browser": "chromium",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.7632.6 Safari/537.36",
+        "viewport": {
+          "width": 1280,
+          "height": 720
+        }
+      }
+    },
+    {
+      "fixture": "50k",
+      "metrics": {
+        "renderTime": 3933.1999999999534,
+        "steadyStateFps": 2.1663778162911145,
+        "dataParseTime": 2987,
+        "physicsWarmupTime": 5001,
+        "memoryUsage": 445.4016237258911,
+        "peakMemoryUsage": 445.4016237258911,
+        "nodeCount": 50000,
+        "linkCount": 125000,
+        "timestamp": "2026-02-11T18:24:44.126Z"
       },
       "metadata": {
         "browser": "chromium",
