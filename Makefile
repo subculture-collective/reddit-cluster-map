@@ -390,7 +390,7 @@ loadtest-soak: check-env ## Run soak test (10 VU, 30min)
 	@docker compose -f $(COMPOSE_FILE_PATH) -f $(ROOT_DIR)/backend/docker-compose.loadtest.yml run --rm k6 run /scripts/soak.js
 	@echo "✓ Soak test complete"
 
-loadtest: loadtest-smoke ## Run all load tests (smoke, load, stress, soak)
+loadtest: ## Run all load tests (smoke, load, stress, soak)
 	@echo ""
 	@echo "==> Running full load test suite..."
 	@echo "⚠️  This will take approximately 40 minutes to complete"

@@ -7,7 +7,6 @@ import { check, sleep } from 'k6';
 import { 
     API_BASE_URL, 
     commonParams,
-    checkStatus200,
     checkValidJSON,
     handleSummary,
     randomChoice,

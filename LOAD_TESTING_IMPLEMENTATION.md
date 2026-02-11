@@ -377,7 +377,7 @@ Total: 13 new files, 2 modified files
 
 ## Acceptance Criteria
 
-All requirements from issue #185 have been met:
+All requirements from issue #186 have been met:
 
 - ✅ k6 scripts for all key API endpoints
 - ✅ 4 test scenarios (smoke, load, stress, soak)

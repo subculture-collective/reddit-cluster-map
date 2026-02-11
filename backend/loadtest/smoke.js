@@ -34,7 +34,7 @@ export default function () {
     });
     
     check(response, {
-        'health: status is 200': (r) => checkStatus200(r, 'health'),
+        'health: status is 200': (r) => checkStatus200(r),
         'health: valid JSON': (r) => checkValidJSON(r),
         'health: response time < 100ms': (r) => r.timings.duration < 100,
     });
@@ -48,7 +48,7 @@ export default function () {
     });
     
     check(response, {
-        'graph: status is 200': (r) => checkStatus200(r, 'graph'),
+        'graph: status is 200': (r) => checkStatus200(r),
         'graph: valid JSON': (r) => checkValidJSON(r),
         'graph: has nodes': (r) => {
             try {
@@ -78,7 +78,7 @@ export default function () {
     });
     
     check(response, {
-        'graph (limited): status is 200': (r) => checkStatus200(r, 'graph'),
+        'graph (limited): status is 200': (r) => checkStatus200(r),
         'graph (limited): respects limits': (r) => {
             try {
                 const data = JSON.parse(r.body);
@@ -98,7 +98,7 @@ export default function () {
     });
     
     check(response, {
-        'communities: status is 200': (r) => checkStatus200(r, 'communities'),
+        'communities: status is 200': (r) => checkStatus200(r),
         'communities: valid JSON': (r) => checkValidJSON(r),
         'communities: response time < 500ms': (r) => r.timings.duration < 500,
     });
@@ -113,7 +113,7 @@ export default function () {
     });
     
     check(response, {
-        'search: status is 200': (r) => checkStatus200(r, 'search'),
+        'search: status is 200': (r) => checkStatus200(r),
         'search: valid JSON': (r) => checkValidJSON(r),
         'search: response time < 200ms': (r) => r.timings.duration < 200,
     });
@@ -127,7 +127,7 @@ export default function () {
     });
     
     check(response, {
-        'crawl status: status is 200': (r) => checkStatus200(r, 'crawl_status'),
+        'crawl status: status is 200': (r) => checkStatus200(r),
         'crawl status: valid JSON': (r) => checkValidJSON(r),
         'crawl status: response time < 100ms': (r) => r.timings.duration < 100,
     });
@@ -141,7 +141,7 @@ export default function () {
     });
     
     check(response, {
-        'export: status is 200': (r) => checkStatus200(r, 'export'),
+        'export: status is 200': (r) => checkStatus200(r),
         'export: valid JSON': (r) => checkValidJSON(r),
     });
     

@@ -32,7 +32,7 @@ for test in "${TESTS[@]}"; do
         echo "✗ FAIL"
         ((FAILED++))
         # Show error details
-        cat /tmp/k6_validate_output.txt | grep -A 5 "error" || cat /tmp/k6_validate_output.txt
+        grep -A 5 "error" /tmp/k6_validate_output.txt || cat /tmp/k6_validate_output.txt
     fi
 done
 

@@ -87,7 +87,7 @@ function testGraphEndpoint() {
     });
     
     check(response, {
-        'graph: status is 200': (r) => checkStatus200(r, 'graph'),
+        'graph: status is 200': (r) => checkStatus200(r),
         'graph: valid JSON': (r) => checkValidJSON(r),
         'graph: has nodes': (r) => {
             try {
@@ -108,7 +108,7 @@ function testSearchEndpoint() {
     });
     
     check(response, {
-        'search: status is 200': (r) => checkStatus200(r, 'search'),
+        'search: status is 200': (r) => checkStatus200(r),
         'search: valid JSON': (r) => checkValidJSON(r),
     });
 }
@@ -120,7 +120,7 @@ function testCommunitiesEndpoint() {
     });
     
     check(response, {
-        'communities: status is 200': (r) => checkStatus200(r, 'communities'),
+        'communities: status is 200': (r) => checkStatus200(r),
         'communities: valid JSON': (r) => checkValidJSON(r),
     });
     
@@ -139,7 +139,7 @@ function testCommunitiesEndpoint() {
                 );
                 
                 check(detailResponse, {
-                    'community detail: status is 200': (r) => checkStatus200(r, 'communities'),
+                    'community detail: status is 200': (r) => checkStatus200(r),
                 });
             }
         } catch (e) {
@@ -155,7 +155,7 @@ function testCrawlStatusEndpoint() {
     });
     
     check(response, {
-        'crawl status: status is 200': (r) => checkStatus200(r, 'crawl_status'),
+        'crawl status: status is 200': (r) => checkStatus200(r),
         'crawl status: valid JSON': (r) => checkValidJSON(r),
     });
 }
@@ -202,7 +202,7 @@ export function handleSummary(data) {
     
     // Return results to be written to file
     return {
-        [`results/${testName}-${timestamp}.json`]: JSON.stringify(data, null, 2),
+        [`/results/${testName}-${timestamp}.json`]: JSON.stringify(data, null, 2),
         stdout: '',
     };
 }

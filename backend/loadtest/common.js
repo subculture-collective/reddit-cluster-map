@@ -20,7 +20,7 @@ export const commonParams = {
     timeout: '60s',
 };
 
-// Admin-authenticated HTTP parameters
+// Admin-authenticated HTTP parameters (reserved for future admin endpoint testing)
 export function adminParams() {
     return {
         headers: {
@@ -38,12 +38,12 @@ export function randomChoice(array) {
 
 // Sleep for random duration between min and max seconds
 export function randomSleep(min, max) {
-    const sleep_time = Math.random() * (max - min) + min;
-    return sleep_time;
+    const sleepTime = Math.random() * (max - min) + min;
+    return sleepTime;
 }
 
 // Common check functions
-export function checkStatus200(response, endpoint) {
+export function checkStatus200(response) {
     return response.status === 200;
 }
 
@@ -74,7 +74,7 @@ export const SAMPLE_SEARCH_QUERIES = [
     'pics',
 ];
 
-// Sample subreddits for crawl testing
+// Sample subreddits for crawl testing (reserved for future crawl endpoint testing)
 export const SAMPLE_SUBREDDITS = [
     'AskReddit',
     'programming',
@@ -163,7 +163,7 @@ export function handleSummary(data) {
     
     // Return results to be written to file
     return {
-        [`results/${testName}-${timestamp}.json`]: JSON.stringify(data, null, 2),
+        [`/results/${testName}-${timestamp}.json`]: JSON.stringify(data, null, 2),
         stdout: '', // Suppress default stdout to avoid duplication
     };
 }
