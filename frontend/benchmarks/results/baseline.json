@@ -1,0 +1,50 @@
+{
+  "version": "0.0.0",
+  "timestamp": "2026-02-11T18:21:19.071Z",
+  "results": [
+    {
+      "fixture": "1k",
+      "metrics": {
+        "renderTime": 590.7999999999884,
+        "steadyStateFps": 39.277036248044624,
+        "dataParseTime": 66,
+        "physicsWarmupTime": 5002,
+        "memoryUsage": 24.94128704071045,
+        "peakMemoryUsage": 24.94128704071045,
+        "nodeCount": 1000,
+        "linkCount": 2500,
+        "timestamp": "2026-02-11T18:21:08.131Z"
+      },
+      "metadata": {
+        "browser": "chromium",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.7632.6 Safari/537.36",
+        "viewport": {
+          "width": 1280,
+          "height": 720
+        }
+      }
+    },
+    {
+      "fixture": "10k",
+      "metrics": {
+        "renderTime": 1360.0999999999767,
+        "steadyStateFps": 9.543240752928824,
+        "dataParseTime": 748,
+        "physicsWarmupTime": 5001,
+        "memoryUsage": 39.88447952270508,
+        "peakMemoryUsage": 39.88447952270508,
+        "nodeCount": 10000,
+        "linkCount": 25000,
+        "timestamp": "2026-02-11T18:21:18.605Z"
+      },
+      "metadata": {
+        "browser": "chromium",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.7632.6 Safari/537.36",
+        "viewport": {
+          "width": 1280,
+          "height": 720
+        }
+      }
+    }
+  ]
+}

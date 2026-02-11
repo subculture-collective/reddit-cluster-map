@@ -1,0 +1,151 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - combobox "Search nodes... (Ctrl+K or /)" [ref=e7]
+  - generic [ref=e8]:
+    - generic [ref=e9]:
+      - heading "Controls" [level=2] [ref=e10]
+      - button "Collapse sidebar" [ref=e11] [cursor=pointer]:
+        - img [ref=e12]
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - button "👁️ View" [expanded] [ref=e16] [cursor=pointer]:
+          - generic [ref=e17]:
+            - generic [ref=e18]: 👁️
+            - text: View
+          - img [ref=e19]
+        - generic [ref=e23]:
+          - generic [ref=e24]:
+            - button "3D" [ref=e25] [cursor=pointer]
+            - button "2D" [ref=e26] [cursor=pointer]
+            - button "Dashboard" [ref=e27] [cursor=pointer]
+            - button "Communities" [ref=e28] [cursor=pointer]
+            - button "Admin" [ref=e29] [cursor=pointer]
+          - generic [ref=e30]:
+            - textbox "Focus node by id/name" [ref=e31]
+            - button "Focus" [ref=e32] [cursor=pointer]
+      - generic [ref=e33]:
+        - button "🔍 Filters" [expanded] [ref=e34] [cursor=pointer]:
+          - generic [ref=e35]:
+            - generic [ref=e36]: 🔍
+            - text: Filters
+          - img [ref=e37]
+        - generic [ref=e41]:
+          - generic [ref=e42]:
+            - generic [ref=e43]:
+              - checkbox "subreddit" [checked] [ref=e44]
+              - generic [ref=e45]: subreddit
+            - generic [ref=e47]:
+              - checkbox "user" [checked] [ref=e48]
+              - generic [ref=e49]: user
+            - generic [ref=e51]:
+              - checkbox "post" [ref=e52]
+              - generic [ref=e53]: post
+            - generic [ref=e55]:
+              - checkbox "comment" [ref=e56]
+              - generic [ref=e57]: comment
+          - generic [ref=e59]:
+            - generic [ref=e60]: Min degree
+            - spinbutton [ref=e61]
+          - generic [ref=e62]:
+            - generic [ref=e63]: Max degree
+            - spinbutton [ref=e64]
+      - generic [ref=e65]:
+        - button "⚡ Physics" [expanded] [ref=e66] [cursor=pointer]:
+          - generic [ref=e67]:
+            - generic [ref=e68]: ⚡
+            - text: Physics
+          - img [ref=e69]
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - checkbox "Auto-tune (3D instanced only)" [checked] [ref=e75]
+            - text: Auto-tune
+            - generic [ref=e76]: (3D instanced only)
+          - generic [ref=e77]:
+            - generic [ref=e78]:
+              - generic [ref=e79]: Repulsion
+              - slider [ref=e80]: "-220"
+              - generic [ref=e81]: "-220"
+            - generic [ref=e82]:
+              - generic [ref=e83]: Link dist
+              - slider [ref=e84]: "120"
+              - generic [ref=e85]: "120"
+            - generic [ref=e86]:
+              - generic [ref=e87]: Damping
+              - slider [ref=e88]: "0.88"
+              - generic [ref=e89]: "0.88"
+            - generic [ref=e90]:
+              - generic [ref=e91]: Cooldown
+              - slider [ref=e92]: "80"
+              - generic [ref=e93]: "80"
+            - generic [ref=e94]:
+              - generic [ref=e95]: Collision
+              - slider [ref=e96]: "3"
+              - generic [ref=e97]: "3.0"
+      - generic [ref=e98]:
+        - button "🎨 Display" [expanded] [ref=e99] [cursor=pointer]:
+          - generic [ref=e100]:
+            - generic [ref=e101]: 🎨
+            - text: Display
+          - img [ref=e102]
+        - generic [ref=e106]:
+          - generic [ref=e107]:
+            - checkbox "Show labels" [checked] [ref=e108]
+            - text: Show labels
+          - generic [ref=e109]:
+            - checkbox "Use community colors" [ref=e110]
+            - text: Use community colors
+          - generic [ref=e111]:
+            - checkbox "Use precomputed layout" [checked] [ref=e112]
+            - text: Use precomputed layout
+          - generic [ref=e113]:
+            - checkbox "Distance-based node sizing" [checked] [ref=e114]
+            - text: Distance-based node sizing
+          - generic [ref=e115]:
+            - generic [ref=e116]:
+              - checkbox "Adaptive LOD" [checked] [ref=e117]
+              - text: Adaptive LOD
+            - generic [ref=e118]: "Tier: High"
+          - generic [ref=e119]:
+            - generic [ref=e120]:
+              - generic [ref=e121]: Link opacity
+              - slider [ref=e122]: "0.35"
+              - generic [ref=e123]: "0.35"
+            - generic [ref=e124]:
+              - generic [ref=e125]: Node size
+              - slider [ref=e126]: "5"
+              - generic [ref=e127]: "5"
+      - generic [ref=e128]:
+        - button "📊 Data" [expanded] [ref=e129] [cursor=pointer]:
+          - generic [ref=e130]:
+            - generic [ref=e131]: 📊
+            - text: Data
+          - img [ref=e132]
+        - generic [ref=e137]:
+          - generic [ref=e138]: Subreddit size
+          - combobox [ref=e139]:
+            - option "Subscribers" [selected]
+            - option "Active users"
+            - option "Posts + comments"
+            - option "Inter-sub links"
+  - button "📋 Share Link" [ref=e141] [cursor=pointer]
+  - generic [ref=e143]:
+    - generic [ref=e144]:
+      - button "Reload" [ref=e145] [cursor=pointer]
+      - generic [ref=e146] [cursor=pointer]:
+        - checkbox "Only show linked nodes" [checked] [ref=e147]
+        - generic [ref=e148]: Only show linked nodes
+      - generic "Precomputed layout enabled, but this dataset has no stored positions" [ref=e149]: "Layout: Simulated"
+    - generic [ref=e153]:
+      - generic: "Left-click: rotate, Mouse-wheel/middle-click: zoom, Right-click: pan"
+    - generic [ref=e155]:
+      - generic "Graph minimap - shows overview and current viewport" [ref=e156] [cursor=pointer]
+      - generic [ref=e157]: Press M to toggle
+  - generic [ref=e158]:
+    - generic [ref=e159]: Legend
+    - generic [ref=e160]:
+      - generic [ref=e163]: Subreddit
+      - generic [ref=e166]: User
+    - generic [ref=e168]: Node size = degree (connections)
+```
