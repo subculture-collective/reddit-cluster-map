@@ -20,6 +20,7 @@ import PerformanceHUD from './PerformanceHUD';
 import Minimap from './Minimap';
 import { DEFAULT_LOD_CONFIG } from '../utils/levelOfDetail';
 import { useTheme } from '../contexts/ThemeContext';
+import { useMobileDetect, getMobileGraphConfig } from '../hooks/useMobileDetect';
 
 /**
  * Graph3DInstanced - High-performance 3D graph visualization using InstancedMesh
@@ -100,6 +101,13 @@ export default function Graph3DInstanced(props: Props) {
     } = props;
 
     const { theme } = useTheme();
+    
+    // Mobile detection
+    const { isMobile, isTablet, isTouchDevice } = useMobileDetect();
+    const mobileConfig = useMemo(
+        () => getMobileGraphConfig(isMobile, isTablet),
+        [isMobile, isTablet]
+    );
 
     // State
     const [graphData, setGraphData] = useState<GraphData | null>(null);
@@ -108,7 +116,10 @@ export default function Graph3DInstanced(props: Props) {
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
     const [webglSupported] = useState(() => detectWebGLSupport());
     const [onlyLinked, setOnlyLinked] = useState(true);
-    const [currentLODTier, setCurrentLODTier] = useState<LODTier>(LODTier.HIGH);
+    const [currentLODTier, setCurrentLODTier] = useState<LODTier>(() => {
+        // Use mobile-optimized default LOD tier on mobile devices
+        return isMobile || isTablet ? LODTier.MEDIUM : LODTier.HIGH;
+    });
     const [currentCamera, setCurrentCamera] = useState<{ x: number; y: number; z: number } | undefined>();
 
     // Refs for Three.js objects
@@ -136,23 +147,34 @@ export default function Graph3DInstanced(props: Props) {
         mouseY: number;
     } | null>(null);
 
+    // Use mobile-optimized limits or environment variables
     const MAX_RENDER_NODES = useMemo(() => {
+        // Check environment variable first
         const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
             | string
             | number
             | undefined;
-        const n = typeof raw === 'string' ? parseInt(raw) : Number(raw);
-        return Number.isFinite(n) && (n as number) > 0 ? (n as number) : 20000;
-    }, []);
+        const envValue = typeof raw === 'string' ? parseInt(raw) : Number(raw);
+        if (Number.isFinite(envValue) && (envValue as number) > 0) {
+            return envValue as number;
+        }
+        // Fall back to mobile-optimized defaults
+        return mobileConfig.maxRenderNodes;
+    }, [mobileConfig.maxRenderNodes]);
 
     const MAX_RENDER_LINKS = useMemo(() => {
+        // Check environment variable first
         const raw = import.meta.env?.VITE_MAX_RENDER_LINKS as unknown as
             | string
             | number
             | undefined;
-        const n = typeof raw === 'string' ? parseInt(raw) : Number(raw);
-        return Number.isFinite(n) && (n as number) > 0 ? (n as number) : 50000;
-    }, []);
+        const envValue = typeof raw === 'string' ? parseInt(raw) : Number(raw);
+        if (Number.isFinite(envValue) && (envValue as number) > 0) {
+            return envValue as number;
+        }
+        // Fall back to mobile-optimized defaults
+        return mobileConfig.maxRenderLinks;
+    }, [mobileConfig.maxRenderLinks]);
 
     const activeTypes = useMemo(() => {
         const enabled = Object.entries(filters)
@@ -260,14 +282,31 @@ export default function Graph3DInstanced(props: Props) {
             containerRef.current.clientWidth,
             containerRef.current.clientHeight,
         );
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap for performance
+        // Use mobile-optimized pixel ratio
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobileConfig.pixelRatio));
         containerRef.current.appendChild(renderer.domElement);
         rendererRef.current = renderer;
 
-        // Create controls
+        // Create controls with touch support
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
+        
+        // Enable touch gestures for mobile devices
+        if (isTouchDevice) {
+            // Touch gestures configuration
+            controls.touches = {
+                ONE: THREE.TOUCH.ROTATE,      // One finger: rotate camera
+                TWO: THREE.TOUCH.DOLLY_PAN,   // Two fingers: pinch-to-zoom and pan
+            };
+            // Adjust rotation speed for touch
+            controls.rotateSpeed = 0.7;
+            // Adjust pan speed for touch
+            controls.panSpeed = 0.7;
+            // Adjust zoom speed for pinch gesture
+            controls.zoomSpeed = 1.2;
+        }
+        
         controlsRef.current = controls;
 
         // Add lights
@@ -471,6 +510,8 @@ export default function Graph3DInstanced(props: Props) {
         enableAdaptiveLOD,
         lodConfig,
         onLODTierChange,
+        mobileConfig.pixelRatio,
+        isTouchDevice,
     ]);
 
     // Track camera position for minimap (update every second to match original renderer)
