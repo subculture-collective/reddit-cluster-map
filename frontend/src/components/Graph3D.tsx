@@ -7,6 +7,7 @@ import type {
 } from "react-force-graph-3d";
 import ForceGraph3D from "react-force-graph-3d";
 import type { GraphData, GraphNode, GraphLink } from "../types/graph";
+import type { CommunityResult } from "../utils/communityDetection";
 import { FrameThrottler } from "../utils/frameThrottle";
 import {
   calculateLinkOpacity,
@@ -23,6 +24,7 @@ import Graph3DInstanced from "./Graph3DInstanced";
 import { StreamingGraphLoader, type LoadProgress } from "../data/StreamingGraphLoader";
 import LoadingProgress from "./LoadingProgress";
 import PerformanceHUD from "./PerformanceHUD";
+import Minimap from "./Minimap";
 import { useTheme } from "../contexts/ThemeContext";
 
 type Filters = {
@@ -352,6 +354,7 @@ function Graph3DOriginal(props: Omit<Props, 'enableAdaptiveLOD' | 'onLODTierChan
   const [adaptiveShowLabels, setAdaptiveShowLabels] = useState(showLabels);
   const bundleMeshesRef = useRef<THREE.Mesh[]>([]);
   const labelRendererRef = useRef<SDFTextRenderer | null>(null);
+  const [currentCamera, setCurrentCamera] = useState<{ x: number; y: number; z: number } | undefined>();
 
   const MAX_RENDER_NODES = useMemo(() => {
     const raw = import.meta.env?.VITE_MAX_RENDER_NODES as unknown as
@@ -622,6 +625,7 @@ function Graph3DOriginal(props: Omit<Props, 'enableAdaptiveLOD' | 'onLODTierChan
           Math.abs(z - lastCamPos.z) > EPSILON
         ) {
           onCameraChange({ x, y, z });
+          setCurrentCamera({ x, y, z });
           lastCamPos.x = x;
           lastCamPos.y = y;
           lastCamPos.z = z;
@@ -1262,6 +1266,14 @@ function Graph3DOriginal(props: Omit<Props, 'enableAdaptiveLOD' | 'onLODTierChan
         totalNodeCount={graphData?.nodes.length || 0}
         simulationState={usePrecomputedLayout && hasPrecomputedPositions ? 'precomputed' : 'active'}
         lodLevel={0}
+      />
+      <Minimap
+        cameraPosition={currentCamera}
+        communityResult={communityResult as CommunityResult | null}
+        nodes={filtered.nodes}
+        onCameraMove={(position) => {
+          fgRef.current?.cameraPosition?.(position, { x: 0, y: 0, z: 0 }, 1000);
+        }}
       />
     </div>
   );

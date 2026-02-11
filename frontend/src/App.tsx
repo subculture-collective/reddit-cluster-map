@@ -7,14 +7,16 @@ import Graph3D from "./components/Graph3D.tsx";
 import Inspector from "./components/Inspector.tsx";
 import Legend from "./components/Legend.tsx";
 import ShareButton from "./components/ShareButton.tsx";
-import SearchBar from "./components/SearchBar.tsx";
+import SearchBar, { type SearchBarHandle } from "./components/SearchBar.tsx";
 import ErrorBoundary from "./components/ErrorBoundary.tsx";
 import GraphErrorFallback from "./components/GraphErrorFallback.tsx";
+import KeyboardShortcutsHelp from "./components/KeyboardShortcutsHelp.tsx";
 import type { TypeFilters } from "./types/ui";
 import type { CommunityResult } from "./utils/communityDetection";
 import { readStateFromURL, writeStateToURL, type AppState } from "./utils/urlState";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { detectWebGLSupport } from "./utils/webglDetect";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 
 function App() {
   // Initialize state from URL if available
@@ -115,6 +117,11 @@ function App() {
   
   const [camera3dRef, setCamera3dRef] = useState<{ x: number; y: number; z: number } | undefined>(urlState.camera3d);
   const [camera2dRef, setCamera2dRef] = useState<{ x: number; y: number; zoom: number } | undefined>(urlState.camera2d);
+  
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  
+  // Ref for search bar to enable focus from keyboard shortcuts
+  const searchInputRef = useRef<SearchBarHandle | null>(null);
 
   // Persist view mode
   useEffect(() => {
@@ -193,12 +200,65 @@ function App() {
     enableAdaptiveLOD,
   }), [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout, sizeAttenuation, enableAdaptiveLOD]);
 
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onFocusSearch: viewMode === "admin" ? undefined : useCallback(() => {
+      searchInputRef.current?.focus();
+    }, []),
+    
+    // Sidebar toggle is handled in Sidebar component itself via Ctrl+B
+    
+    onSwitch3D: useCallback(() => {
+      if (viewMode !== "3d" && viewMode !== "admin") {
+        setViewMode("3d");
+      }
+    }, [viewMode]),
+    
+    onSwitch2D: useCallback(() => {
+      if (viewMode !== "2d" && viewMode !== "admin") {
+        setViewMode("2d");
+      }
+    }, [viewMode]),
+    
+    onSwitchCommunity: useCallback(() => {
+      if (viewMode !== "communities" && viewMode !== "admin") {
+        setViewMode("communities");
+      }
+    }, [viewMode]),
+    
+    onToggleLabels: useCallback(() => {
+      if (viewMode === "3d" || viewMode === "2d") {
+        setShowLabels(prev => !prev);
+      }
+    }, [viewMode]),
+    
+    onEscape: useCallback(() => {
+      // Close help overlay if open
+      if (showShortcutsHelp) {
+        setShowShortcutsHelp(false);
+        return;
+      }
+      // Otherwise deselect node
+      setSelectedId(undefined);
+      setFocusNodeId(undefined);
+    }, [showShortcutsHelp]),
+    
+    onShowHelp: useCallback(() => {
+      setShowShortcutsHelp(prev => !prev);
+    }, []),
+    
+    // Note: Fit graph, reset camera, and arrow navigation require graph instance methods
+    // These will be handled by exposing methods from Graph3D/Graph2D components
+    // For now, we'll leave them undefined and implement in a follow-up if needed
+  });
+
   return (
     <div className="w-full h-screen bg-white dark:bg-black transition-colors duration-200">
       {/* Search bar - visible in all views except admin */}
       {viewMode !== "admin" && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50">
           <SearchBar
+            ref={searchInputRef}
             onSelectNode={(id) => {
               setFocusNodeId(id);
               setSelectedId(id);
@@ -371,6 +431,12 @@ function App() {
           />
         </>
       )}
+      
+      {/* Keyboard shortcuts help overlay */}
+      <KeyboardShortcutsHelp 
+        isOpen={showShortcutsHelp}
+        onClose={() => setShowShortcutsHelp(false)}
+      />
     </div>
   );
 }

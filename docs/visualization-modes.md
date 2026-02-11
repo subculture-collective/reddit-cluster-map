@@ -17,6 +17,7 @@ The 3D visualization supports two rendering modes: an optimized InstancedMesh re
 ### Features:
 - 3D force-directed layout with WebGL rendering
 - Camera controls (rotate, zoom, pan)
+- **Navigation Minimap** - Overview map with current viewport indicator
 - Node sizing based on configurable metrics
 - Always-on labels for important nodes
 - Link visibility optimization based on camera distance
@@ -58,11 +59,39 @@ Uses react-force-graph-3d library:
 - Standard D3 force simulation
 - Good performance up to ~10k nodes
 
+### Navigation Minimap
+
+Both 3D renderers include an interactive minimap overlay for navigation context.
+
+#### Features:
+- **Small 200×200px canvas** in the bottom-right corner
+- **Community visualization** - Shows community clusters as colored dots at their centroids
+- **Viewport indicator** - Semi-transparent rectangle showing current camera position
+- **Click to navigate** - Click anywhere on the minimap to smoothly move the camera to that location
+- **Drag viewport** - Drag the viewport indicator to pan the camera
+- **Toggle visibility** - Press **M** key to show/hide the minimap
+- **Performance optimized** - Updates at 5Hz (200ms) to minimize overhead
+
+#### How to Use:
+1. The minimap appears automatically in the bottom-right corner when viewing 3D graphs
+2. Click on any area of the minimap to jump the camera to that position
+3. Drag the white viewport rectangle to pan smoothly
+4. Press **M** to toggle minimap visibility (useful when inspecting the bottom-right area)
+5. The minimap will not toggle when typing in input fields
+
+#### Technical Details:
+- Renders community cluster centroids as colored dots
+- Shows individual nodes (sampled) when community detection is not active
+- Camera position tracked every second in both renderers and reflected in the viewport indicator
+- Throttled rendering ensures minimal performance impact (<2% FPS)
+- Smooth camera animations (1000ms) when clicking the minimap in both renderers
+
 ### Best For:
 - Exploring spatial relationships
 - Understanding overall network structure
 - Identifying clusters and communities
 - Large-scale graph visualization (10k+ nodes with InstancedMesh)
+- Quick navigation to different areas of large graphs
 - Impressive visual presentations
 
 ## 2D Graph View
@@ -173,6 +202,14 @@ All visualization modes share:
 - Respect for node type filters
 - Consistent metric calculations
 - Integration with Inspector panel (graph views only)
+
+### Keyboard Shortcuts
+
+The 3D graph views support the following keyboard shortcuts:
+
+- **M** - Toggle minimap visibility
+- **Ctrl+K** or **/** - Focus search bar
+- **Ctrl+Shift+P** - Toggle Performance HUD (development mode)
 
 ## Performance Considerations
 
