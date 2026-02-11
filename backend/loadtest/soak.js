@@ -10,7 +10,6 @@ import {
     checkStatus200,
     checkValidJSON,
     getAllThresholds,
-    handleSummary,
     randomChoice,
     randomSleep,
     SAMPLE_SEARCH_QUERIES
