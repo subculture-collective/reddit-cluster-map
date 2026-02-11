@@ -1,0 +1,6 @@
+# Generated test fixtures (large files, regenerate locally)
+fixtures/*.json
+
+# Benchmark results (except baseline)
+results/*.json
+!results/baseline.json

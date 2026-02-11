@@ -14,6 +14,9 @@
         "test:coverage": "vitest run --coverage",
         "test:e2e": "playwright test",
         "test:e2e:ui": "playwright test --ui",
+        "benchmark": "playwright test --config=playwright.benchmark.config.ts",
+        "benchmark:compare": "npx tsx benchmarks/compare.ts",
+        "benchmark:generate-fixtures": "npx tsx benchmarks/fixtures/generateFixtures.ts",
         "size": "size-limit",
         "size:json": "size-limit --json"
     },

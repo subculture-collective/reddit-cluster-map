@@ -1,0 +1,207 @@
+/**
+ * Performance benchmarks for Reddit Cluster Map
+ * 
+ * Measures rendering performance, FPS, memory usage, and physics simulation
+ * across different dataset sizes (1k, 10k, 50k, 100k nodes).
+ * 
+ * Run with: npm run benchmark
+ * Results are stored in benchmarks/results/
+ */
+
+import { test, expect } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { BenchmarkResult, PerformanceMetrics } from './utils/metrics';
+
+const FIXTURES = ['1k', '10k', '50k'];
+const WARMUP_TIME_MS = 5000; // Time to wait for physics stabilization
+const FPS_MEASUREMENT_DURATION_MS = 3000; // Duration to measure FPS
+
+// Helper to load fixture data
+function loadFixture(fixtureName: string) {
+  const fixturePath = path.join(__dirname, 'fixtures', `graph-${fixtureName}.json`);
+  return JSON.parse(fs.readFileSync(fixturePath, 'utf-8'));
+}
+
+// Helper to measure FPS using requestAnimationFrame
+async function measureFPS(page: any, durationMs: number): Promise<number> {
+  return await page.evaluate(async (duration: number) => {
+    return new Promise<number>((resolve) => {
+      let frameCount = 0;
+      const startTime = performance.now();
+      
+      function countFrame() {
+        frameCount++;
+        const elapsed = performance.now() - startTime;
+        
+        if (elapsed < duration) {
+          requestAnimationFrame(countFrame);
+        } else {
+          const fps = (frameCount / elapsed) * 1000;
+          resolve(fps);
+        }
+      }
+      
+      requestAnimationFrame(countFrame);
+    });
+  }, durationMs);
+}
+
+// Helper to get memory metrics
+async function getMemoryMetrics(page: any) {
+  return await page.evaluate(() => {
+    // @ts-ignore - performance.memory is a Chrome-specific API
+    if (performance.memory) {
+      // @ts-ignore
+      return {
+        usedJSHeapSize: performance.memory.usedJSHeapSize / 1024 / 1024, // Convert to MB
+        // @ts-ignore
+        totalJSHeapSize: performance.memory.totalJSHeapSize / 1024 / 1024,
+      };
+    }
+    return { usedJSHeapSize: 0, totalJSHeapSize: 0 };
+  });
+}
+
+test.describe('Performance Benchmarks', () => {
+  // Run benchmarks sequentially to avoid resource contention
+  test.describe.configure({ mode: 'serial' });
+  
+  const results: BenchmarkResult[] = [];
+  
+  for (const fixture of FIXTURES) {
+    test(`benchmark ${fixture} nodes`, async ({ page, browserName }) => {
+      console.log(`\n🔬 Running benchmark for ${fixture} fixture...`);
+      
+      const fixtureData = loadFixture(fixture);
+      const nodeCount = fixtureData.nodes.length;
+      const linkCount = fixtureData.links.length;
+      
+      console.log(`   Nodes: ${nodeCount.toLocaleString()}, Links: ${linkCount.toLocaleString()}`);
+      
+      // Mark the start time
+      const benchmarkStart = Date.now();
+      
+      // Intercept API calls and return fixture data
+      await page.route('**/api/graph*', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(fixtureData),
+        });
+      });
+      
+      // Navigate to the app
+      await page.goto('/');
+      
+      // Add performance marks for measurement
+      await page.evaluate(() => {
+        performance.mark('navigation-start');
+      });
+      
+      // Wait for the page to load
+      await page.waitForLoadState('networkidle');
+      
+      // Measure data parse time
+      const parseStartTime = Date.now();
+      await page.waitForFunction(
+        () => {
+          // Check if graph data is loaded
+          const body = document.body.textContent || '';
+          return !body.includes('Loading') || document.querySelector('canvas') !== null;
+        },
+        { timeout: 30000 }
+      );
+      const dataParseTime = Date.now() - parseStartTime;
+      
+      // Mark render complete
+      await page.evaluate(() => {
+        performance.mark('render-complete');
+      });
+      
+      // Measure render time
+      const renderTimeResult = await page.evaluate(() => {
+        const measure = performance.measure('render-time', 'navigation-start', 'render-complete');
+        return measure.duration;
+      });
+      
+      console.log(`   ✓ Data parsed in ${dataParseTime}ms`);
+      console.log(`   ✓ Initial render in ${renderTimeResult.toFixed(0)}ms`);
+      
+      // Get initial memory usage
+      const initialMemory = await getMemoryMetrics(page);
+      
+      // Wait for physics warmup
+      console.log(`   ⏳ Waiting ${WARMUP_TIME_MS}ms for physics warmup...`);
+      const physicsWarmupStart = Date.now();
+      await page.waitForTimeout(WARMUP_TIME_MS);
+      const physicsWarmupTime = Date.now() - physicsWarmupStart;
+      
+      // Measure steady-state FPS
+      console.log(`   📊 Measuring FPS over ${FPS_MEASUREMENT_DURATION_MS}ms...`);
+      const fps = await measureFPS(page, FPS_MEASUREMENT_DURATION_MS);
+      
+      // Get peak memory usage after warmup
+      const peakMemory = await getMemoryMetrics(page);
+      
+      console.log(`   ✓ Steady-state FPS: ${fps.toFixed(1)}`);
+      console.log(`   ✓ Memory usage: ${peakMemory.usedJSHeapSize.toFixed(1)}MB`);
+      
+      const metrics: PerformanceMetrics = {
+        renderTime: renderTimeResult,
+        steadyStateFps: fps,
+        dataParseTime,
+        physicsWarmupTime,
+        memoryUsage: peakMemory.usedJSHeapSize,
+        peakMemoryUsage: peakMemory.usedJSHeapSize,
+        nodeCount,
+        linkCount,
+        timestamp: new Date().toISOString(),
+      };
+      
+      const result: BenchmarkResult = {
+        fixture,
+        metrics,
+        metadata: {
+          browser: browserName,
+          userAgent: await page.evaluate(() => navigator.userAgent),
+          viewport: {
+            width: 1280,
+            height: 720,
+          },
+        },
+      };
+      
+      results.push(result);
+      
+      // Assert reasonable performance bounds
+      expect(fps).toBeGreaterThan(10); // Minimum viable FPS
+      expect(renderTimeResult).toBeLessThan(30000); // Max 30s initial render
+      
+      console.log(`   ✅ Benchmark complete (${Date.now() - benchmarkStart}ms total)\n`);
+    });
+  }
+  
+  // Save results after all benchmarks complete
+  test.afterAll(async () => {
+    const outputDir = path.join(__dirname, 'results');
+    fs.mkdirSync(outputDir, { recursive: true });
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const outputPath = path.join(outputDir, `benchmark-${timestamp}.json`);
+    
+    const output = {
+      version: process.env.npm_package_version || '0.1.0',
+      timestamp: new Date().toISOString(),
+      results,
+    };
+    
+    fs.writeFileSync(outputPath, JSON.stringify(output, null, 2));
+    console.log(`\n📝 Results saved to: ${outputPath}`);
+    
+    // Also save as "latest" for easy comparison
+    const latestPath = path.join(outputDir, 'benchmark-latest.json');
+    fs.writeFileSync(latestPath, JSON.stringify(output, null, 2));
+    console.log(`📝 Latest results saved to: ${latestPath}\n`);
+  });
+});
