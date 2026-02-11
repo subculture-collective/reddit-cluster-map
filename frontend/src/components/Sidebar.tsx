@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import SidebarSection from "./SidebarSection";
 import type { TypeFilters } from "../types/ui";
+import { useMobileDetect } from "../hooks/useMobileDetect";
 
 type Physics = {
   chargeStrength: number;
@@ -86,12 +87,16 @@ export default function Sidebar(props: Props) {
     currentLODTier,
   } = props;
 
+  const { isMobile } = useMobileDetect();
+
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try {
       const saved = localStorage.getItem("sidebar-collapsed");
+      // On mobile, start collapsed by default
+      if (isMobile && !saved) return true;
       return saved === "true";
     } catch {
-      return false;
+      return isMobile; // Default collapsed on mobile
     }
   });
 
@@ -128,6 +133,56 @@ export default function Sidebar(props: Props) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Touch gesture support for mobile bottom sheet (swipe up/down)
+  useEffect(() => {
+    if (!isMobile) return;
+
+    let touchStartY = 0;
+    let touchEndY = 0;
+    const threshold = 50; // Minimum swipe distance in pixels
+
+    const handleTouchStart = (e: Event) => {
+      const touchEvent = e as unknown as TouchEvent;
+      if (touchEvent.touches.length === 0) return;
+      const y = touchEvent.touches[0].clientY;
+      touchStartY = y;
+      touchEndY = y; // Initialize touchEndY to prevent misfire on tap
+    };
+
+    const handleTouchMove = (e: Event) => {
+      const touchEvent = e as unknown as TouchEvent;
+      if (touchEvent.touches.length === 0) return;
+      touchEndY = touchEvent.touches[0].clientY;
+    };
+
+    const handleTouchEnd = () => {
+      const swipeDistance = touchStartY - touchEndY;
+      
+      // Swipe up: expand (if distance > threshold and currently collapsed)
+      if (swipeDistance > threshold && isCollapsed) {
+        setIsCollapsed(false);
+      }
+      // Swipe down: collapse (if distance < -threshold and currently expanded)
+      else if (swipeDistance < -threshold && !isCollapsed) {
+        setIsCollapsed(true);
+      }
+    };
+
+    // Only attach to the header area for swipe gestures
+    const sidebarElement = document.querySelector('[data-sidebar-header]');
+    if (sidebarElement) {
+      sidebarElement.addEventListener('touchstart', handleTouchStart);
+      sidebarElement.addEventListener('touchmove', handleTouchMove);
+      sidebarElement.addEventListener('touchend', handleTouchEnd);
+
+      return () => {
+        sidebarElement.removeEventListener('touchstart', handleTouchStart);
+        sidebarElement.removeEventListener('touchmove', handleTouchMove);
+        sidebarElement.removeEventListener('touchend', handleTouchEnd);
+      };
+    }
+  }, [isMobile, isCollapsed]);
+
   // Note: Admin service status fetching removed from sidebar as it requires authentication.
   // This functionality should remain in the Admin component where proper auth is handled.
 
@@ -148,14 +203,25 @@ export default function Sidebar(props: Props) {
 
   return (
     <>
-      {/* Sidebar */}
+      {/* Sidebar - Desktop: left sidebar, Mobile: bottom sheet */}
       <div
-        className={`fixed top-0 left-0 h-full bg-black/90 backdrop-blur-sm text-white z-30 transition-all duration-200 flex flex-col shadow-2xl ${
-          isCollapsed ? "w-14" : "w-80 sm:w-80"
-        }`}
+        className={`fixed bg-black/90 backdrop-blur-sm text-white z-30 transition-all duration-200 flex flex-col shadow-2xl
+          ${isMobile 
+            ? /* Mobile: bottom sheet */
+              isCollapsed
+                ? 'bottom-0 left-0 right-0 h-14'
+                : 'bottom-0 left-0 right-0 h-[70vh] max-h-[600px]'
+            : /* Desktop: left sidebar */
+              isCollapsed
+                ? 'top-0 left-0 h-full w-14'
+                : 'top-0 left-0 h-full w-80'
+          }`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+        <div 
+          data-sidebar-header 
+          className={`flex items-center justify-between px-4 py-3 border-b border-white/10
+          ${isMobile && !isCollapsed ? 'border-t' : ''}`}>
           {!isCollapsed && (
             <h2 className="text-sm font-semibold">Controls</h2>
           )}
@@ -167,7 +233,9 @@ export default function Sidebar(props: Props) {
           >
             <svg
               className={`w-5 h-5 transition-transform ${
-                isCollapsed ? "rotate-180" : ""
+                isMobile 
+                  ? (isCollapsed ? 'rotate-90' : '-rotate-90') /* Mobile: up/down arrow */
+                  : (isCollapsed ? 'rotate-180' : '') /* Desktop: left/right arrow */
               }`}
               fill="none"
               stroke="currentColor"
@@ -177,7 +245,7 @@ export default function Sidebar(props: Props) {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
+                d={isMobile ? "M5 15l7-7 7 7" : "M11 19l-7-7 7-7m8 14l-7-7 7-7"}
               />
             </svg>
           </button>
