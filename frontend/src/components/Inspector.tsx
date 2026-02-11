@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { SelectedInfo, NodeDetails, NeighborInfo } from "../types/ui";
 import VirtualList from "./VirtualList";
+import { useMobileDetect } from "../hooks/useMobileDetect";
 
 interface Props {
   selected?: SelectedInfo;
@@ -16,6 +17,7 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [isVisible, setIsVisible] = useState(false);
+  const { isMobile } = useMobileDetect();
 
   // Fetch detailed node information when selection changes
   useEffect(() => {
@@ -131,12 +133,18 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
   const isNeighborInfo = (n: any): n is NeighborInfo => 'degree' in n && typeof n.degree === 'number';
 
   return (
-    <div className="fixed right-0 top-0 h-full z-30 pointer-events-none">
+    <div className={`fixed z-30 pointer-events-none
+      ${isMobile 
+        ? 'bottom-0 left-0 right-0 top-auto h-[70vh]' /* Mobile: bottom sheet */
+        : 'right-0 top-0 h-full' /* Desktop: right sidebar */
+      }`}>
       <div 
-        className={`h-full w-96 bg-gray-900/95 backdrop-blur-sm text-white shadow-2xl 
+        className={`h-full bg-gray-900/95 backdrop-blur-sm text-white shadow-2xl 
                    transition-transform duration-300 ease-in-out pointer-events-auto
                    border-l border-gray-700 flex flex-col ${
-                     isVisible ? 'translate-x-0' : 'translate-x-full'
+                     isMobile 
+                       ? `w-full ${isVisible ? 'translate-y-0' : 'translate-y-full'}` /* Mobile: slide up */
+                       : `w-96 ${isVisible ? 'translate-x-0' : 'translate-x-full'}` /* Desktop: slide left */
                    }`}
       >
         {/* Header */}

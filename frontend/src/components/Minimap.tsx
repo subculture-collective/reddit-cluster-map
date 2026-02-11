@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { CommunityResult } from '../utils/communityDetection';
+import { useMobileDetect } from '../hooks/useMobileDetect';
 
 interface MinimapProps {
     /** Current camera position in 3D space */
@@ -47,6 +48,7 @@ export default function Minimap({
         cameraPos?: { x: number; y: number; z: number };
         nodes: Array<{ id: string; x?: number; y?: number; z?: number }>;
     }>({ nodes: [] });
+    const { isMobile } = useMobileDetect();
 
     // Toggle visibility with M key
     useEffect(() => {
@@ -346,7 +348,11 @@ export default function Minimap({
 
     return (
         <div
-            className="fixed bottom-2 right-2 z-20"
+            className={`fixed z-20
+                ${isMobile 
+                    ? 'bottom-20 right-2' /* Mobile: above bottom sheet */
+                    : 'bottom-2 right-2' /* Desktop: bottom-right */
+                }`}
             style={{
                 width: size,
                 height: size,

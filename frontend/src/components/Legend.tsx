@@ -3,6 +3,7 @@
  */
 
 import type { TypeFilters } from "../types/ui";
+import { useMobileDetect } from "../hooks/useMobileDetect";
 
 interface Props {
   filters: TypeFilters;
@@ -19,9 +20,14 @@ const NODE_TYPE_COLORS = [
 
 export default function Legend({ filters, useCommunityColors, communityCount }: Props) {
   const visibleTypes = NODE_TYPE_COLORS.filter((t) => filters[t.key]);
+  const { isMobile } = useMobileDetect();
 
   return (
-    <div className="absolute z-20 bottom-2 left-2 bg-black/70 text-white p-3 rounded shadow">
+    <div className={`absolute z-20 bg-black/70 text-white p-3 rounded shadow
+      ${isMobile 
+        ? 'bottom-20 left-2 right-2 mx-auto max-w-xs' /* Mobile: above bottom sheet */
+        : 'bottom-2 left-2' /* Desktop: bottom-left */
+      }`}>
       <div className="text-xs font-semibold mb-2 text-white/90">Legend</div>
       
       {/* Node Types */}

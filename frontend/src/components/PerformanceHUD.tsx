@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { WebGLRenderer } from 'three';
+import { useMobileDetect } from '../hooks/useMobileDetect';
 
 interface PerformanceHUDProps {
     renderer: WebGLRenderer | null;
@@ -36,6 +37,7 @@ export default function PerformanceHUD({
     const lastFrameTimeRef = useRef<number>(performance.now());
     const updateIntervalRef = useRef<number | null>(null);
     const rafIdRef = useRef<number | null>(null);
+    const { isMobile } = useMobileDetect();
 
     // Initialize visibility state from localStorage or env
     useEffect(() => {
@@ -196,7 +198,11 @@ export default function PerformanceHUD({
     return (
         <div
             ref={containerRef}
-            className="fixed top-16 left-2 z-50 bg-black/80 text-green-400 font-mono text-xs px-3 py-2 rounded pointer-events-none whitespace-pre"
+            className={`fixed z-50 bg-black/80 text-green-400 font-mono text-xs px-3 py-2 rounded pointer-events-none whitespace-pre
+                ${isMobile 
+                    ? 'top-16 right-2' /* Mobile: top-right */
+                    : 'top-16 left-2' /* Desktop: top-left */
+                }`}
             style={{ display: 'none' }}
             aria-label="Performance metrics overlay"
         />
