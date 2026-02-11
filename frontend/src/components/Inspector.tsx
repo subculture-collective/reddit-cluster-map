@@ -1,4 +1,5 @@
-import type { SelectedInfo } from "../types/ui";
+import { useState, useEffect } from "react";
+import type { SelectedInfo, NodeDetails, NeighborInfo } from "../types/ui";
 import VirtualList from "./VirtualList";
 
 interface Props {
@@ -7,66 +8,363 @@ interface Props {
   onFocus: (id: string) => void;
 }
 
+type Tab = "overview" | "connections" | "statistics";
+
 export default function Inspector({ selected, onClear, onFocus }: Props) {
+  const [nodeDetails, setNodeDetails] = useState<NodeDetails | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [isVisible, setIsVisible] = useState(false);
+
+  // Fetch detailed node information when selection changes
+  useEffect(() => {
+    if (!selected?.id) {
+      setNodeDetails(null);
+      setError(null);
+      return;
+    }
+
+    const abortController = new AbortController();
+    const currentSelectionId = selected.id;
+
+    const fetchNodeDetails = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        const rawApiUrl = import.meta.env.VITE_API_URL || '/api';
+        const apiUrl = rawApiUrl.endsWith('/') && rawApiUrl !== '/' 
+          ? rawApiUrl.slice(0, -1) 
+          : rawApiUrl;
+        const response = await fetch(`${apiUrl}/nodes/${encodeURIComponent(selected.id)}?neighbor_limit=20`, {
+          signal: abortController.signal
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch node details: ${response.statusText}`);
+        }
+        
+        const data: NodeDetails = await response.json();
+        
+        // Guard against stale responses - only update if this is still the current selection
+        if (currentSelectionId === selected.id) {
+          setNodeDetails(data);
+        }
+      } catch (err) {
+        // Ignore abort errors - these are expected when switching nodes quickly
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
+        }
+        
+        console.error('Error fetching node details:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load node details');
+        // Fall back to basic selected info only if it has connections
+        if (selected.degree && selected.degree > 0) {
+          const fallbackNeighbors: NeighborInfo[] = (selected.neighbors || []).map(
+            (neighbor) => ({
+              id: neighbor.id,
+              name: neighbor.name || neighbor.id,
+              val: '1',
+              type: neighbor.type,
+              degree: 0,
+            })
+          );
+          setNodeDetails({
+            ...selected,
+            neighbors: fallbackNeighbors,
+          });
+        }
+      } finally {
+        if (currentSelectionId === selected.id) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchNodeDetails();
+
+    // Cleanup: abort fetch if selection changes before it completes
+    return () => {
+      abortController.abort();
+    };
+  }, [selected?.id]);
+
+  // Trigger slide-in animation when component mounts/unmounts
+  useEffect(() => {
+    if (!selected || (!hasConnectionsCheck() && !loading)) {
+      setIsVisible(false);
+    } else {
+      // Delay to ensure CSS transition works
+      const timer = setTimeout(() => setIsVisible(true), 10);
+      return () => clearTimeout(timer);
+    }
+  }, [selected, loading]);
+
+  // Helper to check connections without using state that's set later
+  const hasConnectionsCheck = () => {
+    return (
+      (typeof selected?.degree === "number" && selected.degree > 0) ||
+      (selected?.neighbors && selected.neighbors.length > 0) ||
+      (nodeDetails && nodeDetails.neighbors && nodeDetails.neighbors.length > 0)
+    );
+  };
+
   if (!selected) return null;
-  // Only show inspector when the selected node has at least one connection
+
+  // Only show inspector when the selected node has at least one connection or we're loading/have data
   const hasConnections =
     (typeof selected.degree === "number" && selected.degree > 0) ||
-    (selected.neighbors && selected.neighbors.length > 0);
-  if (!hasConnections) return null;
+    (selected.neighbors && selected.neighbors.length > 0) ||
+    (nodeDetails && nodeDetails.neighbors && nodeDetails.neighbors.length > 0);
+    
+  if (!hasConnections && !loading) return null;
+
+  const neighbors = nodeDetails?.neighbors || selected.neighbors || [];
+  const displayName = nodeDetails?.name || selected.name || selected.id;
+  const displayType = nodeDetails?.type || selected.type;
+  const displayVal = nodeDetails?.val;
+  const degree = nodeDetails?.degree !== undefined ? nodeDetails.degree : 
+                 (selected.degree !== undefined ? selected.degree : neighbors.length);
+  
+  // Type guard to check if neighbors are NeighborInfo (with degree field)
+  const isNeighborInfo = (n: any): n is NeighborInfo => 'degree' in n && typeof n.degree === 'number';
+
   return (
-    <div className="absolute z-20 bottom-2 left-2 bg-black/70 text-white p-3 rounded shadow max-w-md">
-      <div className="flex justify-between items-center mb-2">
-        <h3 className="font-semibold text-sm">Selection</h3>
-        <button
-          className="text-xs opacity-75 hover:opacity-100"
-          onClick={onClear}
-        >
-          Clear
-        </button>
-      </div>
-      <div className="text-sm space-y-1">
-        <div>
-          <span className="opacity-70">ID:</span> {selected.id}
+    <div className="fixed right-0 top-0 h-full z-30 pointer-events-none">
+      <div 
+        className={`h-full w-96 bg-gray-900/95 backdrop-blur-sm text-white shadow-2xl 
+                   transition-transform duration-300 ease-in-out pointer-events-auto
+                   border-l border-gray-700 flex flex-col ${
+                     isVisible ? 'translate-x-0' : 'translate-x-full'
+                   }`}
+      >
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-gray-700">
+          <h3 className="font-semibold text-lg">Node Inspector</h3>
+          <button
+            className="text-gray-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-gray-800"
+            onClick={onClear}
+            aria-label="Close inspector"
+          >
+            ✕
+          </button>
         </div>
-        {selected.name && (
-          <div>
-            <span className="opacity-70">Name:</span> {selected.name}
-          </div>
-        )}
-        {selected.type && (
-          <div>
-            <span className="opacity-70">Type:</span> {selected.type}
-          </div>
-        )}
-        {typeof selected.degree === "number" && (
-          <div>
-            <span className="opacity-70">Degree:</span> {selected.degree}
-          </div>
-        )}
-        {selected.neighbors && selected.neighbors.length > 0 && (
-          <div className="mt-2">
-            <div className="opacity-70">
-              Neighbors ({selected.neighbors.length}):
+
+        {/* Tab Navigation */}
+        <div className="flex border-b border-gray-700">
+          <button
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === "overview"
+                ? "text-white border-b-2 border-blue-500 bg-gray-800/50"
+                : "text-gray-400 hover:text-white hover:bg-gray-800/30"
+            }`}
+            onClick={() => setActiveTab("overview")}
+          >
+            Overview
+          </button>
+          <button
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === "connections"
+                ? "text-white border-b-2 border-blue-500 bg-gray-800/50"
+                : "text-gray-400 hover:text-white hover:bg-gray-800/30"
+            }`}
+            onClick={() => setActiveTab("connections")}
+          >
+            Connections ({neighbors.length})
+          </button>
+          <button
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === "statistics"
+                ? "text-white border-b-2 border-blue-500 bg-gray-800/50"
+                : "text-gray-400 hover:text-white hover:bg-gray-800/30"
+            }`}
+            onClick={() => setActiveTab("statistics")}
+          >
+            Statistics
+          </button>
+        </div>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {loading && (
+            <div className="flex items-center justify-center py-8" role="status">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
             </div>
-            <VirtualList
-              items={selected.neighbors}
-              itemHeight={28}
-              containerHeight={160}
-              className="pr-1"
-              itemKey={(n) => n.id}
-              renderItem={(n) => (
-                <button
-                  className="text-left w-full hover:underline text-sm py-1"
-                  onClick={() => onFocus(n.id)}
-                  title={n.id}
-                >
-                  {n.name || n.id} {n.type ? `(${n.type})` : ""}
-                </button>
+          )}
+
+          {error && !nodeDetails && (
+            <div className="bg-red-900/30 border border-red-700 rounded p-3 text-sm">
+              <p className="text-red-200">{error}</p>
+            </div>
+          )}
+
+          {!loading && (
+            <>
+              {/* Overview Tab */}
+              {activeTab === "overview" && (
+                <div className="space-y-3">
+                  <div className="bg-gray-800/50 rounded-lg p-3 space-y-2">
+                    <div>
+                      <span className="text-xs text-gray-400 uppercase tracking-wide">Name</span>
+                      <p className="text-sm font-medium break-words">{displayName}</p>
+                    </div>
+                    
+                    {displayType && (
+                      <div>
+                        <span className="text-xs text-gray-400 uppercase tracking-wide">Type</span>
+                        <p className="text-sm">
+                          <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-blue-900/50 text-blue-200">
+                            {displayType}
+                          </span>
+                        </p>
+                      </div>
+                    )}
+
+                    <div>
+                      <span className="text-xs text-gray-400 uppercase tracking-wide">ID</span>
+                      <p className="text-xs text-gray-300 font-mono break-all">{selected.id}</p>
+                    </div>
+
+                    {displayVal && (
+                      <div>
+                        <span className="text-xs text-gray-400 uppercase tracking-wide">Weight</span>
+                        <p className="text-sm font-medium">{displayVal}</p>
+                      </div>
+                    )}
+
+                    <div>
+                      <span className="text-xs text-gray-400 uppercase tracking-wide">Connections</span>
+                      <p className="text-sm font-medium">{degree}</p>
+                    </div>
+                  </div>
+
+                  {/* Type-specific Stats */}
+                  {nodeDetails?.stats && displayType === "subreddit" && (
+                    <div className="bg-gray-800/50 rounded-lg p-3 space-y-2">
+                      <h4 className="text-sm font-semibold text-gray-300 mb-2">Subreddit Info</h4>
+                      
+                      {nodeDetails.stats.subscribers !== undefined && (
+                        <div>
+                          <span className="text-xs text-gray-400 uppercase tracking-wide">Subscribers</span>
+                          <p className="text-sm font-medium">{nodeDetails.stats.subscribers.toLocaleString()}</p>
+                        </div>
+                      )}
+
+                      {nodeDetails.stats.title && (
+                        <div>
+                          <span className="text-xs text-gray-400 uppercase tracking-wide">Title</span>
+                          <p className="text-sm">{nodeDetails.stats.title}</p>
+                        </div>
+                      )}
+
+                      {nodeDetails.stats.description && (
+                        <div>
+                          <span className="text-xs text-gray-400 uppercase tracking-wide">Description</span>
+                          <p className="text-xs text-gray-300 line-clamp-3">{nodeDetails.stats.description}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
-            />
-          </div>
-        )}
+
+              {/* Connections Tab */}
+              {activeTab === "connections" && (
+                <div className="space-y-3">
+                  {neighbors.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-8">No connections found</p>
+                  ) : (
+                    <>
+                      <div className="text-sm text-gray-400">
+                        Showing top {neighbors.length} neighbors by connection strength
+                      </div>
+                      <VirtualList
+                        items={neighbors}
+                        itemHeight={64}
+                        containerHeight={500}
+                        className="pr-1"
+                        itemKey={(n) => n.id}
+                        renderItem={(n) => {
+                          const neighbor = n as typeof neighbors[0];
+                          const hasDegree = isNeighborInfo(neighbor);
+                          return (
+                            <button
+                              className="w-full text-left p-3 rounded hover:bg-gray-800/70 transition-colors border border-gray-700/50 hover:border-gray-600"
+                              onClick={() => onFocus(neighbor.id)}
+                              title={`Navigate to ${neighbor.name || neighbor.id}`}
+                            >
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">
+                                    {neighbor.name || neighbor.id}
+                                  </p>
+                                  {neighbor.type && (
+                                    <p className="text-xs text-gray-400 mt-1">
+                                      <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-gray-700/50">
+                                        {neighbor.type}
+                                      </span>
+                                    </p>
+                                  )}
+                                </div>
+                                {hasDegree && (
+                                  <div className="ml-2 text-xs text-gray-400 flex-shrink-0">
+                                    {(neighbor as NeighborInfo).degree} connections
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Statistics Tab */}
+              {activeTab === "statistics" && (
+                <div className="space-y-3">
+                  <div className="bg-gray-800/50 rounded-lg p-3 space-y-2">
+                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Connection Statistics</h4>
+                    
+                    <div>
+                      <span className="text-xs text-gray-400 uppercase tracking-wide">Total Connections</span>
+                      <p className="text-2xl font-bold">{degree}</p>
+                    </div>
+
+                    <div>
+                      <span className="text-xs text-gray-400 uppercase tracking-wide">Top Neighbors</span>
+                      <p className="text-sm">{Math.min(neighbors.length, 20)} shown</p>
+                    </div>
+                  </div>
+
+                  {/* Connection breakdown by type */}
+                  {neighbors.length > 0 && (
+                    <div className="bg-gray-800/50 rounded-lg p-3 space-y-2">
+                      <h4 className="text-sm font-semibold text-gray-300 mb-2">Connections by Type</h4>
+                      {(() => {
+                        const typeCounts = neighbors.reduce((acc, n) => {
+                          const neighbor = n as typeof neighbors[0];
+                          const type = neighbor.type || 'unknown';
+                          acc[type] = (acc[type] || 0) + 1;
+                          return acc;
+                        }, {} as Record<string, number>);
+
+                        return Object.entries(typeCounts).map(([type, count]) => (
+                          <div key={type} className="flex justify-between items-center">
+                            <span className="text-sm capitalize">{type}</span>
+                            <span className="text-sm font-medium">{count}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

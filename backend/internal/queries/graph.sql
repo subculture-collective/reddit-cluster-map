@@ -942,3 +942,50 @@ SELECT COUNT(*) FROM graph_diffs WHERE version_id = $1;
 UPDATE precalc_state
 SET current_version_id = $1
 WHERE id = 1;
+
+-- ============================================================
+-- Node Inspector Queries
+-- ============================================================
+
+-- name: GetNodeDetails :one
+-- Get detailed information about a specific node
+SELECT 
+    id,
+    name,
+    COALESCE(CAST(val AS TEXT), '') as val,
+    type,
+    pos_x,
+    pos_y,
+    pos_z
+FROM graph_nodes
+WHERE id = $1;
+
+-- name: GetNodeNeighbors :many
+-- Get neighbors of a node with connection information
+-- Returns top N neighbors ordered by degree (treating all links as equal weight)
+WITH node_links AS (
+    SELECT gl.target as neighbor_id
+    FROM graph_links gl
+    WHERE gl.source = $1
+    UNION ALL
+    SELECT gl.source as neighbor_id
+    FROM graph_links gl
+    WHERE gl.target = $1
+),
+neighbor_degrees AS (
+    SELECT 
+        nl.neighbor_id,
+        COUNT(*) as link_count
+    FROM node_links nl
+    GROUP BY nl.neighbor_id
+)
+SELECT 
+    gn.id,
+    gn.name,
+    COALESCE(CAST(gn.val AS TEXT), '') as val,
+    gn.type,
+    nd.link_count::INTEGER as degree
+FROM neighbor_degrees nd
+JOIN graph_nodes gn ON gn.id = nd.neighbor_id
+ORDER BY nd.link_count DESC, gn.id
+LIMIT $2;
