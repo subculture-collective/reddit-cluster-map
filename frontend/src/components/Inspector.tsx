@@ -146,21 +146,23 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
                        ? `w-full ${isVisible ? 'translate-y-0' : 'translate-y-full'}` /* Mobile: slide up */
                        : `w-96 ${isVisible ? 'translate-x-0' : 'translate-x-full'}` /* Desktop: slide left */
                    }`}
+        role="complementary"
+        aria-label="Node Inspector Panel"
       >
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-gray-700">
-          <h3 className="font-semibold text-lg">Node Inspector</h3>
+          <h3 className="font-semibold text-lg" id="inspector-heading">Node Inspector</h3>
           <button
             className="text-gray-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-gray-800"
             onClick={onClear}
-            aria-label="Close inspector"
+            aria-label="Close inspector panel"
           >
-            ✕
+            <span aria-hidden="true">✕</span>
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-gray-700">
+        <div className="flex border-b border-gray-700" role="tablist" aria-label="Inspector sections">
           <button
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
               activeTab === "overview"
@@ -168,6 +170,10 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
                 : "text-gray-400 hover:text-white hover:bg-gray-800/30"
             }`}
             onClick={() => setActiveTab("overview")}
+            role="tab"
+            aria-selected={activeTab === "overview"}
+            aria-controls="overview-panel"
+            id="overview-tab"
           >
             Overview
           </button>
@@ -178,6 +184,10 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
                 : "text-gray-400 hover:text-white hover:bg-gray-800/30"
             }`}
             onClick={() => setActiveTab("connections")}
+            role="tab"
+            aria-selected={activeTab === "connections"}
+            aria-controls="connections-panel"
+            id="connections-tab"
           >
             Connections ({neighbors.length})
           </button>
@@ -188,15 +198,24 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
                 : "text-gray-400 hover:text-white hover:bg-gray-800/30"
             }`}
             onClick={() => setActiveTab("statistics")}
+            role="tab"
+            aria-selected={activeTab === "statistics"}
+            aria-controls="statistics-panel"
+            id="statistics-tab"
           >
             Statistics
           </button>
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div 
+          className="flex-1 overflow-y-auto p-4 space-y-4"
+          role="tabpanel"
+          aria-labelledby={`${activeTab}-tab`}
+          id={`${activeTab}-panel`}
+        >
           {loading && (
-            <div className="flex items-center justify-center py-8" role="status">
+            <div className="flex items-center justify-center py-8" role="status" aria-live="polite">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
             </div>
           )}

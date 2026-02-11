@@ -204,7 +204,7 @@ export default function Sidebar(props: Props) {
   return (
     <>
       {/* Sidebar - Desktop: left sidebar, Mobile: bottom sheet */}
-      <div
+      <aside
         className={`fixed bg-black/90 backdrop-blur-sm text-white z-30 transition-all duration-200 flex flex-col shadow-2xl
           ${isMobile 
             ? /* Mobile: bottom sheet */
@@ -216,6 +216,8 @@ export default function Sidebar(props: Props) {
                 ? 'top-0 left-0 h-full w-14'
                 : 'top-0 left-0 h-full w-80'
           }`}
+        role="complementary"
+        aria-label="Graph controls sidebar"
       >
         {/* Header */}
         <div 
@@ -223,13 +225,14 @@ export default function Sidebar(props: Props) {
           className={`flex items-center justify-between px-4 py-3 border-b border-white/10
           ${isMobile && !isCollapsed ? 'border-t' : ''}`}>
           {!isCollapsed && (
-            <h2 className="text-sm font-semibold">Controls</h2>
+            <h2 className="text-sm font-semibold" id="sidebar-title">Controls</h2>
           )}
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="p-1 hover:bg-white/10 rounded transition-colors ml-auto"
-            title={isCollapsed ? "Expand (Ctrl+B)" : "Collapse (Ctrl+B)"}
-            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={isCollapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"}
+            aria-expanded={!isCollapsed}
+            aria-controls="sidebar-content"
           >
             <svg
               className={`w-5 h-5 transition-transform ${
@@ -240,6 +243,7 @@ export default function Sidebar(props: Props) {
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"
@@ -253,60 +257,55 @@ export default function Sidebar(props: Props) {
 
         {/* Collapsed icon bar */}
         {isCollapsed && (
-          <div className="flex flex-col items-center gap-4 py-4">
+          <div className="flex flex-col items-center gap-4 py-4" id="sidebar-content">
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="View section"
               aria-label="Expand View section"
             >
-              👁️
+              <span aria-hidden="true">👁️</span>
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Filters section"
               aria-label="Expand Filters section"
             >
-              🔍
+              <span aria-hidden="true">🔍</span>
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Physics section"
               aria-label="Expand Physics section"
             >
-              ⚡
+              <span aria-hidden="true">⚡</span>
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Display section"
               aria-label="Expand Display section"
             >
-              🎨
+              <span aria-hidden="true">🎨</span>
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Data section"
               aria-label="Expand Data section"
             >
-              📊
+              <span aria-hidden="true">📊</span>
             </button>
           </div>
         )}
 
         {/* Expanded content */}
         {!isCollapsed && (
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto" id="sidebar-content">
             {/* View Section */}
             <SidebarSection
               title="View"
               icon="👁️"
               storageKey="sidebar-section-view"
             >
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="View mode selection">
                 <button
                   className={`px-3 py-1.5 rounded border text-xs font-medium ${
                     graphMode === "3d"
@@ -314,6 +313,8 @@ export default function Sidebar(props: Props) {
                       : "bg-gray-700 border-gray-500"
                   }`}
                   onClick={() => onGraphModeChange?.("3d")}
+                  aria-label="Switch to 3D view"
+                  aria-pressed={graphMode === "3d"}
                 >
                   3D
                 </button>
@@ -324,12 +325,15 @@ export default function Sidebar(props: Props) {
                       : "bg-gray-700 border-gray-500"
                   }`}
                   onClick={() => onGraphModeChange?.("2d")}
+                  aria-label="Switch to 2D view"
+                  aria-pressed={graphMode === "2d"}
                 >
                   2D
                 </button>
                 <button
                   className="px-3 py-1.5 rounded border bg-purple-600 border-purple-400 hover:bg-purple-700 text-xs font-medium"
                   onClick={() => onShowDashboard?.()}
+                  aria-label="Show dashboard"
                 >
                   Dashboard
                 </button>
@@ -697,13 +701,14 @@ export default function Sidebar(props: Props) {
             </SidebarSection>
           </div>
         )}
-      </div>
+      </aside>
 
       {/* Spacer to push content right when sidebar is expanded */}
       <div
         className={`hidden sm:block transition-all duration-200 ${
           isCollapsed ? "w-14" : "w-80"
         }`}
+        aria-hidden="true"
       />
     </>
   );

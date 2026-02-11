@@ -200,11 +200,16 @@ function App() {
     enableAdaptiveLOD,
   }), [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout, sizeAttenuation, enableAdaptiveLOD]);
 
+  // Keyboard shortcut handlers
+  const handleFocusSearch = useCallback(() => {
+    if (viewMode !== "admin") {
+      searchInputRef.current?.focus();
+    }
+  }, [viewMode]);
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
-    onFocusSearch: viewMode === "admin" ? undefined : useCallback(() => {
-      searchInputRef.current?.focus();
-    }, []),
+    onFocusSearch: viewMode === "admin" ? undefined : handleFocusSearch,
     
     // Sidebar toggle is handled in Sidebar component itself via Ctrl+B
     
@@ -291,16 +296,16 @@ function App() {
             }}
           />
         ) : viewMode === "dashboard" ? (
-        <Dashboard
-          onViewMode={(mode: "3d" | "2d") => {
-            setViewMode(mode);
-          }}
-          onFocusNode={(id) => {
-            setFocusNodeId(id);
-            setSelectedId(id);
-          }}
-        />
-      ) : viewMode === "communities" ? (
+          <Dashboard
+            onViewMode={(mode: "3d" | "2d") => {
+              setViewMode(mode);
+            }}
+            onFocusNode={(id) => {
+              setFocusNodeId(id);
+              setSelectedId(id);
+            }}
+          />
+        ) : viewMode === "communities" ? (
         <Communities
           onViewMode={(mode: "3d" | "2d") => {
             setViewMode(mode);
@@ -442,8 +447,9 @@ function App() {
               setSelectedId(id);
             }}
           />
-        </main>
-      )}
+        </>
+        )}
+      </main>
       
       {/* Keyboard shortcuts help overlay */}
       <KeyboardShortcutsHelp 
