@@ -952,7 +952,7 @@ WHERE id = 1;
 SELECT 
     id,
     name,
-    CAST(val AS TEXT) as val,
+    COALESCE(CAST(val AS TEXT), '') as val,
     type,
     pos_x,
     pos_y,
@@ -982,7 +982,7 @@ neighbor_degrees AS (
 SELECT 
     gn.id,
     gn.name,
-    CAST(gn.val AS TEXT) as val,
+    COALESCE(CAST(gn.val AS TEXT), '') as val,
     gn.type,
     nd.link_count::INTEGER as degree
 FROM neighbor_degrees nd

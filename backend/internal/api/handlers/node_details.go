@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -112,22 +113,30 @@ func GetNodeDetails(q NodeDetailsReader) http.HandlerFunc {
 		// Build neighbor list
 		neighborList := make([]NeighborInfo, len(neighbors))
 		for i, n := range neighbors {
+			valStr := ""
+			if n.Val != nil {
+				valStr = fmt.Sprint(n.Val)
+			}
 			neighborList[i] = NeighborInfo{
 				ID:     n.ID,
 				Name:   n.Name,
-				Val:    n.Val,
+				Val:    valStr,
 				Type:   n.Type.String,
 				Degree: n.Degree,
 			}
 		}
 
 		// Build response
+		valStr := ""
+		if nodeDetails.Val != nil {
+			valStr = fmt.Sprint(nodeDetails.Val)
+		}
 		response := NodeDetailResponse{
 			ID:        nodeDetails.ID,
 			Name:      nodeDetails.Name,
-			Val:       nodeDetails.Val,
+			Val:       valStr,
 			Type:      nodeDetails.Type.String,
-			Degree:    int(nodeDetails.Degree),
+			Degree:    len(neighbors),
 			Neighbors: neighborList,
 		}
 

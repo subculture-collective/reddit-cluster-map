@@ -1792,7 +1792,7 @@ const getNodeDetails = `-- name: GetNodeDetails :one
 SELECT 
     id,
     name,
-    CAST(val AS TEXT) as val,
+    COALESCE(CAST(val AS TEXT), '') as val,
     type,
     pos_x,
     pos_y,
@@ -1804,7 +1804,7 @@ WHERE id = $1
 type GetNodeDetailsRow struct {
 	ID   string
 	Name string
-	Val  string
+	Val  interface{}
 	Type sql.NullString
 	PosX sql.NullFloat64
 	PosY sql.NullFloat64
@@ -1850,7 +1850,7 @@ neighbor_degrees AS (
 SELECT 
     gn.id,
     gn.name,
-    CAST(gn.val AS TEXT) as val,
+    COALESCE(CAST(gn.val AS TEXT), '') as val,
     gn.type,
     nd.link_count::INTEGER as degree
 FROM neighbor_degrees nd
@@ -1867,7 +1867,7 @@ type GetNodeNeighborsParams struct {
 type GetNodeNeighborsRow struct {
 	ID     string
 	Name   string
-	Val    string
+	Val    interface{}
 	Type   sql.NullString
 	Degree int32
 }

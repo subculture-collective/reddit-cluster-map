@@ -15,6 +15,7 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [isVisible, setIsVisible] = useState(false);
 
   // Fetch detailed node information when selection changes
   useEffect(() => {
@@ -24,37 +25,90 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
       return;
     }
 
+    const abortController = new AbortController();
+    const currentSelectionId = selected.id;
+
     const fetchNodeDetails = async () => {
       setLoading(true);
       setError(null);
       
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || '/api';
-        const response = await fetch(`${apiUrl}/nodes/${encodeURIComponent(selected.id)}?neighbor_limit=20`);
+        const rawApiUrl = import.meta.env.VITE_API_URL || '/api';
+        const apiUrl = rawApiUrl.endsWith('/') && rawApiUrl !== '/' 
+          ? rawApiUrl.slice(0, -1) 
+          : rawApiUrl;
+        const response = await fetch(`${apiUrl}/nodes/${encodeURIComponent(selected.id)}?neighbor_limit=20`, {
+          signal: abortController.signal
+        });
         
         if (!response.ok) {
           throw new Error(`Failed to fetch node details: ${response.statusText}`);
         }
         
         const data: NodeDetails = await response.json();
-        setNodeDetails(data);
+        
+        // Guard against stale responses - only update if this is still the current selection
+        if (currentSelectionId === selected.id) {
+          setNodeDetails(data);
+        }
       } catch (err) {
+        // Ignore abort errors - these are expected when switching nodes quickly
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
+        }
+        
         console.error('Error fetching node details:', err);
         setError(err instanceof Error ? err.message : 'Failed to load node details');
         // Fall back to basic selected info only if it has connections
         if (selected.degree && selected.degree > 0) {
+          const fallbackNeighbors: NeighborInfo[] = (selected.neighbors || []).map(
+            (neighbor) => ({
+              id: neighbor.id,
+              name: neighbor.name || neighbor.id,
+              val: '1',
+              type: neighbor.type,
+              degree: 0,
+            })
+          );
           setNodeDetails({
             ...selected,
-            neighbors: selected.neighbors || [],
-          } as NodeDetails);
+            neighbors: fallbackNeighbors,
+          });
         }
       } finally {
-        setLoading(false);
+        if (currentSelectionId === selected.id) {
+          setLoading(false);
+        }
       }
     };
 
     fetchNodeDetails();
+
+    // Cleanup: abort fetch if selection changes before it completes
+    return () => {
+      abortController.abort();
+    };
   }, [selected?.id]);
+
+  // Trigger slide-in animation when component mounts/unmounts
+  useEffect(() => {
+    if (!selected || (!hasConnectionsCheck() && !loading)) {
+      setIsVisible(false);
+    } else {
+      // Delay to ensure CSS transition works
+      const timer = setTimeout(() => setIsVisible(true), 10);
+      return () => clearTimeout(timer);
+    }
+  }, [selected, loading]);
+
+  // Helper to check connections without using state that's set later
+  const hasConnectionsCheck = () => {
+    return (
+      (typeof selected?.degree === "number" && selected.degree > 0) ||
+      (selected?.neighbors && selected.neighbors.length > 0) ||
+      (nodeDetails && nodeDetails.neighbors && nodeDetails.neighbors.length > 0)
+    );
+  };
 
   if (!selected) return null;
 
@@ -79,10 +133,11 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
   return (
     <div className="fixed right-0 top-0 h-full z-30 pointer-events-none">
       <div 
-        className="h-full w-96 bg-gray-900/95 backdrop-blur-sm text-white shadow-2xl 
-                   transform transition-transform duration-300 ease-in-out pointer-events-auto
-                   border-l border-gray-700 flex flex-col"
-        style={{ transform: 'translateX(0)' }}
+        className={`h-full w-96 bg-gray-900/95 backdrop-blur-sm text-white shadow-2xl 
+                   transition-transform duration-300 ease-in-out pointer-events-auto
+                   border-l border-gray-700 flex flex-col ${
+                     isVisible ? 'translate-x-0' : 'translate-x-full'
+                   }`}
       >
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-gray-700">

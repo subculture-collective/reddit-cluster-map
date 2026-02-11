@@ -28,11 +28,16 @@ export interface SelectedInfo {
   neighbors?: Array<{ id: string; name?: string; type?: string }>;
 }
 
-export interface NodeDetails extends SelectedInfo {
+// API response type with detailed neighbor information
+export interface NodeDetails {
+  id: string;
+  name?: string;
   val?: string;
+  type?: string;
   pos_x?: number;
   pos_y?: number;
   pos_z?: number;
+  degree?: number;
   neighbors: NeighborInfo[];
   stats?: NodeStats;
 }
