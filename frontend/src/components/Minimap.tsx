@@ -76,20 +76,25 @@ export default function Minimap({
         let minX = Infinity, maxX = -Infinity;
         let minY = Infinity, maxY = -Infinity;
         let minZ = Infinity, maxZ = -Infinity;
+        let hasPositionedNode = false;
 
         for (const node of nodes) {
-            if (node.x !== undefined) {
-                minX = Math.min(minX, node.x);
-                maxX = Math.max(maxX, node.x);
+            // Only consider nodes that have all coordinates defined
+            if (node.x === undefined || node.y === undefined || node.z === undefined) {
+                continue;
             }
-            if (node.y !== undefined) {
-                minY = Math.min(minY, node.y);
-                maxY = Math.max(maxY, node.y);
-            }
-            if (node.z !== undefined) {
-                minZ = Math.min(minZ, node.z);
-                maxZ = Math.max(maxZ, node.z);
-            }
+
+            hasPositionedNode = true;
+            minX = Math.min(minX, node.x);
+            maxX = Math.max(maxX, node.x);
+            minY = Math.min(minY, node.y);
+            maxY = Math.max(maxY, node.y);
+            minZ = Math.min(minZ, node.z);
+            maxZ = Math.max(maxZ, node.z);
+        }
+
+        if (!hasPositionedNode) {
+            return { minX: -100, maxX: 100, minY: -100, maxY: 100, minZ: -100, maxZ: 100 };
         }
 
         return { minX, maxX, minY, maxY, minZ, maxZ };
@@ -250,10 +255,11 @@ export default function Minimap({
         // Clear any pending timer
         if (updateTimerRef.current !== null) {
             clearTimeout(updateTimerRef.current);
+            updateTimerRef.current = null;
         }
 
         // Render immediately on first change, then throttle
-        if (!updateTimerRef.current) {
+        if (updateTimerRef.current === null) {
             render();
             lastRenderDataRef.current = {
                 cameraPos: cameraPosition ? { ...cameraPosition } : undefined,
@@ -274,6 +280,7 @@ export default function Minimap({
         return () => {
             if (updateTimerRef.current !== null) {
                 clearTimeout(updateTimerRef.current);
+                updateTimerRef.current = null;
             }
         };
     }, [isVisible, cameraPosition, nodes, render]);
@@ -293,15 +300,13 @@ export default function Minimap({
         const bounds = calculateBounds();
         const worldPos = minimapToWorld(x, y, bounds);
 
-        // Keep the camera at the same distance from origin
-        const currentDistance = cameraPosition 
-            ? Math.sqrt(cameraPosition.x ** 2 + cameraPosition.y ** 2 + cameraPosition.z ** 2)
-            : 300;
+        // Preserve the current camera z position to maintain zoom level
+        const currentZ = cameraPosition?.z ?? 300;
 
         onCameraMove({
             x: worldPos.x,
             y: worldPos.y,
-            z: currentDistance / 2, // Maintain some height
+            z: currentZ,
         });
     }, [onCameraMove, cameraPosition, calculateBounds, minimapToWorld]);
 
@@ -317,14 +322,13 @@ export default function Minimap({
         const bounds = calculateBounds();
         const worldPos = minimapToWorld(x, y, bounds);
 
-        const currentDistance = cameraPosition 
-            ? Math.sqrt(cameraPosition.x ** 2 + cameraPosition.y ** 2 + cameraPosition.z ** 2)
-            : 300;
+        // Preserve the current camera z position to maintain zoom level
+        const currentZ = cameraPosition?.z ?? 300;
 
         onCameraMove({
             x: worldPos.x,
             y: worldPos.y,
-            z: currentDistance / 2,
+            z: currentZ,
         });
     }, [isDragging, onCameraMove, cameraPosition, calculateBounds, minimapToWorld]);
 

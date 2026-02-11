@@ -25,9 +25,12 @@ describe('Minimap', () => {
         modularity: 0.5,
     };
 
+    let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
+
     beforeEach(() => {
         vi.clearAllMocks();
-        // Mock HTMLCanvasElement.getContext
+        // Save original getContext and mock it
+        originalGetContext = HTMLCanvasElement.prototype.getContext;
         HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
             clearRect: vi.fn(),
             fillRect: vi.fn(),
@@ -43,6 +46,8 @@ describe('Minimap', () => {
     });
 
     afterEach(() => {
+        // Restore original getContext
+        HTMLCanvasElement.prototype.getContext = originalGetContext;
         vi.restoreAllMocks();
     });
 

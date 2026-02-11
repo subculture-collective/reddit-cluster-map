@@ -109,6 +109,7 @@ export default function Graph3DInstanced(props: Props) {
     const [webglSupported] = useState(() => detectWebGLSupport());
     const [onlyLinked, setOnlyLinked] = useState(true);
     const [currentLODTier, setCurrentLODTier] = useState<LODTier>(LODTier.HIGH);
+    const [currentCamera, setCurrentCamera] = useState<{ x: number; y: number; z: number } | undefined>();
 
     // Refs for Three.js objects
     const containerRef = useRef<HTMLDivElement>(null);
@@ -471,6 +472,23 @@ export default function Graph3DInstanced(props: Props) {
         lodConfig,
         onLODTierChange,
     ]);
+
+    // Track camera position for minimap (update every second to match original renderer)
+    useEffect(() => {
+        if (!cameraRef.current) return;
+
+        const interval = setInterval(() => {
+            if (cameraRef.current) {
+                const { x, y, z } = cameraRef.current.position;
+                setCurrentCamera({ x, y, z });
+                if (onCameraChange) {
+                    onCameraChange({ x, y, z });
+                }
+            }
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [onCameraChange]);
 
     // Process graph data with filters
     const filtered = useMemo(() => {
@@ -934,18 +952,41 @@ export default function Graph3DInstanced(props: Props) {
                 lodLevel={currentLODTier}
             />
             <Minimap
-                cameraPosition={cameraRef.current ? {
-                    x: cameraRef.current.position.x,
-                    y: cameraRef.current.position.y,
-                    z: cameraRef.current.position.z,
-                } : undefined}
+                cameraPosition={currentCamera}
                 communityResult={communityResult as import('../utils/communityDetection').CommunityResult | null}
                 nodes={filtered.nodes}
                 onCameraMove={(position) => {
                     if (cameraRef.current && controlsRef.current) {
-                        cameraRef.current.position.set(position.x, position.y, position.z);
-                        controlsRef.current.target.set(0, 0, 0);
-                        controlsRef.current.update();
+                        // Smooth camera animation using GSAP-like approach
+                        const startPos = {
+                            x: cameraRef.current.position.x,
+                            y: cameraRef.current.position.y,
+                            z: cameraRef.current.position.z,
+                        };
+                        const duration = 1000; // 1 second animation
+                        const startTime = Date.now();
+
+                        const animateCamera = () => {
+                            const elapsed = Date.now() - startTime;
+                            const progress = Math.min(elapsed / duration, 1);
+                            
+                            // Ease-out cubic easing
+                            const eased = 1 - Math.pow(1 - progress, 3);
+                            
+                            cameraRef.current!.position.x = startPos.x + (position.x - startPos.x) * eased;
+                            cameraRef.current!.position.y = startPos.y + (position.y - startPos.y) * eased;
+                            cameraRef.current!.position.z = startPos.z + (position.z - startPos.z) * eased;
+                            
+                            if (progress < 1) {
+                                requestAnimationFrame(animateCamera);
+                            } else {
+                                // Update controls target and state at the end
+                                controlsRef.current!.target.set(0, 0, 0);
+                                controlsRef.current!.update();
+                            }
+                        };
+
+                        animateCamera();
                     }
                 }}
             />

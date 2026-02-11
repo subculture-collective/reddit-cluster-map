@@ -82,9 +82,9 @@ Both 3D renderers include an interactive minimap overlay for navigation context.
 #### Technical Details:
 - Renders community cluster centroids as colored dots
 - Shows individual nodes (sampled) when community detection is not active
-- Camera position tracked every second and reflected in the viewport indicator
+- Camera position tracked every second in both renderers and reflected in the viewport indicator
 - Throttled rendering ensures minimal performance impact (<2% FPS)
-- Works with both original and InstancedMesh renderers
+- Smooth camera animations (1000ms) when clicking the minimap in both renderers
 
 ### Best For:
 - Exploring spatial relationships
