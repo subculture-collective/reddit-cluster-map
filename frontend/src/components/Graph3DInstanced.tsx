@@ -372,6 +372,10 @@ export default function Graph3DInstanced(props: Props) {
         const LINK_VISIBILITY_UPDATE_INTERVAL = 300; // Min 300ms between visibility checks
         const lastCamPos = { x: NaN, y: NaN, z: NaN };
         const EPSILON = 1e-3;
+        
+        // Track FPS and LOD tier changes
+        let lastFrameTime = performance.now();
+        let lastEmittedTier = lodManager.getCurrentTier();
 
         // Animation loop
         let animationId: number;
@@ -380,20 +384,20 @@ export default function Graph3DInstanced(props: Props) {
             
             // Track FPS
             const now = performance.now();
-            const delta = now - lastFrameTimeRef.current;
+            const delta = now - lastFrameTime;
             if (delta > 0) {
                 const fps = 1000 / delta;
                 lodManager.recordFrame(fps);
             }
-            lastFrameTimeRef.current = now;
+            lastFrameTime = now;
             
             // Update LOD manager
             lodManager.update(now);
             const lodParams = lodManager.getRenderingParams(now);
             
-            // Update LOD tier state if changed (use ref to avoid stale closure)
-            if (lodParams.tier !== lastEmittedTierRef.current) {
-                lastEmittedTierRef.current = lodParams.tier;
+            // Update LOD tier state if changed (use local var to avoid stale closure)
+            if (lodParams.tier !== lastEmittedTier) {
+                lastEmittedTier = lodParams.tier;
                 setCurrentLODTier(lodParams.tier);
                 if (onLODTierChange) {
                     onLODTierChange(lodParams.tier);

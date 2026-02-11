@@ -141,12 +141,14 @@ export default function Sidebar(props: Props) {
     let touchEndY = 0;
     const threshold = 50; // Minimum swipe distance in pixels
 
-    const handleTouchStart = (e: TouchEvent) => {
-      touchStartY = e.touches[0].clientY;
+    const handleTouchStart = (e: Event) => {
+      const touchEvent = e as unknown as TouchEvent;
+      touchStartY = touchEvent.touches[0].clientY;
     };
 
-    const handleTouchMove = (e: TouchEvent) => {
-      touchEndY = e.touches[0].clientY;
+    const handleTouchMove = (e: Event) => {
+      const touchEvent = e as unknown as TouchEvent;
+      touchEndY = touchEvent.touches[0].clientY;
     };
 
     const handleTouchEnd = () => {
