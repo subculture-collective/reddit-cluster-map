@@ -8,7 +8,7 @@
  * Results are stored in benchmarks/results/
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -29,7 +29,7 @@ function loadFixture(fixtureName: string) {
 }
 
 // Helper to measure FPS using requestAnimationFrame
-async function measureFPS(page: any, durationMs: number): Promise<number> {
+async function measureFPS(page: Page, durationMs: number): Promise<number> {
   return await page.evaluate(async (duration: number) => {
     return new Promise<number>((resolve) => {
       let frameCount = 0;
@@ -53,7 +53,7 @@ async function measureFPS(page: any, durationMs: number): Promise<number> {
 }
 
 // Helper to get memory metrics
-async function getMemoryMetrics(page: any) {
+async function getMemoryMetrics(page: Page) {
   return await page.evaluate(() => {
     // @ts-ignore - performance.memory is a Chrome-specific API
     if (performance.memory) {
@@ -96,19 +96,19 @@ test.describe('Performance Benchmarks', () => {
         });
       });
       
-      // Navigate to the app
-      await page.goto('/');
-      
-      // Add performance marks for measurement
-      await page.evaluate(() => {
+      // Add performance marks for measurement as early as possible in the page lifecycle
+      await page.addInitScript(() => {
         performance.mark('navigation-start');
       });
+
+      // Navigate to the app
+      await page.goto('/');
       
       // Wait for the page to load
       await page.waitForLoadState('networkidle');
       
-      // Measure data parse time
-      const parseStartTime = Date.now();
+      // Measure time until UI is ready (not just JSON parse)
+      const uiReadyStartTime = Date.now();
       await page.waitForFunction(
         () => {
           // Check if graph data is loaded
@@ -117,7 +117,7 @@ test.describe('Performance Benchmarks', () => {
         },
         { timeout: 30000 }
       );
-      const dataParseTime = Date.now() - parseStartTime;
+      const uiReadyTime = Date.now() - uiReadyStartTime;
       
       // Mark render complete
       await page.evaluate(() => {
@@ -130,11 +130,8 @@ test.describe('Performance Benchmarks', () => {
         return measure.duration;
       });
       
-      console.log(`   ✓ Data parsed in ${dataParseTime}ms`);
+      console.log(`   ✓ UI ready in ${uiReadyTime}ms`);
       console.log(`   ✓ Initial render in ${renderTimeResult.toFixed(0)}ms`);
-      
-      // Get initial memory usage
-      const initialMemory = await getMemoryMetrics(page);
       
       // Wait for physics warmup
       console.log(`   ⏳ Waiting ${WARMUP_TIME_MS}ms for physics warmup...`);
@@ -155,7 +152,7 @@ test.describe('Performance Benchmarks', () => {
       const metrics: PerformanceMetrics = {
         renderTime: renderTimeResult,
         steadyStateFps: fps,
-        dataParseTime,
+        dataParseTime: uiReadyTime, // Time until UI is ready (includes parse + initial render)
         physicsWarmupTime,
         memoryUsage: peakMemory.usedJSHeapSize,
         peakMemoryUsage: peakMemory.usedJSHeapSize,

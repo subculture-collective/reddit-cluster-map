@@ -24,7 +24,27 @@ const FIXTURE_CONFIGS: Record<string, FixtureConfig> = {
   '100k': { nodeCount: 100000, linkDensity: 2.5 },
 };
 
-function generateGraphData(config: FixtureConfig): GraphData {
+// Seeded random number generator for deterministic fixtures
+class SeededRandom {
+  private seed: number;
+  
+  constructor(seed: number) {
+    this.seed = seed;
+  }
+  
+  next(): number {
+    // Linear congruential generator
+    this.seed = (this.seed * 1664525 + 1013904223) % 4294967296;
+    return this.seed / 4294967296;
+  }
+  
+  nextInt(min: number, max: number): number {
+    return Math.floor(this.next() * (max - min)) + min;
+  }
+}
+
+function generateGraphData(config: FixtureConfig, seed: number = 12345): GraphData {
+  const rng = new SeededRandom(seed);
   const nodes: GraphNode[] = [];
   const links: GraphLink[] = [];
   
@@ -32,7 +52,6 @@ function generateGraphData(config: FixtureConfig): GraphData {
   const subredditRatio = 0.1;
   const userRatio = 0.4;
   const postRatio = 0.3;
-  const commentRatio = 0.2;
   
   const subredditCount = Math.floor(config.nodeCount * subredditRatio);
   const userCount = Math.floor(config.nodeCount * userRatio);
@@ -45,7 +64,7 @@ function generateGraphData(config: FixtureConfig): GraphData {
       id: `subreddit_${i}`,
       name: `Subreddit_${i}`,
       type: 'subreddit',
-      val: Math.floor(Math.random() * 1000) + 100,
+      val: rng.nextInt(100, 1100),
     });
   }
   
@@ -55,7 +74,7 @@ function generateGraphData(config: FixtureConfig): GraphData {
       id: `user_${i}`,
       name: `user_${i}`,
       type: 'user',
-      val: Math.floor(Math.random() * 200) + 10,
+      val: rng.nextInt(10, 210),
     });
   }
   
@@ -65,7 +84,7 @@ function generateGraphData(config: FixtureConfig): GraphData {
       id: `post_${i}`,
       name: `Post_${i}`,
       type: 'post',
-      val: Math.floor(Math.random() * 100) + 5,
+      val: rng.nextInt(5, 105),
     });
   }
   
@@ -75,17 +94,22 @@ function generateGraphData(config: FixtureConfig): GraphData {
       id: `comment_${i}`,
       name: `Comment_${i}`,
       type: 'comment',
-      val: Math.floor(Math.random() * 50) + 1,
+      val: rng.nextInt(1, 51),
     });
   }
   
-  // Generate links based on density
+  // Generate links based on density (deterministic)
   const targetLinkCount = Math.floor(config.nodeCount * config.linkDensity);
   const usedPairs = new Set<string>();
   
-  while (links.length < targetLinkCount && links.length < config.nodeCount * 10) {
-    const sourceIdx = Math.floor(Math.random() * nodes.length);
-    const targetIdx = Math.floor(Math.random() * nodes.length);
+  // Use deterministic pairing for stable graph structure
+  let attempts = 0;
+  const maxAttempts = targetLinkCount * 10;
+  
+  while (links.length < targetLinkCount && attempts < maxAttempts) {
+    const sourceIdx = rng.nextInt(0, nodes.length);
+    const targetIdx = rng.nextInt(0, nodes.length);
+    attempts++;
     
     if (sourceIdx === targetIdx) continue;
     
@@ -122,4 +146,7 @@ function main() {
 export { generateGraphData, FIXTURE_CONFIGS };
 
 // Run if executed directly (ESM compatible)
-main();
+// Check if this module is being run directly (not imported)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main();
+}

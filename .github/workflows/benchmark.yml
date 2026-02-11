@@ -20,7 +20,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -39,7 +39,6 @@ jobs:
       - name: Run benchmarks
         working-directory: ./frontend
         run: npm run benchmark
-        continue-on-error: true
         id: run_benchmarks
 
       - name: Upload benchmark results
@@ -49,6 +48,11 @@ jobs:
           name: benchmark-results
           path: frontend/benchmarks/results/
           retention-days: 90
+
+      - name: Check benchmark run status
+        if: steps.run_benchmarks.outcome == 'failure'
+        run: |
+          echo "::warning::Benchmarks failed to complete. Results may be incomplete."
 
       - name: Download baseline
         uses: actions/download-artifact@v4.1.3
@@ -61,7 +65,6 @@ jobs:
         working-directory: ./frontend
         if: hashFiles('frontend/benchmarks/results/baseline.json') != ''
         run: npm run benchmark:compare
-        continue-on-error: true
         id: compare_benchmarks
 
       - name: Comment PR with results
@@ -105,6 +108,12 @@ jobs:
               repo: context.repo.repo,
               body: comment
             });
+
+      - name: Fail if benchmark run failed
+        if: steps.run_benchmarks.outcome == 'failure'
+        run: |
+          echo "::error::Benchmark run failed. Check logs for details."
+          exit 1
 
       - name: Fail if regression detected
         if: steps.compare_benchmarks.outcome == 'failure'

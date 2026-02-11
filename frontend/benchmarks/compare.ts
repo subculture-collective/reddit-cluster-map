@@ -3,7 +3,7 @@
  * Compare benchmark results against baseline and detect regressions
  * 
  * Usage:
- *   node benchmarks/compare.ts [baseline.json] [current.json]
+ *   npx tsx benchmarks/compare.ts [baseline.json] [current.json]
  *   
  * If no arguments provided, compares benchmark-latest.json against baseline.json
  */
@@ -39,7 +39,7 @@ function main() {
     baselinePath = path.resolve(args[0]);
     currentPath = path.resolve(args[1]);
   } else {
-    console.error('Usage: node compare.ts [baseline.json] [current.json]');
+    console.error('Usage: npx tsx benchmarks/compare.ts [baseline.json] [current.json]');
     process.exit(1);
   }
   

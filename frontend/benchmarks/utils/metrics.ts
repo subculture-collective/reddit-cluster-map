@@ -74,6 +74,19 @@ export function compareWithBaseline(
 ): ComparisonResult[] {
   const comparisons: ComparisonResult[] = [];
   
+  // First, validate that all baseline fixtures are present in current results
+  const currentFixtures = new Set(current.map(r => r.fixture));
+  const missingFixtures = baseline.results
+    .map(r => r.fixture)
+    .filter(fixture => !currentFixtures.has(fixture));
+  
+  if (missingFixtures.length > 0) {
+    throw new Error(
+      `Missing fixtures in current benchmark results: ${missingFixtures.join(', ')}. ` +
+      `This could indicate a partially failed benchmark run.`
+    );
+  }
+  
   for (const currentResult of current) {
     const baselineResult = baseline.results.find(r => r.fixture === currentResult.fixture);
     
