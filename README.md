@@ -223,7 +223,7 @@ Key environment variables (selected):
 ## 🖥 Frontend
 
 - Vite + React with multiple visualization modes:
-  - 3D graph with `react-force-graph-3d`
+  - 3D graph with `react-force-graph-3d` and interactive minimap for navigation
   - 2D graph with D3.js force simulation
   - Statistics dashboard
   - **Community detection** view with Louvain algorithm
