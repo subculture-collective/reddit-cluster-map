@@ -512,6 +512,8 @@ export default function Graph3DInstanced(props: Props) {
         enableAdaptiveLOD,
         lodConfig,
         onLODTierChange,
+        // Note: mobileConfig.pixelRatio and isTouchDevice are now stable after first render
+        // since useMobileDetect computes them synchronously, so they won't trigger re-renders
         mobileConfig.pixelRatio,
         isTouchDevice,
     ]);

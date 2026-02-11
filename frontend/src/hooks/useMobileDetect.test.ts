@@ -5,27 +5,44 @@ import { useMobileDetect, getMobileGraphConfig } from './useMobileDetect';
 describe('useMobileDetect', () => {
     let originalInnerWidth: number;
     let originalNavigator: Navigator;
+    let originalDevicePixelRatio: number;
+    let originalOntouchstart: any;
 
     beforeEach(() => {
         originalInnerWidth = window.innerWidth;
         originalNavigator = window.navigator;
+        originalDevicePixelRatio = window.devicePixelRatio;
+        originalOntouchstart = (window as any).ontouchstart;
     });
 
     afterEach(() => {
         // Restore original values
         Object.defineProperty(window, 'innerWidth', {
             writable: true,
+            configurable: true,
             value: originalInnerWidth,
         });
         Object.defineProperty(window, 'navigator', {
             writable: true,
+            configurable: true,
             value: originalNavigator,
         });
+        Object.defineProperty(window, 'devicePixelRatio', {
+            writable: true,
+            configurable: true,
+            value: originalDevicePixelRatio,
+        });
+        if (originalOntouchstart === undefined) {
+            delete (window as any).ontouchstart;
+        } else {
+            (window as any).ontouchstart = originalOntouchstart;
+        }
     });
 
     it('detects mobile device with width < 768px', () => {
         Object.defineProperty(window, 'innerWidth', {
             writable: true,
+            configurable: true,
             value: 375,
         });
 
@@ -39,6 +56,7 @@ describe('useMobileDetect', () => {
     it('detects tablet device with width 768-1024px', () => {
         Object.defineProperty(window, 'innerWidth', {
             writable: true,
+            configurable: true,
             value: 800,
         });
 
@@ -52,6 +70,7 @@ describe('useMobileDetect', () => {
     it('detects desktop device with width >= 1024px', () => {
         Object.defineProperty(window, 'innerWidth', {
             writable: true,
+            configurable: true,
             value: 1920,
         });
 
@@ -65,6 +84,7 @@ describe('useMobileDetect', () => {
     it('detects touch capability', () => {
         Object.defineProperty(window, 'ontouchstart', {
             writable: true,
+            configurable: true,
             value: () => {},
         });
 
@@ -74,9 +94,15 @@ describe('useMobileDetect', () => {
     });
 
     it('detects touch via maxTouchPoints', () => {
-        Object.defineProperty(navigator, 'maxTouchPoints', {
+        const navigatorWithTouch = {
+            ...originalNavigator,
+            maxTouchPoints: 5,
+        };
+        
+        Object.defineProperty(window, 'navigator', {
             writable: true,
-            value: 5,
+            configurable: true,
+            value: navigatorWithTouch,
         });
 
         const { result } = renderHook(() => useMobileDetect());
@@ -87,6 +113,7 @@ describe('useMobileDetect', () => {
     it('updates on window resize', () => {
         Object.defineProperty(window, 'innerWidth', {
             writable: true,
+            configurable: true,
             value: 1920,
         });
 
@@ -99,6 +126,7 @@ describe('useMobileDetect', () => {
         act(() => {
             Object.defineProperty(window, 'innerWidth', {
                 writable: true,
+                configurable: true,
                 value: 375,
             });
             window.dispatchEvent(new Event('resize'));
@@ -153,6 +181,7 @@ describe('getMobileGraphConfig', () => {
     it('caps pixel ratio appropriately for mobile', () => {
         Object.defineProperty(window, 'devicePixelRatio', {
             writable: true,
+            configurable: true,
             value: 3,
         });
 

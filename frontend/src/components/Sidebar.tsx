@@ -143,11 +143,15 @@ export default function Sidebar(props: Props) {
 
     const handleTouchStart = (e: Event) => {
       const touchEvent = e as unknown as TouchEvent;
-      touchStartY = touchEvent.touches[0].clientY;
+      if (touchEvent.touches.length === 0) return;
+      const y = touchEvent.touches[0].clientY;
+      touchStartY = y;
+      touchEndY = y; // Initialize touchEndY to prevent misfire on tap
     };
 
     const handleTouchMove = (e: Event) => {
       const touchEvent = e as unknown as TouchEvent;
+      if (touchEvent.touches.length === 0) return;
       touchEndY = touchEvent.touches[0].clientY;
     };
 

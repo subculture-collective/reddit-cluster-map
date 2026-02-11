@@ -1,56 +1,75 @@
 import { useEffect, useState } from 'react';
 
 /**
+ * Detect touch capability synchronously
+ */
+function checkTouchCapability(): boolean {
+    if (typeof window === 'undefined') return false;
+    return (
+        'ontouchstart' in window ||
+        navigator.maxTouchPoints > 0 ||
+        // @ts-expect-error - msMaxTouchPoints is IE-specific
+        navigator.msMaxTouchPoints > 0
+    );
+}
+
+/**
+ * Get initial device type synchronously to avoid first-render flicker
+ */
+function getInitialDeviceType() {
+    if (typeof window === 'undefined') {
+        return {
+            isMobile: false,
+            isTablet: false,
+            isTouchDevice: false,
+            screenWidth: 1920,
+        };
+    }
+
+    const width = window.innerWidth;
+    const hasTouch = checkTouchCapability();
+
+    return {
+        isMobile: width < 768,
+        isTablet: width >= 768 && width < 1024,
+        isTouchDevice: hasTouch,
+        screenWidth: width,
+    };
+}
+
+/**
  * Mobile device detection hook
  * 
  * Detects mobile devices using:
  * 1. Screen width breakpoints (< 768px is considered mobile)
- * 2. Touch capability detection
- * 3. User agent sniffing as fallback
+ * 2. Touch capability detection via ontouchstart/maxTouchPoints
  * 
  * Returns:
- * - isMobile: true if device is mobile (small screen or touch-primary)
- * - isTablet: true if device is tablet-sized (768px - 1024px)
+ * - isMobile: true if device width is < 768px
+ * - isTablet: true if device width is 768px - 1024px
  * - isTouchDevice: true if device supports touch events
  * - screenWidth: current screen width in pixels
+ * 
+ * Note: Values are computed synchronously on mount to avoid first-render flicker.
  */
 export function useMobileDetect() {
-    const [isMobile, setIsMobile] = useState(false);
-    const [isTablet, setIsTablet] = useState(false);
-    const [isTouchDevice, setIsTouchDevice] = useState(false);
-    const [screenWidth, setScreenWidth] = useState(
-        typeof window !== 'undefined' ? window.innerWidth : 1920
-    );
+    const [state, setState] = useState(getInitialDeviceType);
 
     useEffect(() => {
-        // Detect touch capability
-        const checkTouchCapability = () => {
-            return (
-                'ontouchstart' in window ||
-                navigator.maxTouchPoints > 0 ||
-                // @ts-expect-error - msMaxTouchPoints is IE-specific
-                navigator.msMaxTouchPoints > 0
-            );
-        };
-
         // Update dimensions and device type
         const updateDeviceType = () => {
             const width = window.innerWidth;
-            setScreenWidth(width);
-
             const hasTouch = checkTouchCapability();
-            setIsTouchDevice(hasTouch);
 
-            // Mobile: < 768px width OR touch-primary device with small screen
-            const isMobileWidth = width < 768;
-            setIsMobile(isMobileWidth);
-
-            // Tablet: 768px - 1024px width
-            const isTabletWidth = width >= 768 && width < 1024;
-            setIsTablet(isTabletWidth);
+            setState({
+                isMobile: width < 768,
+                isTablet: width >= 768 && width < 1024,
+                isTouchDevice: hasTouch,
+                screenWidth: width,
+            });
         };
 
-        // Initial check
+        // Initial check (in case window size changed between mount and effect)
         updateDeviceType();
 
         // Listen for resize events
@@ -61,12 +80,7 @@ export function useMobileDetect() {
         };
     }, []);
 
-    return {
-        isMobile,
-        isTablet,
-        isTouchDevice,
-        screenWidth,
-    };
+    return state;
 }
 
 /**
@@ -76,12 +90,15 @@ export function useMobileDetect() {
  * to ensure acceptable performance (>15 FPS target)
  */
 export function getMobileGraphConfig(isMobile: boolean, isTablet: boolean) {
+    // Guard against non-browser environments
+    const devicePixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+
     if (isMobile) {
         return {
             maxRenderNodes: 5000,
             maxRenderLinks: 10000,
             defaultLODTier: 2, // MEDIUM tier
-            pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5), // Cap lower on mobile
+            pixelRatio: Math.min(devicePixelRatio, 1.5), // Cap lower on mobile
         };
     }
 
@@ -90,7 +107,7 @@ export function getMobileGraphConfig(isMobile: boolean, isTablet: boolean) {
             maxRenderNodes: 10000,
             maxRenderLinks: 25000,
             defaultLODTier: 2, // MEDIUM tier
-            pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+            pixelRatio: Math.min(devicePixelRatio, 2),
         };
     }
 
@@ -99,6 +116,6 @@ export function getMobileGraphConfig(isMobile: boolean, isTablet: boolean) {
         maxRenderNodes: 20000,
         maxRenderLinks: 50000,
         defaultLODTier: 3, // HIGH tier
-        pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+        pixelRatio: Math.min(devicePixelRatio, 2),
     };
 }
