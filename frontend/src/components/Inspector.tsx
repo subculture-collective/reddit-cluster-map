@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { SelectedInfo, NodeDetails } from "../types/ui";
+import type { SelectedInfo, NodeDetails, NeighborInfo } from "../types/ui";
 import VirtualList from "./VirtualList";
 
 interface Props {
@@ -41,11 +41,13 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
       } catch (err) {
         console.error('Error fetching node details:', err);
         setError(err instanceof Error ? err.message : 'Failed to load node details');
-        // Fall back to basic selected info
-        setNodeDetails({
-          ...selected,
-          neighbors: selected.neighbors || [],
-        } as NodeDetails);
+        // Fall back to basic selected info only if it has connections
+        if (selected.degree && selected.degree > 0) {
+          setNodeDetails({
+            ...selected,
+            neighbors: selected.neighbors || [],
+          } as NodeDetails);
+        }
       } finally {
         setLoading(false);
       }
@@ -56,19 +58,23 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
 
   if (!selected) return null;
 
-  // Only show inspector when the selected node has at least one connection
+  // Only show inspector when the selected node has at least one connection or we're loading/have data
   const hasConnections =
     (typeof selected.degree === "number" && selected.degree > 0) ||
     (selected.neighbors && selected.neighbors.length > 0) ||
     (nodeDetails && nodeDetails.neighbors && nodeDetails.neighbors.length > 0);
     
-  if (!hasConnections && !loading && !nodeDetails) return null;
+  if (!hasConnections && !loading) return null;
 
   const neighbors = nodeDetails?.neighbors || selected.neighbors || [];
   const displayName = nodeDetails?.name || selected.name || selected.id;
   const displayType = nodeDetails?.type || selected.type;
   const displayVal = nodeDetails?.val;
-  const degree = nodeDetails?.degree || selected.degree || neighbors.length;
+  const degree = nodeDetails?.degree !== undefined ? nodeDetails.degree : 
+                 (selected.degree !== undefined ? selected.degree : neighbors.length);
+  
+  // Type guard to check if neighbors are NeighborInfo (with degree field)
+  const isNeighborInfo = (n: any): n is NeighborInfo => 'degree' in n && typeof n.degree === 'number';
 
   return (
     <div className="fixed right-0 top-0 h-full z-30 pointer-events-none">
@@ -127,7 +133,7 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {loading && (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex items-center justify-center py-8" role="status">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
             </div>
           )}
@@ -226,6 +232,7 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
                         itemKey={(n) => n.id}
                         renderItem={(n) => {
                           const neighbor = n as typeof neighbors[0];
+                          const hasDegree = isNeighborInfo(neighbor);
                           return (
                             <button
                               className="w-full text-left p-3 rounded hover:bg-gray-800/70 transition-colors border border-gray-700/50 hover:border-gray-600"
@@ -245,9 +252,9 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
                                     </p>
                                   )}
                                 </div>
-                                {neighbor.degree !== undefined && (
+                                {hasDegree && (
                                   <div className="ml-2 text-xs text-gray-400 flex-shrink-0">
-                                    {neighbor.degree} connections
+                                    {(neighbor as NeighborInfo).degree} connections
                                   </div>
                                 )}
                               </div>
@@ -283,7 +290,8 @@ export default function Inspector({ selected, onClear, onFocus }: Props) {
                       <h4 className="text-sm font-semibold text-gray-300 mb-2">Connections by Type</h4>
                       {(() => {
                         const typeCounts = neighbors.reduce((acc, n) => {
-                          const type = 'type' in n && typeof n.type === 'string' ? n.type : 'unknown';
+                          const neighbor = n as typeof neighbors[0];
+                          const type = neighbor.type || 'unknown';
                           acc[type] = (acc[type] || 0) + 1;
                           return acc;
                         }, {} as Record<string, number>);
