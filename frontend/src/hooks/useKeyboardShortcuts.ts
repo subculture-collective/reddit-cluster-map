@@ -106,16 +106,30 @@ export function useKeyboardShortcuts(actions: KeyboardShortcutActions) {
     }
 
     // F - Fit graph to screen
-    if (key === 'f' && !ctrlKey && !metaKey && !shiftKey && !altKey) {
+    if (
+      key === 'f' &&
+      !ctrlKey &&
+      !metaKey &&
+      !shiftKey &&
+      !altKey &&
+      actionsRef.current.onFitGraph
+    ) {
       event.preventDefault();
-      actionsRef.current.onFitGraph?.();
+      actionsRef.current.onFitGraph();
       return;
     }
 
     // R - Reset camera
-    if (key === 'r' && !ctrlKey && !metaKey && !shiftKey && !altKey) {
+    if (
+      key === 'r' &&
+      !ctrlKey &&
+      !metaKey &&
+      !shiftKey &&
+      !altKey &&
+      actionsRef.current.onResetCamera
+    ) {
       event.preventDefault();
-      actionsRef.current.onResetCamera?.();
+      actionsRef.current.onResetCamera();
       return;
     }
 
@@ -154,35 +168,47 @@ export function useKeyboardShortcuts(actions: KeyboardShortcutActions) {
       return;
     }
 
-    // ? or F1 - Show help
-    if ((key === '?' && !ctrlKey && !metaKey && !altKey) || key === 'F1') {
+    // ? or F1 - Show help (ignore auto-repeat to prevent rapid toggling)
+    if (((key === '?' && !ctrlKey && !metaKey && !altKey) || key === 'F1') && !event.repeat) {
       event.preventDefault();
       actionsRef.current.onShowHelp?.();
       return;
     }
 
-    // Arrow keys - Navigate between nodes (only when a node is selected)
+    // Arrow keys - Navigate between nodes (only when handler exists)
     if (key === 'ArrowUp' && !ctrlKey && !metaKey && !shiftKey && !altKey) {
-      event.preventDefault();
-      actionsRef.current.onArrowUp?.();
+      const handler = actionsRef.current.onArrowUp;
+      if (handler) {
+        event.preventDefault();
+        handler();
+      }
       return;
     }
 
     if (key === 'ArrowDown' && !ctrlKey && !metaKey && !shiftKey && !altKey) {
-      event.preventDefault();
-      actionsRef.current.onArrowDown?.();
+      const handler = actionsRef.current.onArrowDown;
+      if (handler) {
+        event.preventDefault();
+        handler();
+      }
       return;
     }
 
     if (key === 'ArrowLeft' && !ctrlKey && !metaKey && !shiftKey && !altKey) {
-      event.preventDefault();
-      actionsRef.current.onArrowLeft?.();
+      const handler = actionsRef.current.onArrowLeft;
+      if (handler) {
+        event.preventDefault();
+        handler();
+      }
       return;
     }
 
     if (key === 'ArrowRight' && !ctrlKey && !metaKey && !shiftKey && !altKey) {
-      event.preventDefault();
-      actionsRef.current.onArrowRight?.();
+      const handler = actionsRef.current.onArrowRight;
+      if (handler) {
+        event.preventDefault();
+        handler();
+      }
       return;
     }
   }, []);

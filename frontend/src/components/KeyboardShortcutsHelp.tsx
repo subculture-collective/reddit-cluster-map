@@ -16,7 +16,15 @@ function formatShortcut(shortcut: KeyboardShortcut): string {
   // Format the key
   let key = shortcut.key;
   if (key.startsWith('Arrow')) {
-    key = key.replace('Arrow', '') + ' ↑↓←→'[['Up', 'Down', 'Left', 'Right'].indexOf(key.replace('Arrow', ''))];
+    const direction = key.replace('Arrow', '');
+    const arrowSymbols: Record<string, string> = {
+      Up: '↑',
+      Down: '↓',
+      Left: '←',
+      Right: '→',
+    };
+    const symbol = arrowSymbols[direction] ?? '';
+    key = `${direction} ${symbol}`.trimEnd();
   } else if (key === 'Escape') {
     key = 'Esc';
   }

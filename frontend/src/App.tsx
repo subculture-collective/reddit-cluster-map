@@ -121,7 +121,7 @@ function App() {
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   
   // Ref for search bar to enable focus from keyboard shortcuts
-  const searchInputRef = useRef<SearchBarHandle>(null);
+  const searchInputRef = useRef<SearchBarHandle | null>(null);
 
   // Persist view mode
   useEffect(() => {
@@ -202,7 +202,7 @@ function App() {
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
-    onFocusSearch: useCallback(() => {
+    onFocusSearch: viewMode === "admin" ? undefined : useCallback(() => {
       searchInputRef.current?.focus();
     }, []),
     
