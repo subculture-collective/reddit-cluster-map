@@ -46,9 +46,11 @@ export default function ShareButton({ getState }: Props) {
             ? "bg-green-600 border-green-400 text-white"
             : "bg-blue-600 border-blue-400 text-white hover:bg-blue-700"
         }`}
-        title="Copy shareable link to clipboard"
+        aria-label={copied ? "Link copied to clipboard" : "Share current view - Copy link to clipboard"}
+        aria-live="polite"
       >
-        {copied ? "✓ Copied!" : "📋 Share Link"}
+        <span aria-hidden="true">{copied ? "✓ " : "📋 "}</span>
+        {copied ? "Copied!" : "Share Link"}
       </button>
     </div>
   );

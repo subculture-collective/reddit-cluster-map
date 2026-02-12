@@ -200,11 +200,16 @@ function App() {
     enableAdaptiveLOD,
   }), [viewMode, filters, minDegree, maxDegree, camera3dRef, camera2dRef, useCommunityColors, usePrecomputedLayout, sizeAttenuation, enableAdaptiveLOD]);
 
+  // Keyboard shortcut handlers
+  const handleFocusSearch = useCallback(() => {
+    if (viewMode !== "admin") {
+      searchInputRef.current?.focus();
+    }
+  }, [viewMode]);
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
-    onFocusSearch: viewMode === "admin" ? undefined : useCallback(() => {
-      searchInputRef.current?.focus();
-    }, []),
+    onFocusSearch: viewMode === "admin" ? undefined : handleFocusSearch,
     
     // Sidebar toggle is handled in Sidebar component itself via Ctrl+B
     
@@ -254,6 +259,17 @@ function App() {
 
   return (
     <div className="w-full h-screen bg-white dark:bg-black transition-colors duration-200">
+      {/* Accessibility: Screen reader announcements for state changes */}
+      <div 
+        role="status" 
+        aria-live="polite" 
+        aria-atomic="true"
+        className="sr-only"
+        id="screen-reader-announcements"
+      >
+        {/* This region will be used to announce state changes to screen readers */}
+      </div>
+      
       {/* Search bar - visible in all views except admin */}
       {viewMode !== "admin" && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50">
@@ -271,23 +287,25 @@ function App() {
         </div>
       )}
       
-      {viewMode === "admin" ? (
-        <Admin
-          onViewMode={(mode: "3d" | "2d") => {
-            setViewMode(mode);
-          }}
-        />
-      ) : viewMode === "dashboard" ? (
-        <Dashboard
-          onViewMode={(mode: "3d" | "2d") => {
-            setViewMode(mode);
-          }}
-          onFocusNode={(id) => {
-            setFocusNodeId(id);
-            setSelectedId(id);
-          }}
-        />
-      ) : viewMode === "communities" ? (
+      {/* Main content area */}
+      <main id="main-content">
+        {viewMode === "admin" ? (
+          <Admin
+            onViewMode={(mode: "3d" | "2d") => {
+              setViewMode(mode);
+            }}
+          />
+        ) : viewMode === "dashboard" ? (
+          <Dashboard
+            onViewMode={(mode: "3d" | "2d") => {
+              setViewMode(mode);
+            }}
+            onFocusNode={(id) => {
+              setFocusNodeId(id);
+              setSelectedId(id);
+            }}
+          />
+        ) : viewMode === "communities" ? (
         <Communities
           onViewMode={(mode: "3d" | "2d") => {
             setViewMode(mode);
@@ -430,7 +448,8 @@ function App() {
             }}
           />
         </>
-      )}
+        )}
+      </main>
       
       {/* Keyboard shortcuts help overlay */}
       <KeyboardShortcutsHelp 

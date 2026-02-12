@@ -12,6 +12,10 @@
     --node-post: #d97706;
     --node-comment: #dc2626;
     --node-default: #7c3aed;
+    
+    /* Focus indicator colors */
+    --focus-ring-color: #3b82f6;
+    --focus-ring-width: 3px;
   }
 
   .dark {
@@ -23,5 +27,94 @@
     --node-post: #f59e0b;
     --node-comment: #f43f5e;
     --node-default: #a78bfa;
+    
+    /* Focus indicator colors - brighter for dark mode */
+    --focus-ring-color: #60a5fa;
+  }
+  
+  /* High contrast mode */
+  .high-contrast {
+    --graph-bg: #000000;
+    --graph-bg-rgb: 0, 0, 0;
+    --node-subreddit: #00ff00;
+    --node-user: #00ffff;
+    --node-post: #ffff00;
+    --node-comment: #ff00ff;
+    --node-default: #ffffff;
+    --focus-ring-color: #ffff00;
+    --focus-ring-width: 4px;
+  }
+  
+  /* Accessible focus indicators for all interactive elements */
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [role="button"]:focus-visible,
+  [role="link"]:focus-visible,
+  [role="option"]:focus-visible,
+  [tabindex]:not([tabindex="-1"]):focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: 2px;
+  }
+  
+  /* Remove default focus outline for mouse users, keep for keyboard */
+  *:focus:not(:focus-visible) {
+    outline: none;
+  }
+}
+
+@layer components {
+  /* Skip to main content link - hidden until focused */
+  .skip-link {
+    position: absolute;
+    top: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    padding: 0.75rem 1.5rem;
+    background: #3b82f6;
+    color: white;
+    text-decoration: none;
+    border-radius: 0.375rem;
+    font-weight: 600;
+    transition: top 0.2s;
+  }
+  
+  .skip-link:focus {
+    top: 1rem;
+  }
+  
+  /* High contrast mode utility classes */
+  .high-contrast button,
+  .high-contrast a {
+    border: 2px solid currentColor;
+  }
+  
+  .high-contrast .bg-gray-100,
+  .high-contrast .bg-gray-700,
+  .high-contrast .bg-gray-800 {
+    background-color: #000000 !important;
+    border: 2px solid #ffffff !important;
+  }
+  
+  /* Screen reader only text */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+  
+  /* Make sure focus is always visible in high contrast */
+  .high-contrast *:focus-visible {
+    outline: 4px solid #ffff00 !important;
+    outline-offset: 2px;
   }
 }

@@ -7,6 +7,8 @@ interface ThemeContextType {
   theme: Theme;
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
+  highContrast: boolean;
+  setHighContrast: (enabled: boolean) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -28,6 +30,16 @@ function getStoredThemeMode(): ThemeMode {
   return 'system';
 }
 
+function getStoredHighContrast(): boolean {
+  try {
+    const stored = localStorage.getItem('highContrast');
+    return stored === 'true';
+  } catch {
+    // ignore localStorage errors
+  }
+  return false;
+}
+
 function resolveTheme(mode: ThemeMode): Theme {
   if (mode === 'system') {
     return getSystemTheme();
@@ -38,11 +50,21 @@ function resolveTheme(mode: ThemeMode): Theme {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [themeMode, setThemeModeState] = useState<ThemeMode>(getStoredThemeMode);
   const [theme, setTheme] = useState<Theme>(() => resolveTheme(getStoredThemeMode()));
+  const [highContrast, setHighContrastState] = useState<boolean>(getStoredHighContrast);
 
   const setThemeMode = (mode: ThemeMode) => {
     setThemeModeState(mode);
     try {
       localStorage.setItem('themeMode', mode);
+    } catch {
+      // ignore localStorage errors
+    }
+  };
+
+  const setHighContrast = (enabled: boolean) => {
+    setHighContrastState(enabled);
+    try {
+      localStorage.setItem('highContrast', enabled ? 'true' : 'false');
     } catch {
       // ignore localStorage errors
     }
@@ -74,10 +96,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } else {
       root.classList.remove('dark');
     }
-  }, [theme]);
+    
+    if (highContrast) {
+      root.classList.add('high-contrast');
+    } else {
+      root.classList.remove('high-contrast');
+    }
+  }, [theme, highContrast]);
 
   return (
-    <ThemeContext.Provider value={{ theme, themeMode, setThemeMode }}>
+    <ThemeContext.Provider value={{ theme, themeMode, setThemeMode, highContrast, setHighContrast }}>
       {children}
     </ThemeContext.Provider>
   );

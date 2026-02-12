@@ -204,7 +204,7 @@ export default function Sidebar(props: Props) {
   return (
     <>
       {/* Sidebar - Desktop: left sidebar, Mobile: bottom sheet */}
-      <div
+      <aside
         className={`fixed bg-black/90 backdrop-blur-sm text-white z-30 transition-all duration-200 flex flex-col shadow-2xl
           ${isMobile 
             ? /* Mobile: bottom sheet */
@@ -216,6 +216,8 @@ export default function Sidebar(props: Props) {
                 ? 'top-0 left-0 h-full w-14'
                 : 'top-0 left-0 h-full w-80'
           }`}
+        role="complementary"
+        aria-label="Graph controls sidebar"
       >
         {/* Header */}
         <div 
@@ -223,13 +225,14 @@ export default function Sidebar(props: Props) {
           className={`flex items-center justify-between px-4 py-3 border-b border-white/10
           ${isMobile && !isCollapsed ? 'border-t' : ''}`}>
           {!isCollapsed && (
-            <h2 className="text-sm font-semibold">Controls</h2>
+            <h2 className="text-sm font-semibold" id="sidebar-title">Controls</h2>
           )}
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="p-1 hover:bg-white/10 rounded transition-colors ml-auto"
-            title={isCollapsed ? "Expand (Ctrl+B)" : "Collapse (Ctrl+B)"}
-            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={isCollapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"}
+            aria-expanded={!isCollapsed}
+            aria-controls="sidebar-content"
           >
             <svg
               className={`w-5 h-5 transition-transform ${
@@ -240,6 +243,7 @@ export default function Sidebar(props: Props) {
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"
@@ -253,60 +257,55 @@ export default function Sidebar(props: Props) {
 
         {/* Collapsed icon bar */}
         {isCollapsed && (
-          <div className="flex flex-col items-center gap-4 py-4">
+          <div className="flex flex-col items-center gap-4 py-4" id="sidebar-content">
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="View section"
               aria-label="Expand View section"
             >
-              👁️
+              <span aria-hidden="true">👁️</span>
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Filters section"
               aria-label="Expand Filters section"
             >
-              🔍
+              <span aria-hidden="true">🔍</span>
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Physics section"
               aria-label="Expand Physics section"
             >
-              ⚡
+              <span aria-hidden="true">⚡</span>
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Display section"
               aria-label="Expand Display section"
             >
-              🎨
+              <span aria-hidden="true">🎨</span>
             </button>
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-2 hover:bg-white/10 rounded transition-colors"
-              title="Data section"
               aria-label="Expand Data section"
             >
-              📊
+              <span aria-hidden="true">📊</span>
             </button>
           </div>
         )}
 
         {/* Expanded content */}
         {!isCollapsed && (
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto" id="sidebar-content">
             {/* View Section */}
             <SidebarSection
               title="View"
               icon="👁️"
               storageKey="sidebar-section-view"
             >
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="View mode selection">
                 <button
                   className={`px-3 py-1.5 rounded border text-xs font-medium ${
                     graphMode === "3d"
@@ -314,6 +313,8 @@ export default function Sidebar(props: Props) {
                       : "bg-gray-700 border-gray-500"
                   }`}
                   onClick={() => onGraphModeChange?.("3d")}
+                  aria-label="Switch to 3D view"
+                  aria-pressed={graphMode === "3d"}
                 >
                   3D
                 </button>
@@ -324,12 +325,15 @@ export default function Sidebar(props: Props) {
                       : "bg-gray-700 border-gray-500"
                   }`}
                   onClick={() => onGraphModeChange?.("2d")}
+                  aria-label="Switch to 2D view"
+                  aria-pressed={graphMode === "2d"}
                 >
                   2D
                 </button>
                 <button
                   className="px-3 py-1.5 rounded border bg-purple-600 border-purple-400 hover:bg-purple-700 text-xs font-medium"
                   onClick={() => onShowDashboard?.()}
+                  aria-label="Show dashboard"
                 >
                   Dashboard
                 </button>
@@ -449,8 +453,9 @@ export default function Sidebar(props: Props) {
 
               <div className="space-y-2">
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-20">Repulsion</label>
+                  <label htmlFor="physics-repulsion-slider" className="text-xs w-20">Repulsion</label>
                   <input
+                    id="physics-repulsion-slider"
                     type="range"
                     min={-400}
                     max={0}
@@ -463,6 +468,11 @@ export default function Sidebar(props: Props) {
                         chargeStrength: parseInt(e.target.value),
                       })
                     }
+                    aria-label={`Repulsion strength: ${physics.chargeStrength}`}
+                    aria-valuemin={-400}
+                    aria-valuemax={0}
+                    aria-valuenow={physics.chargeStrength}
+                    aria-valuetext={`${physics.chargeStrength}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {physics.chargeStrength}
@@ -470,8 +480,9 @@ export default function Sidebar(props: Props) {
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-20">Link dist</label>
+                  <label htmlFor="physics-linkdist-slider" className="text-xs w-20">Link dist</label>
                   <input
+                    id="physics-linkdist-slider"
                     type="range"
                     min={10}
                     max={200}
@@ -484,6 +495,11 @@ export default function Sidebar(props: Props) {
                         linkDistance: parseInt(e.target.value),
                       })
                     }
+                    aria-label={`Link distance: ${physics.linkDistance}`}
+                    aria-valuemin={10}
+                    aria-valuemax={200}
+                    aria-valuenow={physics.linkDistance}
+                    aria-valuetext={`${physics.linkDistance}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {physics.linkDistance}
@@ -491,8 +507,9 @@ export default function Sidebar(props: Props) {
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-20">Damping</label>
+                  <label htmlFor="physics-damping-slider" className="text-xs w-20">Damping</label>
                   <input
+                    id="physics-damping-slider"
                     type="range"
                     min={0.7}
                     max={0.99}
@@ -505,6 +522,11 @@ export default function Sidebar(props: Props) {
                         velocityDecay: parseFloat(e.target.value),
                       })
                     }
+                    aria-label={`Damping: ${physics.velocityDecay.toFixed(2)}`}
+                    aria-valuemin={0.7}
+                    aria-valuemax={0.99}
+                    aria-valuenow={physics.velocityDecay}
+                    aria-valuetext={`${physics.velocityDecay.toFixed(2)}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {physics.velocityDecay.toFixed(2)}
@@ -512,8 +534,9 @@ export default function Sidebar(props: Props) {
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-20">Cooldown</label>
+                  <label htmlFor="physics-cooldown-slider" className="text-xs w-20">Cooldown</label>
                   <input
+                    id="physics-cooldown-slider"
                     type="range"
                     min={0}
                     max={400}
@@ -526,6 +549,11 @@ export default function Sidebar(props: Props) {
                         cooldownTicks: parseInt(e.target.value),
                       })
                     }
+                    aria-label={`Cooldown ticks: ${physics.cooldownTicks}`}
+                    aria-valuemin={0}
+                    aria-valuemax={400}
+                    aria-valuenow={physics.cooldownTicks}
+                    aria-valuetext={`${physics.cooldownTicks}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {physics.cooldownTicks}
@@ -533,8 +561,9 @@ export default function Sidebar(props: Props) {
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-20">Collision</label>
+                  <label htmlFor="physics-collision-slider" className="text-xs w-20">Collision</label>
                   <input
+                    id="physics-collision-slider"
                     type="range"
                     min={0}
                     max={20}
@@ -547,6 +576,11 @@ export default function Sidebar(props: Props) {
                         collisionRadius: parseFloat(e.target.value),
                       })
                     }
+                    aria-label={`Collision radius: ${physics.collisionRadius.toFixed(1)}`}
+                    aria-valuemin={0}
+                    aria-valuemax={20}
+                    aria-valuenow={physics.collisionRadius}
+                    aria-valuetext={`${physics.collisionRadius.toFixed(1)}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {physics.collisionRadius.toFixed(1)}
@@ -634,8 +668,9 @@ export default function Sidebar(props: Props) {
 
               <div className="space-y-2">
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-24">Link opacity</label>
+                  <label htmlFor="display-linkopacity-slider" className="text-xs w-24">Link opacity</label>
                   <input
+                    id="display-linkopacity-slider"
                     type="range"
                     min={0}
                     max={1}
@@ -645,6 +680,11 @@ export default function Sidebar(props: Props) {
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       onLinkOpacityChange(parseFloat(e.target.value))
                     }
+                    aria-label={`Link opacity: ${(linkOpacity * 100).toFixed(0)}%`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(linkOpacity * 100)}
+                    aria-valuetext={`${(linkOpacity * 100).toFixed(0)}%`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {linkOpacity.toFixed(2)}
@@ -652,8 +692,9 @@ export default function Sidebar(props: Props) {
                 </div>
 
                 <div className="flex gap-2 items-center">
-                  <label className="text-xs w-24">Node size</label>
+                  <label htmlFor="display-nodesize-slider" className="text-xs w-24">Node size</label>
                   <input
+                    id="display-nodesize-slider"
                     type="range"
                     min={2}
                     max={12}
@@ -663,6 +704,11 @@ export default function Sidebar(props: Props) {
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       onNodeRelSizeChange(parseInt(e.target.value))
                     }
+                    aria-label={`Node size: ${nodeRelSize}`}
+                    aria-valuemin={2}
+                    aria-valuemax={12}
+                    aria-valuenow={nodeRelSize}
+                    aria-valuetext={`${nodeRelSize}`}
                   />
                   <span className="text-xs opacity-70 w-12 text-right">
                     {nodeRelSize}
@@ -678,15 +724,17 @@ export default function Sidebar(props: Props) {
               storageKey="sidebar-section-data"
             >
               <div className="flex gap-2 items-center">
-                <label className="text-xs whitespace-nowrap">
+                <label htmlFor="subreddit-size-select" className="text-xs whitespace-nowrap">
                   Subreddit size
                 </label>
                 <select
+                  id="subreddit-size-select"
                   className="flex-1 bg-black/40 border border-white/20 rounded px-2 py-1 text-xs outline-none"
                   value={subredditSize}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                     onSubredditSizeChange(e.target.value as SubredditSize)
                   }
+                  aria-label="Subreddit sizing metric"
                 >
                   <option value="subscribers">Subscribers</option>
                   <option value="activeUsers">Active users</option>
@@ -697,13 +745,14 @@ export default function Sidebar(props: Props) {
             </SidebarSection>
           </div>
         )}
-      </div>
+      </aside>
 
       {/* Spacer to push content right when sidebar is expanded */}
       <div
         className={`hidden sm:block transition-all duration-200 ${
           isCollapsed ? "w-14" : "w-80"
         }`}
+        aria-hidden="true"
       />
     </>
   );
