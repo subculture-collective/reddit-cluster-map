@@ -247,11 +247,13 @@ func (h *Hub) BroadcastDiff(ctx context.Context, versionID int64) error {
 			if diff.EntityType == "node" {
 				node := GraphNode{
 					ID:   diff.EntityID,
-					Name: diff.EntityID, // Will be filled from NewVal if available
+					Name: diff.EntityID, // Default to ID if name not available
 				}
 				
+				// Use NewVal for node value/name if available
 				if diff.NewVal.Valid {
-					// Parse val
+					// In the actual implementation, NewVal should contain the node name
+					// For now, we use it as the val (numeric weight)
 					val := atoiSafe(diff.NewVal.String)
 					node.Val = val
 				}
@@ -272,19 +274,12 @@ func (h *Hub) BroadcastDiff(ctx context.Context, versionID int64) error {
 					updatedNodes = append(updatedNodes, node)
 				}
 			} else if diff.EntityType == "link" {
-				// Parse entity_id as "source->target"
-				// This is a simplification; adjust based on actual schema
-				link := GraphLink{
-					Source: diff.EntityID, // Adjust parsing as needed
-					Target: diff.EntityID,
-				}
-				
-				switch diff.Action {
-				case "add":
-					addedLinks = append(addedLinks, link)
-				case "remove":
-					removedLinks = append(removedLinks, link)
-				}
+				// For links, EntityID should be in format "source->target" or we need separate fields
+				// This is a known limitation that needs to be addressed in the versioning schema
+				// For now, we skip link diffs as the schema doesn't provide source/target separately
+				// TODO: Update versioning schema to include source_id and target_id fields
+				logger.Warn("Link diff skipped due to schema limitation", "entity_id", diff.EntityID)
+				continue
 			}
 		}
 		
@@ -319,6 +314,7 @@ func (h *Hub) BroadcastDiff(ctx context.Context, versionID int64) error {
 		}
 		
 		// Send messages to clients
+		messagesSent := 0
 		for _, msg := range messages {
 			wsMsg := WebSocketMessage{
 				Type:    "diff",
@@ -339,15 +335,20 @@ func (h *Hub) BroadcastDiff(ctx context.Context, versionID int64) error {
 					client.mu.Lock()
 					client.lastVersion = versionID
 					client.mu.Unlock()
+					messagesSent++
 				default:
 					// Client buffer full
 					logger.Warn("Client send buffer full, skipping update")
 				}
 			}
 		}
+		
+		// Update metric with actual messages sent
+		if messagesSent > 0 {
+			metrics.WebSocketMessagesSent.Add(float64(messagesSent))
+		}
 	}
 	
-	metrics.WebSocketMessagesSent.Add(float64(len(clientVersions)))
 	return nil
 }
 
@@ -404,30 +405,48 @@ func (c *Client) writePump() {
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				// Hub closed the channel
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				if err := c.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+					logger.Warn("Failed to write close message", "error", err)
+				}
 				return
 			}
 			
 			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
+				logger.Warn("Failed to get writer", "error", err)
 				return
 			}
-			w.Write(message)
+			
+			if _, err := w.Write(message); err != nil {
+				logger.Warn("Failed to write message", "error", err)
+				w.Close()
+				return
+			}
 			
 			// Add queued messages to the current WebSocket message
 			n := len(c.send)
 			for i := 0; i < n; i++ {
-				w.Write([]byte{'\n'})
-				w.Write(<-c.send)
+				if _, err := w.Write([]byte{'\n'}); err != nil {
+					logger.Warn("Failed to write newline separator", "error", err)
+					w.Close()
+					return
+				}
+				if _, err := w.Write(<-c.send); err != nil {
+					logger.Warn("Failed to write queued message", "error", err)
+					w.Close()
+					return
+				}
 			}
 			
 			if err := w.Close(); err != nil {
+				logger.Warn("Failed to close writer", "error", err)
 				return
 			}
 			
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				logger.Warn("Failed to write ping", "error", err)
 				return
 			}
 		}
