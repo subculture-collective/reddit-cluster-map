@@ -246,4 +246,19 @@ var (
 		},
 		[]string{"collector"}, // collector: graph, community, database, crawl_jobs
 	)
+
+	// WebSocket metrics
+	WebSocketConnections = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "websocket_connections_active",
+			Help: "Number of active WebSocket connections",
+		},
+	)
+
+	WebSocketMessagesSent = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "websocket_messages_sent_total",
+			Help: "Total number of WebSocket messages sent to clients",
+		},
+	)
 )
