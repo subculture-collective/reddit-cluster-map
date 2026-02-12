@@ -18,6 +18,12 @@ npm run test:coverage
 
 # Run tests with UI
 npm run test:ui
+
+# Run visual regression tests
+npm run test:visual
+
+# Update visual regression baselines
+npm run test:visual:update
 ```
 
 ## Coverage Requirements
@@ -228,3 +234,112 @@ vi.mock('./module', () => ({
 - [Vitest Documentation](https://vitest.dev/)
 - [React Testing Library](https://testing-library.com/react)
 - [Testing Library Best Practices](https://kentcdodds.com/blog/common-mistakes-with-react-testing-library)
+
+## Visual Regression Testing
+
+The frontend includes **visual regression tests** using Playwright to catch unintended visual changes in graph rendering.
+
+### Running Visual Tests
+
+```bash
+# Run visual regression tests
+npm run test:visual
+
+# Run visual tests in UI mode
+npm run test:visual:ui
+
+# Update baseline screenshots (after intentional visual changes)
+npm run test:visual:update
+```
+
+### Test Coverage
+
+Visual regression tests cover:
+
+| Test Scenario | View Mode | Theme | Notes |
+|---------------|-----------|-------|-------|
+| Empty graph | 3D | Light & Dark | No nodes |
+| Small graph (100 nodes) | 3D | Light & Dark | Standard view |
+| Small graph (100 nodes) | 2D | Light & Dark | Force layout |
+| Small graph (100 nodes) | 3D | Light | Zoomed in |
+| Large graph (10k nodes) | 3D | Light & Dark | Performance test |
+| Dashboard view | Dashboard | Light & Dark | Statistics |
+
+**Total: 11 visual regression tests**
+
+### How It Works
+
+1. **Deterministic fixtures** - Test data includes fixed node positions for stable rendering
+2. **API mocking** - Tests mock `/api/graph` endpoint with deterministic fixture data
+3. **Screenshot comparison** - Playwright captures screenshots and compares them to baselines
+4. **Pixel diff tolerance** - 1% pixel difference allowed to handle minor rendering variations
+5. **CI integration** - Tests run automatically on every pull request
+
+### Test Fixtures
+
+Visual test fixtures are generated with deterministic seeded random data:
+
+- `visual-empty.json` - 0 nodes (empty state)
+- `visual-small.json` - 100 nodes (quick test)
+- `visual-large.json` - 10,000 nodes (performance/rendering stress test)
+
+Generate new fixtures:
+```bash
+npx tsx e2e/fixtures/generateVisualFixtures.ts
+```
+
+### Updating Baselines
+
+When you make intentional visual changes (new features, design updates):
+
+1. Run `npm run test:visual` to see the failures
+2. Review the diff report in `playwright-report/index.html`
+3. If changes look correct, update baselines: `npm run test:visual:update`
+4. Commit the updated baseline screenshots
+
+### Configuration
+
+Visual test settings in `playwright.config.ts`:
+
+```typescript
+expect: {
+  toHaveScreenshot: {
+    maxDiffPixelRatio: 0.01,  // 1% tolerance
+    animations: 'disabled',    // Avoid animation flakiness
+    threshold: 0.2,            // Anti-aliasing tolerance
+  },
+}
+```
+
+### CI Behavior
+
+- Visual tests run in a separate CI job after unit tests
+- On failure, diff reports are uploaded as GitHub artifacts
+- Artifacts are retained for 30 days for investigation
+- Tests use headless Chromium for consistency
+
+### Avoiding Flakiness
+
+The visual tests are designed to be stable:
+
+- **Fixed viewport**: 1280x720 for consistent rendering
+- **Disabled animations**: Prevents timing-related flakiness  
+- **Deterministic data**: Fixed positions ensure graphs render identically
+- **Stable wait times**: Tests wait for physics to settle before screenshots
+- **Theme pre-initialization**: Uses `addInitScript()` to set theme before page load
+- **Consistent browser flags**: Force sRGB color profile, disable GPU vsync
+
+### Troubleshooting
+
+**Tests fail with localStorage SecurityError**
+- Ensure `setTheme()` is called BEFORE `page.goto()`
+- Use `addInitScript()` to set localStorage before page navigation
+
+**Screenshots differ slightly on CI vs local**
+- Increase `maxDiffPixelRatio` tolerance if needed
+- Ensure same Playwright/Chromium versions locally and in CI
+- Check that browser flags match between environments
+
+**Large graph tests timeout**
+- Increase `timeout` in test config for large datasets
+- Adjust `waitForGraphStable()` delay for physics settling
