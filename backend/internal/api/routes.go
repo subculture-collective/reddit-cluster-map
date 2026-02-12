@@ -44,7 +44,7 @@ func NewRouter(q *db.Queries) *mux.Router {
 	corsConfig := &middleware.CORSConfig{
 		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Request-ID"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Request-ID", "Upgrade", "Connection", "Sec-WebSocket-Key", "Sec-WebSocket-Version"},
 		ExposedHeaders:   []string{"Link", "X-Request-ID"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -107,6 +107,10 @@ func NewRouter(q *db.Queries) *mux.Router {
 	// Graph data for the frontend: GET /api/graph
 	graphHandler := handlers.NewHandler(q, graphCache)
 	r.Handle("/api/graph", middleware.Gzip(middleware.ETag(http.HandlerFunc(graphHandler.GetGraphData)))).Methods("GET")
+
+	// WebSocket endpoint for incremental graph updates: GET /api/graph/ws
+	wsHandler := handlers.NewWebSocketHandler(q)
+	r.HandleFunc("/api/graph/ws", wsHandler.HandleWebSocket).Methods("GET")
 
 	// Tiered graph endpoints for overview and drill-down
 	r.Handle("/api/graph/overview", middleware.Gzip(middleware.ETag(http.HandlerFunc(graphHandler.GetGraphOverview)))).Methods("GET")
