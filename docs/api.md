@@ -277,3 +277,181 @@ The cache can be configured via environment variables:
 - Cache entries expire after the configured TTL
 - Cache is shared between `/api/graph` and `/api/communities` endpoints
 - Different parameter combinations create separate cache entries
+
+### GET /api/graph/ws (WebSocket)
+
+**Since:** v0.2.0
+
+Establishes a WebSocket connection for receiving incremental graph updates in real-time.
+
+**Connection URL:**
+- Development: `ws://localhost:8000/api/graph/ws`
+- Production: `wss://your-domain.com/api/graph/ws`
+
+**Protocol:**
+- WebSocket upgrade from HTTP/1.1
+- Text frames only (JSON messages)
+- Ping/pong heartbeat every 30 seconds
+- Max message size: 512 bytes (client → server), unlimited (server → client)
+
+**Message Types:**
+
+#### Server → Client
+
+**1. Version Message** (sent on connect)
+```json
+{
+  "type": "version",
+  "payload": {
+    "version_id": 42,
+    "node_count": 1000,
+    "link_count": 5000
+  }
+}
+```
+
+**2. Diff Message** (sent on graph update)
+```json
+{
+  "type": "diff",
+  "payload": {
+    "action": "add|remove|update",
+    "nodes": [
+      {
+        "id": "user_123",
+        "name": "username",
+        "val": 10,
+        "type": "user",
+        "x": 1.5,
+        "y": 2.5,
+        "z": 3.5
+      }
+    ],
+    "links": [
+      {
+        "source": "user_123",
+        "target": "subreddit_456"
+      }
+    ],
+    "version_id": 43
+  }
+}
+```
+
+Actions:
+- `add` - New nodes/links added to graph
+- `remove` - Nodes/links removed (links to removed nodes are automatically removed)
+- `update` - Node properties changed (val, positions, etc.)
+
+**3. Error Message**
+```json
+{
+  "type": "error",
+  "payload": {
+    "message": "Error description"
+  }
+}
+```
+
+**4. Ping** (heartbeat)
+```json
+{
+  "type": "ping",
+  "payload": {}
+}
+```
+
+#### Client → Server
+
+**Version Update** (tell server your current version)
+```json
+{
+  "type": "version",
+  "version_id": 42
+}
+```
+
+**Behavior:**
+
+1. **Connection Establishment:**
+   - Client sends WebSocket upgrade request
+   - Server accepts and sends initial version message
+   - Server monitors for new graph versions every 5 seconds
+   
+2. **Update Delivery:**
+   - When precalculation completes, server detects new version
+   - Server calculates diff since each client's last known version
+   - Server broadcasts diff to all connected clients
+   - Target latency: < 5 seconds from precalc completion
+   
+3. **Reconnection:**
+   - Client should implement exponential backoff (1s, 2s, 4s, ... up to 60s)
+   - Max recommended reconnect attempts: 10
+   - After reconnection, client should refetch full graph if version gap is large
+
+4. **Graceful Degradation:**
+   - If WebSocket fails, client should fall back to polling `/api/graph/version`
+   - Poll interval: 10-30 seconds recommended
+   - On version change, fetch diff via `/api/graph/diff?since=N`
+
+**Error Handling:**
+
+- Connection errors: Implement exponential backoff reconnection
+- Version gaps: If diff spans >20% of graph, consider full refetch
+- Timeout: No activity for 60s triggers automatic disconnect
+
+**Performance:**
+
+- Connections: Lightweight, ~1KB memory per client
+- Bandwidth: Only changed data transmitted (typically <10KB per update)
+- Latency: Sub-second message delivery on local network
+- Scaling: Tested with 100+ concurrent connections
+
+**Nginx Configuration:**
+
+```nginx
+location /api/graph/ws {
+    proxy_pass http://backend:8000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+}
+```
+
+**Example Client (TypeScript):**
+
+See `frontend/src/data/GraphWebSocket.ts` for full implementation.
+
+```typescript
+import { GraphWebSocket } from './data/GraphWebSocket';
+
+const ws = new GraphWebSocket({
+  onDiff: (diff) => {
+    // Apply incremental update
+    const newData = GraphWebSocket.applyDiff(currentData, diff);
+    setGraphData(newData);
+  },
+  onConnectionChange: (connected) => {
+    setLiveStatus(connected);
+  },
+});
+
+ws.connect();
+```
+
+**Security:**
+
+- CORS headers validated by middleware
+- No authentication required (read-only public data)
+- Rate limiting: Same limits as HTTP endpoints apply
+- Origin validation: Configured via `CORS_ALLOWED_ORIGINS`
+
+**Monitoring:**
+
+Prometheus metrics:
+- `websocket_connections_active` - Current active connections
+- `websocket_messages_sent_total` - Total messages broadcast
+
