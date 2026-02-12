@@ -1,0 +1,175 @@
+groups:
+  # SLO Recording Rules
+  # These rules pre-calculate SLI metrics to improve query performance
+  # and enable efficient error budget calculations
+
+  - name: slo_api_availability
+    interval: 30s
+    rules:
+      # API Availability SLI - successful requests ratio
+      - record: slo:api_availability:ratio_rate5m
+        expr: |
+          sum(rate(api_requests_total{status!~"5.."}[5m]))
+          /
+          sum(rate(api_requests_total[5m]))
+
+      - record: slo:api_availability:ratio_rate1h
+        expr: |
+          sum(rate(api_requests_total{status!~"5.."}[1h]))
+          /
+          sum(rate(api_requests_total[1h]))
+
+      - record: slo:api_availability:ratio_rate6h
+        expr: |
+          sum(rate(api_requests_total{status!~"5.."}[6h]))
+          /
+          sum(rate(api_requests_total[6h]))
+
+      - record: slo:api_availability:ratio_rate1d
+        expr: |
+          sum(rate(api_requests_total{status!~"5.."}[1d]))
+          /
+          sum(rate(api_requests_total[1d]))
+
+      - record: slo:api_availability:ratio_rate30d
+        expr: |
+          sum(rate(api_requests_total{status!~"5.."}[30d]))
+          /
+          sum(rate(api_requests_total[30d]))
+
+      # Error budget remaining (1.0 = full budget, 0.0 = exhausted)
+      - record: slo:api_availability:error_budget_remaining
+        expr: |
+          1 - (
+            (1 - slo:api_availability:ratio_rate30d)
+            /
+            (1 - 0.995)
+          )
+
+      # Error budget burn rate (1.0 = burning at exactly the target rate)
+      # Fast burn (1 hour window)
+      - record: slo:api_availability:burn_rate_1h
+        expr: |
+          (1 - slo:api_availability:ratio_rate1h)
+          /
+          (1 - 0.995)
+
+      # Slow burn (6 hour window)
+      - record: slo:api_availability:burn_rate_6h
+        expr: |
+          (1 - slo:api_availability:ratio_rate6h)
+          /
+          (1 - 0.995)
+
+  - name: slo_graph_latency
+    interval: 30s
+    rules:
+      # Graph Endpoint Latency SLI - requests meeting latency target
+      - record: slo:graph_latency:ratio_rate5m
+        expr: |
+          sum(rate(api_request_duration_seconds_bucket{endpoint="/api/graph",le="0.5"}[5m]))
+          /
+          sum(rate(api_request_duration_seconds_count{endpoint="/api/graph"}[5m]))
+
+      - record: slo:graph_latency:ratio_rate1h
+        expr: |
+          sum(rate(api_request_duration_seconds_bucket{endpoint="/api/graph",le="0.5"}[1h]))
+          /
+          sum(rate(api_request_duration_seconds_count{endpoint="/api/graph"}[1h]))
+
+      - record: slo:graph_latency:ratio_rate6h
+        expr: |
+          sum(rate(api_request_duration_seconds_bucket{endpoint="/api/graph",le="0.5"}[6h]))
+          /
+          sum(rate(api_request_duration_seconds_count{endpoint="/api/graph"}[6h]))
+
+      - record: slo:graph_latency:ratio_rate1d
+        expr: |
+          sum(rate(api_request_duration_seconds_bucket{endpoint="/api/graph",le="0.5"}[1d]))
+          /
+          sum(rate(api_request_duration_seconds_count{endpoint="/api/graph"}[1d]))
+
+      - record: slo:graph_latency:ratio_rate30d
+        expr: |
+          sum(rate(api_request_duration_seconds_bucket{endpoint="/api/graph",le="0.5"}[30d]))
+          /
+          sum(rate(api_request_duration_seconds_count{endpoint="/api/graph"}[30d]))
+
+      # P95 latency for graph endpoint
+      - record: slo:graph_latency:p95_5m
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(api_request_duration_seconds_bucket{endpoint="/api/graph"}[5m])) by (le)
+          )
+
+      # Error budget remaining
+      - record: slo:graph_latency:error_budget_remaining
+        expr: |
+          1 - (
+            (1 - slo:graph_latency:ratio_rate30d)
+            /
+            (1 - 0.99)
+          )
+
+      # Burn rate calculations
+      - record: slo:graph_latency:burn_rate_1h
+        expr: |
+          (1 - slo:graph_latency:ratio_rate1h)
+          /
+          (1 - 0.99)
+
+      - record: slo:graph_latency:burn_rate_6h
+        expr: |
+          (1 - slo:graph_latency:ratio_rate6h)
+          /
+          (1 - 0.99)
+
+  - name: slo_frontend_load_time
+    interval: 30s
+    rules:
+      # Frontend Load Time SLI (using API latency as proxy)
+      - record: slo:frontend_load:ratio_rate5m
+        expr: |
+          sum(rate(api_request_duration_seconds_bucket{endpoint="/api/graph",le="3.0"}[5m]))
+          /
+          sum(rate(api_request_duration_seconds_count{endpoint="/api/graph"}[5m]))
+
+      - record: slo:frontend_load:ratio_rate1h
+        expr: |
+          sum(rate(api_request_duration_seconds_bucket{endpoint="/api/graph",le="3.0"}[1h]))
+          /
+          sum(rate(api_request_duration_seconds_count{endpoint="/api/graph"}[1h]))
+
+      - record: slo:frontend_load:ratio_rate6h
+        expr: |
+          sum(rate(api_request_duration_seconds_bucket{endpoint="/api/graph",le="3.0"}[6h]))
+          /
+          sum(rate(api_request_duration_seconds_count{endpoint="/api/graph"}[6h]))
+
+      - record: slo:frontend_load:ratio_rate30d
+        expr: |
+          sum(rate(api_request_duration_seconds_bucket{endpoint="/api/graph",le="3.0"}[30d]))
+          /
+          sum(rate(api_request_duration_seconds_count{endpoint="/api/graph"}[30d]))
+
+      # Error budget remaining
+      - record: slo:frontend_load:error_budget_remaining
+        expr: |
+          1 - (
+            (1 - slo:frontend_load:ratio_rate30d)
+            /
+            (1 - 0.95)
+          )
+
+      # Burn rate calculations
+      - record: slo:frontend_load:burn_rate_1h
+        expr: |
+          (1 - slo:frontend_load:ratio_rate1h)
+          /
+          (1 - 0.95)
+
+      - record: slo:frontend_load:burn_rate_6h
+        expr: |
+          (1 - slo:frontend_load:ratio_rate6h)
+          /
+          (1 - 0.95)

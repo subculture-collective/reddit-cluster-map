@@ -1,0 +1,186 @@
+groups:
+  - name: slo_error_budget_alerts
+    interval: 30s
+    rules:
+      # API Availability SLO Alerts
+      # Multi-window, multi-burn-rate alerts based on Google SRE best practices
+      # https://sre.google/workbook/alerting-on-slos/
+
+      # Page (Critical) - Fast burn: 5% of monthly error budget consumed in 1 hour
+      - alert: APIAvailabilityErrorBudgetFastBurn
+        expr: |
+          slo:api_availability:burn_rate_1h > 14.4
+          and
+          slo:api_availability:ratio_rate5m < 0.995
+        for: 2m
+        labels:
+          severity: critical
+          slo: api_availability
+          burn_rate: fast
+        annotations:
+          summary: "API availability error budget burning too fast"
+          description: |
+            API availability is consuming error budget at {{ $value | humanizePercentage }} times the expected rate (threshold: 14.4x).
+            Current 1-hour availability: {{ with query "slo:api_availability:ratio_rate1h" }}{{ . | first | value | humanizePercentage }}{{ end }}
+            Target: 99.5%
+            
+            If this continues, the monthly error budget will be exhausted in {{ with query "slo:api_availability:error_budget_remaining" }}{{ . | first | value | humanize }}{{ end }} of the time remaining.
+            
+            Action required: Investigate and mitigate immediately.
+
+      # Page (Critical) - Slow burn: 5% of monthly error budget consumed in 6 hours
+      - alert: APIAvailabilityErrorBudgetSlowBurn
+        expr: |
+          slo:api_availability:burn_rate_6h > 6
+          and
+          slo:api_availability:ratio_rate1h < 0.995
+        for: 15m
+        labels:
+          severity: warning
+          slo: api_availability
+          burn_rate: slow
+        annotations:
+          summary: "API availability error budget burning steadily"
+          description: |
+            API availability is consuming error budget at {{ $value | humanizePercentage }} times the expected rate (threshold: 6x).
+            Current 6-hour availability: {{ with query "slo:api_availability:ratio_rate6h" }}{{ . | first | value | humanizePercentage }}{{ end }}
+            Target: 99.5%
+            
+            Remaining error budget: {{ with query "slo:api_availability:error_budget_remaining" }}{{ . | first | value | humanizePercentage }}{{ end }}
+            
+            Action required: Investigate within business hours.
+
+      # Warning - Error budget running low (< 10% remaining)
+      - alert: APIAvailabilityErrorBudgetLow
+        expr: |
+          slo:api_availability:error_budget_remaining < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          slo: api_availability
+        annotations:
+          summary: "API availability error budget running low"
+          description: |
+            Less than {{ $value | humanizePercentage }} of monthly error budget remains for API availability.
+            30-day availability: {{ with query "slo:api_availability:ratio_rate30d" }}{{ . | first | value | humanizePercentage }}{{ end }}
+            Target: 99.5%
+            
+            Consider prioritizing reliability work over new features.
+
+      # Graph Endpoint Latency SLO Alerts
+
+      # Page (Critical) - Fast burn
+      - alert: GraphLatencyErrorBudgetFastBurn
+        expr: |
+          slo:graph_latency:burn_rate_1h > 14.4
+          and
+          slo:graph_latency:ratio_rate5m < 0.99
+        for: 2m
+        labels:
+          severity: critical
+          slo: graph_latency
+          burn_rate: fast
+        annotations:
+          summary: "Graph endpoint latency error budget burning too fast"
+          description: |
+            Graph endpoint latency SLI is consuming error budget at {{ $value | humanizePercentage }} times the expected rate (threshold: 14.4x).
+            Current P95 latency: {{ with query "slo:graph_latency:p95_5m" }}{{ . | first | value | humanizeDuration }}{{ end }}
+            Target: < 500ms for 99% of requests
+            
+            1-hour success rate: {{ with query "slo:graph_latency:ratio_rate1h" }}{{ . | first | value | humanizePercentage }}{{ end }}
+            
+            Action required: Investigate and mitigate immediately.
+
+      # Page (Warning) - Slow burn
+      - alert: GraphLatencyErrorBudgetSlowBurn
+        expr: |
+          slo:graph_latency:burn_rate_6h > 6
+          and
+          slo:graph_latency:ratio_rate1h < 0.99
+        for: 15m
+        labels:
+          severity: warning
+          slo: graph_latency
+          burn_rate: slow
+        annotations:
+          summary: "Graph endpoint latency error budget burning steadily"
+          description: |
+            Graph endpoint latency SLI is consuming error budget at {{ $value | humanizePercentage }} times the expected rate (threshold: 6x).
+            Current P95 latency: {{ with query "slo:graph_latency:p95_5m" }}{{ . | first | value | humanizeDuration }}{{ end }}
+            Target: < 500ms for 99% of requests
+            
+            6-hour success rate: {{ with query "slo:graph_latency:ratio_rate6h" }}{{ . | first | value | humanizePercentage }}{{ end }}
+            
+            Action required: Investigate within business hours.
+
+      # Warning - Error budget running low
+      - alert: GraphLatencyErrorBudgetLow
+        expr: |
+          slo:graph_latency:error_budget_remaining < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          slo: graph_latency
+        annotations:
+          summary: "Graph latency error budget running low"
+          description: |
+            Less than {{ $value | humanizePercentage }} of monthly error budget remains for graph endpoint latency.
+            30-day success rate: {{ with query "slo:graph_latency:ratio_rate30d" }}{{ . | first | value | humanizePercentage }}{{ end }}
+            Target: 99% of requests < 500ms
+            
+            Consider investigating performance optimization opportunities.
+
+      # Frontend Load Time SLO Alerts
+
+      # Page (Warning) - Fast burn (more lenient for frontend)
+      - alert: FrontendLoadTimeErrorBudgetFastBurn
+        expr: |
+          slo:frontend_load:burn_rate_1h > 20
+          and
+          slo:frontend_load:ratio_rate5m < 0.95
+        for: 5m
+        labels:
+          severity: warning
+          slo: frontend_load_time
+          burn_rate: fast
+        annotations:
+          summary: "Frontend load time error budget burning too fast"
+          description: |
+            Frontend load time SLI is consuming error budget at {{ $value | humanizePercentage }} times the expected rate (threshold: 20x).
+            1-hour success rate: {{ with query "slo:frontend_load:ratio_rate1h" }}{{ . | first | value | humanizePercentage }}{{ end }}
+            Target: 95% of loads < 3s
+            
+            Note: This metric currently uses API latency as a proxy. Consider implementing Real User Monitoring (RUM).
+
+      # Page (Info) - Slow burn
+      - alert: FrontendLoadTimeErrorBudgetSlowBurn
+        expr: |
+          slo:frontend_load:burn_rate_6h > 10
+          and
+          slo:frontend_load:ratio_rate1h < 0.95
+        for: 30m
+        labels:
+          severity: info
+          slo: frontend_load_time
+          burn_rate: slow
+        annotations:
+          summary: "Frontend load time error budget burning steadily"
+          description: |
+            Frontend load time SLI is consuming error budget at {{ $value | humanizePercentage }} times the expected rate (threshold: 10x).
+            6-hour success rate: {{ with query "slo:frontend_load:ratio_rate6h" }}{{ . | first | value | humanizePercentage }}{{ end }}
+            Target: 95% of loads < 3s
+
+      # Info - Error budget running low
+      - alert: FrontendLoadTimeErrorBudgetLow
+        expr: |
+          slo:frontend_load:error_budget_remaining < 0.1
+        for: 5m
+        labels:
+          severity: info
+          slo: frontend_load_time
+        annotations:
+          summary: "Frontend load time error budget running low"
+          description: |
+            Less than {{ $value | humanizePercentage }} of monthly error budget remains for frontend load time.
+            30-day success rate: {{ with query "slo:frontend_load:ratio_rate30d" }}{{ . | first | value | humanizePercentage }}{{ end }}
+            Target: 95% of loads < 3s

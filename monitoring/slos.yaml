@@ -1,0 +1,61 @@
+# Service Level Objectives (SLOs) for Reddit Cluster Map
+# These SLOs define the reliability targets for the application
+
+slos:
+  # API Availability SLO
+  - name: api_availability
+    description: "API should be available and serving successful responses"
+    target: 99.5  # 99.5% availability (allows ~3.6h downtime per month)
+    window: 30d   # 30-day rolling window
+    sli:
+      # Availability = successful requests / total requests
+      # Success = HTTP status codes 2xx, 3xx, 4xx (client errors don't count against availability)
+      # Failure = HTTP status codes 5xx, network errors, timeouts
+      success_metric: "sum(rate(api_requests_total{status!~'5..'}[5m]))"
+      total_metric: "sum(rate(api_requests_total[5m]))"
+    error_budget:
+      # Error budget = (1 - target) * total requests
+      # With 99.5% target, we have 0.5% error budget
+      burn_rate_fast: 14.4    # 5% of monthly budget consumed in 1 hour (critical)
+      burn_rate_slow: 6.0     # 5% of monthly budget consumed in 6 hours (warning)
+
+  # Graph Endpoint Latency SLO
+  - name: graph_endpoint_latency
+    description: "Graph API endpoint P95 latency should be under 500ms"
+    target: 99.0  # 99% of requests should meet latency target
+    window: 30d
+    latency_threshold: 0.5  # 500ms in seconds
+    sli:
+      # Latency SLI = requests faster than threshold / total requests
+      fast_metric: "sum(rate(api_request_duration_seconds_bucket{endpoint='/api/graph',le='0.5'}[5m]))"
+      total_metric: "sum(rate(api_request_duration_seconds_count{endpoint='/api/graph'}[5m]))"
+    error_budget:
+      burn_rate_fast: 14.4
+      burn_rate_slow: 6.0
+
+  # Frontend Load Time SLO (placeholder - requires frontend instrumentation)
+  - name: frontend_load_time
+    description: "Frontend initial load time should be under 3 seconds"
+    target: 95.0  # 95% of page loads should complete within 3s
+    window: 30d
+    latency_threshold: 3.0  # 3 seconds
+    sli:
+      # Note: This requires Real User Monitoring (RUM) instrumentation
+      # For now, we use API latency as a proxy metric
+      # TODO: Implement proper frontend performance monitoring
+      fast_metric: "sum(rate(api_request_duration_seconds_bucket{endpoint='/api/graph',le='3.0'}[5m]))"
+      total_metric: "sum(rate(api_request_duration_seconds_count{endpoint='/api/graph'}[5m]))"
+    error_budget:
+      burn_rate_fast: 20.0   # More lenient for frontend (5% in 1h)
+      burn_rate_slow: 10.0   # More lenient for frontend (5% in 6h)
+
+# Error Budget Policy
+# - If error budget is exhausted, prioritize reliability work over features
+# - Fast burn alerts require immediate investigation
+# - Slow burn alerts should be investigated within business hours
+# - Monthly SLO reviews assess if targets need adjustment
+
+# SLO Review Process
+# - Monthly review of SLO compliance and error budget consumption
+# - Quarterly assessment of SLO targets (too strict or too lenient?)
+# - Annual review of SLO coverage (are we measuring the right things?)

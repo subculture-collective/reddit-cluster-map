@@ -134,6 +134,7 @@ services:
         volumes:
             - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
             - ../monitoring/prometheus/alerts:/etc/prometheus/alerts:ro
+            - ../monitoring/prometheus/recording-rules:/etc/prometheus/recording-rules:ro
             - prometheus_data:/prometheus
         command:
             - '--config.file=/etc/prometheus/prometheus.yml'

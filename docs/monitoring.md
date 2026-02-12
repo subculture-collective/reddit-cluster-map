@@ -8,6 +8,9 @@ The monitoring stack includes:
 - **Prometheus** - Metrics collection and storage
 - **Grafana** - Visualization and dashboards
 - **Alert Rules** - Automated alerting for critical issues
+- **SLO/SLI Tracking** - Service level objectives with error budget monitoring
+
+For comprehensive SLO documentation, see [docs/slos.md](slos.md).
 
 ## Architecture
 
@@ -141,6 +144,34 @@ The main dashboard (`Reddit Cluster Map - System Overview`) provides:
    - Operation duration
    - Error rates
 
+### SLO Dashboard
+
+The SLO dashboard (`Reddit Cluster Map - SLO Dashboard`) provides comprehensive Service Level Objective tracking:
+
+1. **SLO Compliance Gauges**
+   - API Availability (99.5% target)
+   - Graph Endpoint Latency (99% < 500ms target)
+   - Frontend Load Time (95% < 3s target)
+
+2. **Error Budget Tracking**
+   - Remaining error budget for each SLO
+   - Visual indicators (green/yellow/red)
+
+3. **SLI Trends**
+   - Multi-window SLI performance (5m, 1h, 1d, 30d)
+   - Historical compliance tracking
+
+4. **Burn Rate Monitoring**
+   - Fast burn rate (1-hour window)
+   - Slow burn rate (6-hour window)
+   - Alert threshold indicators
+
+5. **Performance Metrics**
+   - P95 latency trends
+   - Active SLO alerts
+
+For detailed SLO documentation, see [docs/slos.md](slos.md).
+
 ### Creating Custom Dashboards
 
 1. Navigate to Grafana (http://localhost:3000)
@@ -165,7 +196,9 @@ The main dashboard (`Reddit Cluster Map - System Overview`) provides:
 
 ### Alert Rules
 
-Alerts are defined in `monitoring/prometheus/alerts/reddit-cluster-map.yml`:
+Alerts are defined in two files:
+
+**System Alerts** (`monitoring/prometheus/alerts/reddit-cluster-map.yml`):
 
 | Alert | Condition | Severity | Description |
 |-------|-----------|----------|-------------|
@@ -177,6 +210,22 @@ Alerts are defined in `monitoring/prometheus/alerts/reddit-cluster-map.yml`:
 | NoCrawlJobsProcessing | No processing for 30m | warning | Crawler may be stuck |
 | HighFailedJobCount | Failed jobs > 100 | warning | Too many failed jobs |
 | HighRateLimitWaits | Rate limit waits > 10/s for 10m | info | High Reddit API pressure |
+
+**SLO Alerts** (`monitoring/prometheus/alerts/slo-alerts.yml`):
+
+| Alert | Condition | Severity | Description |
+|-------|-----------|----------|-------------|
+| APIAvailabilityErrorBudgetFastBurn | Burn rate > 14.4x for 2m | critical | 5% monthly budget consumed in 1h |
+| APIAvailabilityErrorBudgetSlowBurn | Burn rate > 6x for 15m | warning | 5% monthly budget consumed in 6h |
+| APIAvailabilityErrorBudgetLow | Budget remaining < 10% | warning | Error budget running low |
+| GraphLatencyErrorBudgetFastBurn | Burn rate > 14.4x for 2m | critical | Latency SLO at risk |
+| GraphLatencyErrorBudgetSlowBurn | Burn rate > 6x for 15m | warning | Latency degrading |
+| GraphLatencyErrorBudgetLow | Budget remaining < 10% | warning | Latency budget low |
+| FrontendLoadTimeErrorBudgetFastBurn | Burn rate > 20x for 5m | warning | Frontend load time degrading |
+| FrontendLoadTimeErrorBudgetSlowBurn | Burn rate > 10x for 30m | info | Frontend performance at risk |
+| FrontendLoadTimeErrorBudgetLow | Budget remaining < 10% | info | Frontend budget low |
+
+For details on SLO alerting strategy, see [docs/slos.md](slos.md).
 
 ### Viewing Alert Status
 
@@ -317,6 +366,12 @@ groups:
           / 
           rate(crawler_jobs_total[5m])
 ```
+
+**SLO Recording Rules**: The application includes pre-configured recording rules for Service Level Indicators:
+- Located in `monitoring/prometheus/recording-rules/slo-recording-rules.yml`
+- 24 rules calculating SLI metrics at multiple time windows (5m, 1h, 6h, 1d, 30d)
+- Error budget remaining and burn rate calculations
+- See [docs/slos.md](slos.md) for details
 
 ## Exporting Data
 
