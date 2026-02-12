@@ -27,6 +27,7 @@ function loadFixture(fixtureName: string) {
 }
 
 // Helper to mock the API response with fixture data
+// MUST be called BEFORE page.goto()
 async function mockGraphAPI(page: Page, fixtureName: string) {
   const fixtureData = loadFixture(fixtureName);
   
@@ -53,16 +54,11 @@ async function waitForGraphStable(page: Page, timeout: number = 5000) {
   await page.waitForTimeout(timeout);
 }
 
-// Helper to set theme
+// Helper to set theme using localStorage init script
+// MUST be called BEFORE page.goto()
 async function setTheme(page: Page, theme: 'light' | 'dark') {
-  await page.evaluate((t) => {
+  await page.addInitScript((t) => {
     localStorage.setItem('themeMode', t);
-    const root = document.documentElement;
-    if (t === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
   }, theme);
 }
 
