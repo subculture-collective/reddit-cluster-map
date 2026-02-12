@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"sync"
@@ -26,6 +27,9 @@ const (
 	
 	// Maximum message size allowed from peer
 	maxMessageSize = 512
+	
+	// How often to check for new graph versions
+	versionCheckInterval = 5 * time.Second
 )
 
 var upgrader = websocket.Upgrader{
@@ -77,6 +81,12 @@ type Hub struct {
 	// Database queries
 	queries VersionReader
 	
+	// Last known version ID
+	lastVersionID int64
+	
+	// Stop channel for version monitoring
+	stop chan struct{}
+	
 	mu sync.RWMutex
 }
 
@@ -88,13 +98,23 @@ func NewHub(q VersionReader) *Hub {
 		unregister: make(chan *Client),
 		broadcast:  make(chan []byte, 256),
 		queries:    q,
+		stop:       make(chan struct{}),
 	}
 }
 
-// Run starts the hub's main loop
-func (h *Hub) Run() {
+// Run starts the hub's main loop and version monitoring
+func (h *Hub) Run(ctx context.Context) {
+	// Start version monitoring in a separate goroutine
+	go h.monitorVersionChanges(ctx)
+	
 	for {
 		select {
+		case <-ctx.Done():
+			return
+			
+		case <-h.stop:
+			return
+			
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
@@ -125,6 +145,58 @@ func (h *Hub) Run() {
 				}
 			}
 			h.mu.RUnlock()
+		}
+	}
+}
+
+// monitorVersionChanges periodically checks for new graph versions and broadcasts diffs
+func (h *Hub) monitorVersionChanges(ctx context.Context) {
+	ticker := time.NewTicker(versionCheckInterval)
+	defer ticker.Stop()
+	
+	// Initialize with current version
+	currentVersion, err := h.queries.GetCurrentGraphVersion(ctx)
+	if err != nil && err != sql.ErrNoRows {
+		logger.Warn("Failed to get initial graph version for WebSocket monitoring", "error", err)
+	} else if err == nil {
+		h.lastVersionID = currentVersion.ID
+		logger.Info("WebSocket version monitoring started", "initial_version", h.lastVersionID)
+	}
+	
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-h.stop:
+			return
+		case <-ticker.C:
+			// Check if there are any connected clients
+			h.mu.RLock()
+			clientCount := len(h.clients)
+			h.mu.RUnlock()
+			
+			if clientCount == 0 {
+				// No clients, skip version check
+				continue
+			}
+			
+			// Check for version change
+			newVersion, err := h.queries.GetCurrentGraphVersion(ctx)
+			if err != nil {
+				if err != sql.ErrNoRows {
+					logger.Warn("Failed to check graph version", "error", err)
+				}
+				continue
+			}
+			
+			// If version changed, broadcast diff to all clients
+			if newVersion.ID > h.lastVersionID {
+				logger.Info("New graph version detected", "old_version", h.lastVersionID, "new_version", newVersion.ID)
+				if err := h.BroadcastDiff(ctx, newVersion.ID); err != nil {
+					logger.Error("Failed to broadcast graph diff", "error", err, "version_id", newVersion.ID)
+				}
+				h.lastVersionID = newVersion.ID
+			}
 		}
 	}
 }
@@ -371,7 +443,8 @@ type WebSocketHandler struct {
 // NewWebSocketHandler creates a new WebSocket handler
 func NewWebSocketHandler(q VersionReader) *WebSocketHandler {
 	hub := NewHub(q)
-	go hub.Run()
+	// Start the hub in the background with a long-lived context
+	go hub.Run(context.Background())
 	
 	return &WebSocketHandler{
 		hub:     hub,

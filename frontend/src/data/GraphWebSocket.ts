@@ -1,4 +1,4 @@
-import { GraphNode, GraphLink, GraphData } from '../types/graph';
+import type { GraphNode, GraphLink, GraphData } from '../types/graph';
 
 export interface WebSocketMessage {
     type: 'diff' | 'version' | 'error' | 'ping';
